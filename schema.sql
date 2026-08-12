@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS abone (
     montaj_tarihi TEXT,
     odeme_tarihi TEXT,
     odeme_sekli TEXT,
+    odeme_gun_sozu TEXT,
     odemeyi_gonderen TEXT,
     aciklama TEXT,
     muhtara_odenecek REAL DEFAULT 0,
@@ -28,6 +29,8 @@ CREATE TABLE IF NOT EXISTS abone (
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
+
+ALTER TABLE abone ADD COLUMN IF NOT EXISTS odeme_gun_sozu TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_abone_koy ON abone(koy_adi);
 CREATE INDEX IF NOT EXISTS idx_abone_sayac_no ON abone(sayac_no);
