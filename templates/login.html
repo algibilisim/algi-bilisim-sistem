@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Giriş - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+<div class="login-box">
+    <h1>ALGI BİLİŞİM</h1>
+    <p class="alt-baslik">Malzeme Alacak Takip Sistemi</p>
+    <form method="post">
+        <label>Kullanıcı Adı</label>
+        <input type="text" name="kullanici_adi" autocomplete="username" required autofocus>
+
+        <label>Şifre</label>
+        <input type="password" name="sifre" autocomplete="current-password" required>
+
+        <button type="submit">Giriş Yap</button>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Abone Listesi - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi">
+    <h2>Abone Listesi</h2>
+    <a class="btn btn-yesil" href="{{ url_for('abone_yeni') }}">+ Yeni Abone</a>
+</div>
+
+<form class="filtre-form" method="get" style="flex-direction: column; align-items: stretch;">
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <input type="text" name="q" value="{{ q }}" placeholder="Aranacak kelime..." style="flex:2; min-width:200px;">
+        <select name="koy" style="flex:1; min-width:150px;">
+            <option value="">Tüm Köyler</option>
+            {% for k in koyler %}
+            <option value="{{ k['koy_adi'] }}" {% if k['koy_adi']==secili_koy %}selected{% endif %}>{{ k['koy_adi'] }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn">Filtrele</button>
+    </div>
+    <div class="arama-alanlari">
+        <label><input type="checkbox" name="alan" value="ad_soyad" {% if not secili_alanlar or 'ad_soyad' in secili_alanlar %}checked{% endif %}> Ad Soyad</label>
+        <label><input type="checkbox" name="alan" value="koy" {% if not secili_alanlar or 'koy' in secili_alanlar %}checked{% endif %}> Köy</label>
+        <label><input type="checkbox" name="alan" value="sayac_no" {% if not secili_alanlar or 'sayac_no' in secili_alanlar %}checked{% endif %}> Sayaç No</label>
+        <label><input type="checkbox" name="alan" value="telefon" {% if not secili_alanlar or 'telefon' in secili_alanlar %}checked{% endif %}> Telefon</label>
+        <label><input type="checkbox" name="alan" value="baba_adi" {% if not secili_alanlar or 'baba_adi' in secili_alanlar %}checked{% endif %}> Baba Adı</label>
+        <label><input type="checkbox" name="alan" value="senet_no" {% if not secili_alanlar or 'senet_no' in secili_alanlar %}checked{% endif %}> Senet No</label>
+        <label><input type="checkbox" name="alan" value="senet_sahibi" {% if not secili_alanlar or 'senet_sahibi' in secili_alanlar %}checked{% endif %}> Senet Sahibi</label>
+        <label><input type="checkbox" name="alan" value="odemeyi_gonderen" {% if not secili_alanlar or 'odemeyi_gonderen' in secili_alanlar %}checked{% endif %}> Ödemeyi Gönderen</label>
+        <label><input type="checkbox" name="alan" value="fatura_no" {% if not secili_alanlar or 'fatura_no' in secili_alanlar %}checked{% endif %}> Fatura No</label>
+        <label><input type="checkbox" name="alan" value="aciklama" {% if not secili_alanlar or 'aciklama' in secili_alanlar %}checked{% endif %}> Açıklama</label>
+    </div>
+</form>
+
+<div class="tablo-kaydirici">
+<table>
+    <thead>
+        <tr>
+            <th>S.No</th>
+            <th>Köy</th>
+            <th>Adı Soyadı</th>
+            <th>Sayaç No</th>
+            <th>Senet Tutarı</th>
+            <th>Sayaç Tutarı</th>
+            <th>Alınan</th>
+            <th>Sayaç Kalan</th>
+            <th>Malzeme Tutarı</th>
+            <th>Malzeme Alınan</th>
+            <th>Malzeme Kalan</th>
+            <th>Toplam Kalan</th>
+            <th>Senet No</th>
+            <th>Senet Sahibi Adı</th>
+            <th>Senet Sahibi Soyadı</th>
+            <th>Telefon</th>
+            <th>Baba Adı</th>
+            <th>Montaj Tarihi</th>
+            <th>Ödeme Tarihi</th>
+            <th>Ödeme Şekli</th>
+            <th>Ödemeyi Gönderen</th>
+            <th>Açıklama</th>
+            <th>Muhtara Ödenecek</th>
+            <th>Muhtara Ödenen</th>
+            <th>Muhtara Kalan</th>
+            <th>Fatura No</th>
+            <th class="sabit-sutun"></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for k in kayitlar %}
+        {% set sayac_kalan = (k['sayac_tutari'] or 0) - (k['alinan_tutar'] or 0) %}
+        {% set malzeme_kalan = (k['malzeme_tutari'] or 0) - (k['malzeme_alinan'] or 0) %}
+        {% set toplam_kalan = sayac_kalan + malzeme_kalan %}
+        {% set muhtara_kalan = (k['muhtara_odenecek'] or 0) - (k['muhtara_odenen'] or 0) %}
+        {% set mt = k['montaj_tarihi'] %}
+        {% set ot = k['odeme_tarihi'] %}
+        {% set mt_g = (mt[8:10] + '.' + mt[5:7] + '.' + mt[0:4]) if mt and mt|length >= 10 else (mt or '') %}
+        {% set ot_g = (ot[8:10] + '.' + ot[5:7] + '.' + ot[0:4]) if ot and ot|length >= 10 else (ot or '') %}
+        <tr>
+            <td>{{ k['s_no'] }}</td>
+            <td>{{ k['koy_adi'] }}</td>
+            <td>{{ k['adi'] }} {{ k['soyadi'] }}</td>
+            <td>{{ k['sayac_no'] }}</td>
+            <td>{{ "%.2f"|format(k['senet_tutari'] or 0) }}</td>
+            <td>{{ "%.2f"|format(k['sayac_tutari'] or 0) }}</td>
+            <td>{{ "%.2f"|format(k['alinan_tutar'] or 0) }}</td>
+            <td class="{{ 'kirmizi' if sayac_kalan > 0 else 'yesil' }}">{{ "%.2f"|format(sayac_kalan) }}</td>
+            <td>{{ "%.2f"|format(k['malzeme_tutari'] or 0) }}</td>
+            <td>{{ "%.2f"|format(k['malzeme_alinan'] or 0) }}</td>
+            <td class="{{ 'kirmizi' if malzeme_kalan > 0 else 'yesil' }}">{{ "%.2f"|format(malzeme_kalan) }}</td>
+            <td class="{{ 'kirmizi' if toplam_kalan > 0 else 'yesil' }}"><strong>{{ "%.2f"|format(toplam_kalan) }}</strong></td>
+            <td>{{ k['senet_no'] }}</td>
+            <td>{{ k['senet_sahibi_adi'] }}</td>
+            <td>{{ k['senet_sahibi_soyadi'] }}</td>
+            <td>{{ k['telefon'] }}</td>
+            <td>{{ k['baba_adi'] }}</td>
+            <td>{{ mt_g }}</td>
+            <td>{{ ot_g }}</td>
+            <td>{{ k['odeme_sekli'] }}</td>
+            <td>{{ k['odemeyi_gonderen'] }}</td>
+            <td>{{ k['aciklama'] }}</td>
+            <td>{{ "%.2f"|format(k['muhtara_odenecek'] or 0) }}</td>
+            <td>{{ "%.2f"|format(k['muhtara_odenen'] or 0) }}</td>
+            <td class="{{ 'kirmizi' if muhtara_kalan > 0 else 'yesil' }}">{{ "%.2f"|format(muhtara_kalan) }}</td>
+            <td>{{ k['fatura_no'] }}</td>
+            <td class="islem-hucre sabit-sutun">
+                <a href="{{ url_for('abone_duzenle', abone_id=k['id']) }}">Düzenle</a>
+                <form method="post" action="{{ url_for('abone_sil', abone_id=k['id']) }}"
+                      onsubmit="return confirm('Bu kaydı silmek istediğinize emin misiniz?');">
+                    <button type="submit" class="link-buton">Sil</button>
+                </form>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="27">Kayıt bulunamadı.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% endblock %}

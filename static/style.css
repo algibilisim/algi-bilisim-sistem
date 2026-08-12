@@ -1,0 +1,146 @@
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #f2f4f5;
+    color: #1f2a24;
+}
+
+.topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #1e5631;
+    color: #fff;
+    padding: 12px 20px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.topbar .brand { font-weight: 700; letter-spacing: 1px; }
+.topbar nav a {
+    color: #fff;
+    text-decoration: none;
+    margin-right: 16px;
+    font-size: 14px;
+}
+.topbar nav a:hover { text-decoration: underline; }
+.user-area { font-size: 13px; display: flex; gap: 12px; align-items: center; }
+.user-area a { color: #cde9d6; text-decoration: none; }
+
+.container { padding: 16px; max-width: 1200px; margin: 0 auto; }
+
+.sayfa-basligi {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+h1, h2 { color: #1e5631; }
+
+.btn {
+    display: inline-block;
+    padding: 9px 16px;
+    background: #e2e6e3;
+    color: #1f2a24;
+    text-decoration: none;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+}
+.btn-yesil { background: #2e7d46; color: #fff; }
+
+.filtre-form {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+}
+.filtre-form input, .filtre-form select {
+    padding: 9px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    flex: 1;
+    min-width: 150px;
+}
+
+.tablo-kaydirici { overflow-x: auto; background: #fff; border-radius: 8px; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
+th, td { padding: 8px 8px; border-bottom: 1px solid #e8e8e8; text-align: left; }
+th { background: #eef3ef; color: #1e5631; position: sticky; top: 0; }
+tfoot td { background: #eef3ef; }
+
+.kirmizi { color: #c0392b; font-weight: 600; }
+.yesil { color: #1e7d3c; font-weight: 600; }
+
+.islem-hucre { display: flex; gap: 10px; align-items: center; }
+.islem-hucre a { color: #1e5631; }
+
+.sabit-sutun {
+    position: sticky;
+    right: 0;
+    background: #fff;
+    box-shadow: -4px 0 6px -4px rgba(0,0,0,0.2);
+}
+th.sabit-sutun { background: #eef3ef; }
+.link-buton {
+    background: none; border: none; color: #c0392b;
+    cursor: pointer; font-size: 13px; padding: 0;
+}
+
+.login-box {
+    max-width: 360px;
+    margin: 60px auto;
+    background: #fff;
+    padding: 30px;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    text-align: center;
+}
+.login-box h1 { margin-bottom: 0; }
+.alt-baslik { color: #666; margin-top: 4px; margin-bottom: 20px; font-size: 13px; }
+.login-box form { display: flex; flex-direction: column; gap: 6px; text-align: left; }
+.login-box input {
+    padding: 10px; border: 1px solid #ccc; border-radius: 6px; margin-bottom: 10px;
+}
+.login-box button {
+    margin-top: 10px; padding: 11px; border: none; border-radius: 6px;
+    background: #2e7d46; color: #fff; font-size: 15px; cursor: pointer;
+}
+
+.flash { background: #fdecea; color: #c0392b; padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; }
+
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px;
+    background: #fff;
+    padding: 20px;
+    border-radius: 8px;
+}
+.form-grid label { display: block; font-size: 13px; color: #555; margin-bottom: 4px; }
+.form-grid input, .form-grid textarea {
+    width: 100%; padding: 9px; border: 1px solid #ccc; border-radius: 6px;
+}
+.ayirici {
+    grid-column: 1 / -1;
+    font-weight: 600;
+    color: #1e5631;
+    border-bottom: 2px solid #eef3ef;
+    padding-bottom: 6px;
+    margin-top: 10px;
+}
+.tam-genislik { grid-column: 1 / -1; }
+.form-butonlar { display: flex; gap: 10px; margin-top: 16px; }
+
+@media (max-width: 600px) {
+    .topbar { flex-direction: column; align-items: flex-start; }
+    table { font-size: 12px; }
+}
+.form-grid input[readonly] {
+    background: #f0f0f0;
+    color: #666;
+    cursor: not-allowed;
+}

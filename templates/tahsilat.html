@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Tahsilat - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<h2>Tahsilat Özeti (Köy Bazlı)</h2>
+
+<div class="tablo-kaydirici">
+<table>
+    <thead>
+        <tr>
+            <th>Köy Adı</th>
+            <th>Sayaç Tutarı</th>
+            <th>Malzeme Tutarı</th>
+            <th>Genel Satış</th>
+            <th>Tahsil Edilen</th>
+            <th>Kalan Tutar</th>
+            <th>Muhtara Ödenecek</th>
+            <th>Muhtara Ödenen</th>
+            <th>Muhtar Kalan</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in satirlar %}
+        <tr>
+            <td>{{ s['koy_adi'] }}</td>
+            <td>{{ "%.2f"|format(s['sayac_tutari_toplami'] or 0) }}</td>
+            <td>{{ "%.2f"|format(s['malzeme_tutari_toplami'] or 0) }}</td>
+            <td>{{ "%.2f"|format(s['genel_satis_tutari'] or 0) }}</td>
+            <td>{{ "%.2f"|format(s['tahsil_edilen_tutar'] or 0) }}</td>
+            <td class="{{ 'kirmizi' if (s['kalan_tutar'] or 0) > 0 else 'yesil' }}">{{ "%.2f"|format(s['kalan_tutar'] or 0) }}</td>
+            <td>{{ "%.2f"|format(s['muhtara_odenecek'] or 0) }}</td>
+            <td>{{ "%.2f"|format(s['muhtara_odenen'] or 0) }}</td>
+            <td>{{ "%.2f"|format(s['muhtara_kalan'] or 0) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9">Kayıt bulunamadı.</td></tr>
+        {% endfor %}
+    </tbody>
+    <tfoot>
+        <tr>
+            <td><strong>TOPLAM</strong></td>
+            <td><strong>{{ "%.2f"|format(genel['sayac_tutari_toplami']) }}</strong></td>
+            <td><strong>{{ "%.2f"|format(genel['malzeme_tutari_toplami']) }}</strong></td>
+            <td><strong>{{ "%.2f"|format(genel['genel_satis_tutari']) }}</strong></td>
+            <td><strong>{{ "%.2f"|format(genel['tahsil_edilen_tutar']) }}</strong></td>
+            <td><strong>{{ "%.2f"|format(genel['kalan_tutar']) }}</strong></td>
+            <td><strong>{{ "%.2f"|format(genel['muhtara_odenecek']) }}</strong></td>
+            <td><strong>{{ "%.2f"|format(genel['muhtara_odenen']) }}</strong></td>
+            <td><strong>{{ "%.2f"|format(genel['muhtara_kalan']) }}</strong></td>
+        </tr>
+    </tfoot>
+</table>
+</div>
+{% endblock %}
