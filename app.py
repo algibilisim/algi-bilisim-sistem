@@ -1,14 +1,15 @@
 import os
-import sqlite3
 from functools import wraps
 
+import psycopg2
+import psycopg2.extras
 from flask import (
     Flask, render_template, request, redirect,
     url_for, session, g, flash
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 
-DB_PATH = os.environ.get("DB_PATH", "algibilisim.db")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 SECRET_KEY = os.environ.get("SECRET_KEY", "gelistirme-icin-degistir")
 
 app = Flask(__name__)
@@ -20,22 +21,26 @@ def ensure_db():
     ortam değişkenlerinde yönetici bilgisi varsa ve kullanıcı
     yoksa otomatik olarak oluşturur. Terminal gerektirmez."""
     schema_yolu = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema.sql")
-    conn = sqlite3.connect(DB_PATH)
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
     with open(schema_yolu, "r", encoding="utf-8") as f:
-        conn.executescript(f.read())
+        cur.execute(f.read())
+    conn.commit()
 
     admin_kullanici = os.environ.get("ADMIN_KULLANICI")
     admin_sifre = os.environ.get("ADMIN_SIFRE")
     if admin_kullanici and admin_sifre:
-        var_mi = conn.execute(
-            "SELECT id FROM kullanici WHERE kullanici_adi = ?", (admin_kullanici,)
-        ).fetchone()
+        cur.execute(
+            "SELECT id FROM kullanici WHERE kullanici_adi = %s", (admin_kullanici,)
+        )
+        var_mi = cur.fetchone()
         if not var_mi:
-            conn.execute(
-                "INSERT INTO kullanici (kullanici_adi, sifre_hash) VALUES (?, ?)",
+            cur.execute(
+                "INSERT INTO kullanici (kullanici_adi, sifre_hash) VALUES (%s, %s)",
                 (admin_kullanici, generate_password_hash(admin_sifre)),
             )
             conn.commit()
+    cur.close()
     conn.close()
 
 
@@ -46,8 +51,7 @@ ensure_db()
 
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
-        g.db.row_factory = sqlite3.Row
+        g.db = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
     return g.db
 
 
@@ -76,9 +80,12 @@ def login():
         sifre = request.form.get("sifre", "")
 
         db = get_db()
-        user = db.execute(
-            "SELECT * FROM kullanici WHERE kullanici_adi = ?", (kullanici_adi,)
-        ).fetchone()
+        cur = db.cursor()
+        cur.execute(
+            "SELECT * FROM kullanici WHERE kullanici_adi = %s", (kullanici_adi,)
+        )
+        user = cur.fetchone()
+        cur.close()
 
         if user and check_password_hash(user["sifre_hash"], sifre):
             session.clear()
@@ -113,7 +120,6 @@ def abone_listesi():
     alanlar_secili = request.args.getlist("alan")
     db = get_db()
 
-    # (anahtar, görünen etiket, sütun adı, sayısal mı)
     ALAN_TANIMLARI = [
         ("koy", "Köy", "koy_adi", False),
         ("adi", "Adı", "adi", False),
@@ -152,22 +158,24 @@ def abone_listesi():
             if s in ALAN_HARITASI:
                 kolon, sayisal = ALAN_HARITASI[s]
                 if sayisal:
-                    kosul_listesi.append(f"CAST({kolon} AS TEXT) LIKE ?")
+                    kosul_listesi.append(f"CAST({kolon} AS TEXT) LIKE %s")
                 else:
-                    kosul_listesi.append(f"{kolon} LIKE ?")
+                    kosul_listesi.append(f"{kolon} LIKE %s")
         if kosul_listesi:
             sql += " AND (" + " OR ".join(kosul_listesi) + ")"
             like = f"%{q}%"
             params += [like] * len(kosul_listesi)
     if koy:
-        sql += " AND koy_adi = ?"
+        sql += " AND koy_adi = %s"
         params.append(koy)
     sql += " ORDER BY s_no"
 
-    kayitlar = db.execute(sql, params).fetchall()
-    koyler = db.execute(
-        "SELECT DISTINCT koy_adi FROM abone ORDER BY koy_adi"
-    ).fetchall()
+    cur = db.cursor()
+    cur.execute(sql, params)
+    kayitlar = cur.fetchall()
+    cur.execute("SELECT DISTINCT koy_adi FROM abone ORDER BY koy_adi")
+    koyler = cur.fetchall()
+    cur.close()
 
     return render_template(
         "abone_list.html", kayitlar=kayitlar, koyler=koyler, q=q, secili_koy=koy,
@@ -183,14 +191,20 @@ def _sayilastir(deger):
 
 
 def _sonraki_s_no(db):
-    satir = db.execute("SELECT MAX(s_no) AS m FROM abone").fetchone()
+    cur = db.cursor()
+    cur.execute("SELECT MAX(s_no) AS m FROM abone")
+    satir = cur.fetchone()
+    cur.close()
     return (satir["m"] or 0) + 1
 
 
 def _sonraki_senet_no(db):
-    satirlar = db.execute(
+    cur = db.cursor()
+    cur.execute(
         "SELECT senet_no FROM abone WHERE senet_no IS NOT NULL AND senet_no != ''"
-    ).fetchall()
+    )
+    satirlar = cur.fetchall()
+    cur.close()
     en_buyuk = 0
     for s in satirlar:
         try:
@@ -223,7 +237,10 @@ def abone_duzenle(abone_id):
     if request.method == "POST":
         _abone_kaydet(abone_id)
         return redirect(url_for("abone_listesi"))
-    kayit = db.execute("SELECT * FROM abone WHERE id = ?", (abone_id,)).fetchone()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM abone WHERE id = %s", (abone_id,))
+    kayit = cur.fetchone()
+    cur.close()
     if kayit is None:
         flash("Kayıt bulunamadı.")
         return redirect(url_for("abone_listesi"))
@@ -234,8 +251,10 @@ def abone_duzenle(abone_id):
 @login_required
 def abone_sil(abone_id):
     db = get_db()
-    db.execute("DELETE FROM abone WHERE id = ?", (abone_id,))
+    cur = db.cursor()
+    cur.execute("DELETE FROM abone WHERE id = %s", (abone_id,))
     db.commit()
+    cur.close()
     return redirect(url_for("abone_listesi"))
 
 
@@ -269,20 +288,22 @@ def _abone_kaydet(abone_id):
     )
 
     db = get_db()
+    cur = db.cursor()
     if abone_id is None:
         kolonlar = ", ".join(alanlar.keys())
-        yer_tutucular = ", ".join(["?"] * len(alanlar))
-        db.execute(
+        yer_tutucular = ", ".join(["%s"] * len(alanlar))
+        cur.execute(
             f"INSERT INTO abone ({kolonlar}) VALUES ({yer_tutucular})",
             list(alanlar.values()),
         )
     else:
-        set_ifadesi = ", ".join([f"{k} = ?" for k in alanlar.keys()])
-        db.execute(
-            f"UPDATE abone SET {set_ifadesi}, updated_at = datetime('now') WHERE id = ?",
+        set_ifadesi = ", ".join([f"{k} = %s" for k in alanlar.keys()])
+        cur.execute(
+            f"UPDATE abone SET {set_ifadesi}, updated_at = NOW() WHERE id = %s",
             list(alanlar.values()) + [abone_id],
         )
     db.commit()
+    cur.close()
 
 
 # ---------- Tahsilat (köy bazlı özet) ----------
@@ -291,7 +312,8 @@ def _abone_kaydet(abone_id):
 @login_required
 def tahsilat():
     db = get_db()
-    satirlar = db.execute(
+    cur = db.cursor()
+    cur.execute(
         """
         SELECT
             koy_adi,
@@ -307,7 +329,9 @@ def tahsilat():
         GROUP BY koy_adi
         ORDER BY koy_adi
         """
-    ).fetchall()
+    )
+    satirlar = cur.fetchall()
+    cur.close()
 
     genel = {
         "sayac_tutari_toplami": sum(s["sayac_tutari_toplami"] or 0 for s in satirlar),
