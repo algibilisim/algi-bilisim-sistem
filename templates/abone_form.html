@@ -7,8 +7,16 @@
 <form method="post" class="abone-form">
     <div class="form-grid">
         <div>
-            <label>S.No</label>
-            <input type="number" name="s_no" value="{{ kayit['s_no'] if kayit else sonraki_s_no }}" {% if not kayit %}readonly{% endif %}>
+            <label>S.No (otomatik)</label>
+            <input type="number" name="s_no" value="{{ kayit['s_no'] if kayit else sonraki_s_no }}" readonly>
+        </div>
+        <div>
+            <label>Senet No (otomatik)</label>
+            <input type="text" value="{{ kayit['senet_no'] if kayit else '' }}" readonly>
+        </div>
+        <div>
+            <label>Senet Tutarı (otomatik hesaplanır)</label>
+            <input type="text" value="{{ kayit['senet_tutari'] if kayit else '0' }}" readonly>
         </div>
         <div>
             <label>Köy Adı *</label>
@@ -38,20 +46,12 @@
         <div class="ayirici">Senet / Sayaç Bilgileri</div>
 
         <div>
-            <label>Senet Tutarı</label>
-            <input type="text" name="senet_tutari" value="{{ kayit['senet_tutari'] if kayit else '0' }}">
-        </div>
-        <div>
             <label>Sayaç Tutarı</label>
             <input type="text" name="sayac_tutari" value="{{ kayit['sayac_tutari'] if kayit else '0' }}">
         </div>
         <div>
             <label>Alınan Tutar</label>
             <input type="text" name="alinan_tutar" value="{{ kayit['alinan_tutar'] if kayit else '0' }}">
-        </div>
-        <div>
-            <label>Senet No</label>
-            <input type="text" name="senet_no" value="{{ kayit['senet_no'] if kayit else sonraki_senet_no }}" {% if not kayit %}readonly{% endif %}>
         </div>
         <div>
             <label>Senet Sahibi Adı</label>
