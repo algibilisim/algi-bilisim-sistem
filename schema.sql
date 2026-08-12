@@ -1,7 +1,7 @@
--- ALGI BİLİŞİM - Abone Listesi ve ilgili tablolar
+-- ALGI BİLİŞİM - Abone Listesi ve ilgili tablolar (PostgreSQL)
 
 CREATE TABLE IF NOT EXISTS abone (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     s_no INTEGER,
     koy_adi TEXT NOT NULL,
     adi TEXT NOT NULL,
@@ -25,15 +25,15 @@ CREATE TABLE IF NOT EXISTS abone (
     muhtara_odenecek REAL DEFAULT 0,
     muhtara_odenen REAL DEFAULT 0,
     fatura_no TEXT,
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_abone_koy ON abone(koy_adi);
 CREATE INDEX IF NOT EXISTS idx_abone_sayac_no ON abone(sayac_no);
 
 CREATE TABLE IF NOT EXISTS kullanici (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     kullanici_adi TEXT UNIQUE NOT NULL,
     sifre_hash TEXT NOT NULL
 );
