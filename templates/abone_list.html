@@ -18,17 +18,12 @@
         </select>
         <button type="submit" class="btn">Filtrele</button>
     </div>
-    <div class="arama-alanlari">
-        <label><input type="checkbox" name="alan" value="ad_soyad" {% if not secili_alanlar or 'ad_soyad' in secili_alanlar %}checked{% endif %}> Ad Soyad</label>
-        <label><input type="checkbox" name="alan" value="koy" {% if not secili_alanlar or 'koy' in secili_alanlar %}checked{% endif %}> Köy</label>
-        <label><input type="checkbox" name="alan" value="sayac_no" {% if not secili_alanlar or 'sayac_no' in secili_alanlar %}checked{% endif %}> Sayaç No</label>
-        <label><input type="checkbox" name="alan" value="telefon" {% if not secili_alanlar or 'telefon' in secili_alanlar %}checked{% endif %}> Telefon</label>
-        <label><input type="checkbox" name="alan" value="baba_adi" {% if not secili_alanlar or 'baba_adi' in secili_alanlar %}checked{% endif %}> Baba Adı</label>
-        <label><input type="checkbox" name="alan" value="senet_no" {% if not secili_alanlar or 'senet_no' in secili_alanlar %}checked{% endif %}> Senet No</label>
-        <label><input type="checkbox" name="alan" value="senet_sahibi" {% if not secili_alanlar or 'senet_sahibi' in secili_alanlar %}checked{% endif %}> Senet Sahibi</label>
-        <label><input type="checkbox" name="alan" value="odemeyi_gonderen" {% if not secili_alanlar or 'odemeyi_gonderen' in secili_alanlar %}checked{% endif %}> Ödemeyi Gönderen</label>
-        <label><input type="checkbox" name="alan" value="fatura_no" {% if not secili_alanlar or 'fatura_no' in secili_alanlar %}checked{% endif %}> Fatura No</label>
-        <label><input type="checkbox" name="alan" value="aciklama" {% if not secili_alanlar or 'aciklama' in secili_alanlar %}checked{% endif %}> Açıklama</label>
+    <div class="arama-alanlari" style="display:grid; grid-template-columns: repeat(4, minmax(170px, 1fr)); gap:6px 20px; margin-top:10px;">
+        {% for anahtar, etiket in alan_listesi %}
+        <label style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
+            <input type="checkbox" name="alan" value="{{ anahtar }}" {% if anahtar in secili_alanlar %}checked{% endif %}> {{ etiket }}
+        </label>
+        {% endfor %}
     </div>
 </form>
 
@@ -56,6 +51,7 @@
             <th>Montaj Tarihi</th>
             <th>Ödeme Tarihi</th>
             <th>Ödeme Şekli</th>
+            <th>Ödeme Gün Sözü</th>
             <th>Ödemeyi Gönderen</th>
             <th>Açıklama</th>
             <th>Muhtara Ödenecek</th>
@@ -96,6 +92,7 @@
             <td>{{ mt_g }}</td>
             <td>{{ ot_g }}</td>
             <td>{{ k['odeme_sekli'] }}</td>
+            <td>{{ k['odeme_gun_sozu'] }}</td>
             <td>{{ k['odemeyi_gonderen'] }}</td>
             <td>{{ k['aciklama'] }}</td>
             <td>{{ "%.2f"|format(k['muhtara_odenecek'] or 0) }}</td>
@@ -111,7 +108,7 @@
             </td>
         </tr>
         {% else %}
-        <tr><td colspan="27">Kayıt bulunamadı.</td></tr>
+        <tr><td colspan="28">Kayıt bulunamadı.</td></tr>
         {% endfor %}
     </tbody>
 </table>
