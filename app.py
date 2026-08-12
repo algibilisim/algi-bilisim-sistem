@@ -17,9 +17,6 @@ app.secret_key = SECRET_KEY
 
 
 def ensure_db():
-    """Sunucu her açıldığında çalışır: tablo yoksa oluşturur,
-    ortam değişkenlerinde yönetici bilgisi varsa ve kullanıcı
-    yoksa otomatik olarak oluşturur. Terminal gerektirmez."""
     schema_yolu = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema.sql")
     conn = psycopg2.connect(DATABASE_URL)
     cur = conn.cursor()
@@ -258,95 +255,4 @@ def abone_sil(abone_id):
     return redirect(url_for("abone_listesi"))
 
 
-def _abone_kaydet(abone_id):
-    f = request.form
-    alanlar = dict(
-        s_no=f.get("s_no") or None,
-        koy_adi=f.get("koy_adi", "").strip(),
-        adi=f.get("adi", "").strip(),
-        soyadi=f.get("soyadi", "").strip(),
-        sayac_no=f.get("sayac_no", "").strip(),
-        senet_tutari=_sayilastir(f.get("senet_tutari")),
-        sayac_tutari=_sayilastir(f.get("sayac_tutari")),
-        alinan_tutar=_sayilastir(f.get("alinan_tutar")),
-        malzeme_tutari=_sayilastir(f.get("malzeme_tutari")),
-        malzeme_alinan=_sayilastir(f.get("malzeme_alinan")),
-        senet_no=f.get("senet_no", "").strip(),
-        senet_sahibi_adi=f.get("senet_sahibi_adi", "").strip(),
-        senet_sahibi_soyadi=f.get("senet_sahibi_soyadi", "").strip(),
-        telefon=f.get("telefon", "").strip(),
-        baba_adi=f.get("baba_adi", "").strip(),
-        montaj_tarihi=f.get("montaj_tarihi", "").strip(),
-        odeme_tarihi=f.get("odeme_tarihi", "").strip(),
-        odeme_sekli=f.get("odeme_sekli", "").strip(),
-        odeme_gun_sozu=f.get("odeme_gun_sozu", "").strip(),
-        odemeyi_gonderen=f.get("odemeyi_gonderen", "").strip(),
-        aciklama=f.get("aciklama", "").strip(),
-        muhtara_odenecek=_sayilastir(f.get("muhtara_odenecek")),
-        muhtara_odenen=_sayilastir(f.get("muhtara_odenen")),
-        fatura_no=f.get("fatura_no", "").strip(),
-    )
-
-    db = get_db()
-    cur = db.cursor()
-    if abone_id is None:
-        kolonlar = ", ".join(alanlar.keys())
-        yer_tutucular = ", ".join(["%s"] * len(alanlar))
-        cur.execute(
-            f"INSERT INTO abone ({kolonlar}) VALUES ({yer_tutucular})",
-            list(alanlar.values()),
-        )
-    else:
-        set_ifadesi = ", ".join([f"{k} = %s" for k in alanlar.keys()])
-        cur.execute(
-            f"UPDATE abone SET {set_ifadesi}, updated_at = NOW() WHERE id = %s",
-            list(alanlar.values()) + [abone_id],
-        )
-    db.commit()
-    cur.close()
-
-
-# ---------- Tahsilat (köy bazlı özet) ----------
-
-@app.route("/tahsilat")
-@login_required
-def tahsilat():
-    db = get_db()
-    cur = db.cursor()
-    cur.execute(
-        """
-        SELECT
-            koy_adi,
-            SUM(sayac_tutari)                                  AS sayac_tutari_toplami,
-            SUM(malzeme_tutari)                                AS malzeme_tutari_toplami,
-            SUM(sayac_tutari + malzeme_tutari)                 AS genel_satis_tutari,
-            SUM(alinan_tutar + malzeme_alinan)                 AS tahsil_edilen_tutar,
-            SUM(sayac_tutari + malzeme_tutari - alinan_tutar - malzeme_alinan) AS kalan_tutar,
-            SUM(muhtara_odenecek)                              AS muhtara_odenecek,
-            SUM(muhtara_odenen)                                AS muhtara_odenen,
-            SUM(muhtara_odenecek - muhtara_odenen)             AS muhtara_kalan
-        FROM abone
-        GROUP BY koy_adi
-        ORDER BY koy_adi
-        """
-    )
-    satirlar = cur.fetchall()
-    cur.close()
-
-    genel = {
-        "sayac_tutari_toplami": sum(s["sayac_tutari_toplami"] or 0 for s in satirlar),
-        "malzeme_tutari_toplami": sum(s["malzeme_tutari_toplami"] or 0 for s in satirlar),
-        "genel_satis_tutari": sum(s["genel_satis_tutari"] or 0 for s in satirlar),
-        "tahsil_edilen_tutar": sum(s["tahsil_edilen_tutar"] or 0 for s in satirlar),
-        "kalan_tutar": sum(s["kalan_tutar"] or 0 for s in satirlar),
-        "muhtara_odenecek": sum(s["muhtara_odenecek"] or 0 for s in satirlar),
-        "muhtara_odenen": sum(s["muhtara_odenen"] or 0 for s in satirlar),
-        "muhtara_kalan": sum(s["muhtara_kalan"] or 0 for s in satirlar),
-    }
-
-    return render_template("tahsilat.html", satirlar=satirlar, genel=genel)
-
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+def
