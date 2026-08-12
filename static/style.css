@@ -5,7 +5,6 @@ body {
     background: #f2f4f5;
     color: #1f2a24;
 }
-
 .topbar {
     display: flex;
     align-items: center;
@@ -26,9 +25,7 @@ body {
 .topbar nav a:hover { text-decoration: underline; }
 .user-area { font-size: 13px; display: flex; gap: 12px; align-items: center; }
 .user-area a { color: #cde9d6; text-decoration: none; }
-
 .container { padding: 16px; max-width: 1200px; margin: 0 auto; }
-
 .sayfa-basligi {
     display: flex;
     justify-content: space-between;
@@ -38,7 +35,6 @@ body {
     margin-bottom: 14px;
 }
 h1, h2 { color: #1e5631; }
-
 .btn {
     display: inline-block;
     padding: 9px 16px;
@@ -51,7 +47,6 @@ h1, h2 { color: #1e5631; }
     cursor: pointer;
 }
 .btn-yesil { background: #2e7d46; color: #fff; }
-
 .filtre-form {
     display: flex;
     gap: 8px;
@@ -65,19 +60,23 @@ h1, h2 { color: #1e5631; }
     flex: 1;
     min-width: 150px;
 }
-
+.filtre-form input[type="checkbox"] {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    min-width: 0;
+    padding: 0;
+    border-radius: 3px;
+}
 .tablo-kaydirici { overflow-x: auto; background: #fff; border-radius: 8px; }
 table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
 th, td { padding: 8px 8px; border-bottom: 1px solid #e8e8e8; text-align: left; }
 th { background: #eef3ef; color: #1e5631; position: sticky; top: 0; }
 tfoot td { background: #eef3ef; }
-
 .kirmizi { color: #c0392b; font-weight: 600; }
 .yesil { color: #1e7d3c; font-weight: 600; }
-
 .islem-hucre { display: flex; gap: 10px; align-items: center; }
 .islem-hucre a { color: #1e5631; }
-
 .sabit-sutun {
     position: sticky;
     right: 0;
@@ -89,7 +88,6 @@ th.sabit-sutun { background: #eef3ef; }
     background: none; border: none; color: #c0392b;
     cursor: pointer; font-size: 13px; padding: 0;
 }
-
 .login-box {
     max-width: 360px;
     margin: 60px auto;
@@ -109,9 +107,7 @@ th.sabit-sutun { background: #eef3ef; }
     margin-top: 10px; padding: 11px; border: none; border-radius: 6px;
     background: #2e7d46; color: #fff; font-size: 15px; cursor: pointer;
 }
-
 .flash { background: #fdecea; color: #c0392b; padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; }
-
 .form-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -134,7 +130,6 @@ th.sabit-sutun { background: #eef3ef; }
 }
 .tam-genislik { grid-column: 1 / -1; }
 .form-butonlar { display: flex; gap: 10px; margin-top: 16px; }
-
 @media (max-width: 600px) {
     .topbar { flex-direction: column; align-items: flex-start; }
     table { font-size: 12px; }
