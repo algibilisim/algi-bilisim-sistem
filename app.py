@@ -118,30 +118,34 @@ def abone_listesi():
     db = get_db()
 
     ALAN_TANIMLARI = [
-        ("koy", "Köy", "koy_adi", False),
-        ("adi", "Adı", "adi", False),
-        ("soyadi", "Soyadı", "soyadi", False),
-        ("baba_adi", "Baba Adı", "baba_adi", False),
-        ("senet_sahibi_adi", "Senet Sahibi Adı", "senet_sahibi_adi", False),
-        ("senet_sahibi_soyadi", "Senet Sahibi Soyadı", "senet_sahibi_soyadi", False),
-        ("odemeyi_gonderen", "Ödemeyi Gönderen", "odemeyi_gonderen", False),
-        ("sayac_no", "Sayaç No", "sayac_no", False),
         ("aciklama", "Açıklama", "aciklama", False),
+        ("adi", "Adı", "adi", False),
         ("alinan_tutar", "Alınan", "alinan_tutar", True),
+        ("baba_adi", "Baba Adı", "baba_adi", False),
         ("fatura_no", "Fatura No", "fatura_no", False),
+        ("koy", "Köy", "koy_adi", False),
         ("malzeme_alinan", "Malzeme Alınan", "malzeme_alinan", True),
+        ("malzeme_kalan", "Malzeme Kalan", "(malzeme_tutari - malzeme_alinan)", True),
         ("malzeme_tutari", "Malzeme Tutarı", "malzeme_tutari", True),
         ("montaj_tarihi", "Montaj Tarihi", "montaj_tarihi", False),
+        ("muhtara_kalan", "Muhtara Kalan", "(muhtara_odenecek - muhtara_odenen)", True),
         ("muhtara_odenecek", "Muhtara Ödenecek", "muhtara_odenecek", True),
         ("muhtara_odenen", "Muhtara Ödenen", "muhtara_odenen", True),
         ("odeme_gun_sozu", "Ödeme Gün Sözü", "odeme_gun_sozu", False),
         ("odeme_sekli", "Ödeme Şekli", "odeme_sekli", False),
         ("odeme_tarihi", "Ödeme Tarihi", "odeme_tarihi", False),
+        ("odemeyi_gonderen", "Ödemeyi Gönderen", "odemeyi_gonderen", False),
         ("s_no", "S.No", "s_no", True),
+        ("sayac_kalan", "Sayaç Kalan", "(sayac_tutari - alinan_tutar)", True),
+        ("sayac_no", "Sayaç No", "sayac_no", False),
         ("sayac_tutari", "Sayaç Tutarı", "sayac_tutari", True),
         ("senet_no", "Senet No", "senet_no", False),
+        ("senet_sahibi_adi", "Senet Sahibi Adı", "senet_sahibi_adi", False),
+        ("senet_sahibi_soyadi", "Senet Sahibi Soyadı", "senet_sahibi_soyadi", False),
         ("senet_tutari", "Senet Tutarı", "senet_tutari", True),
+        ("soyadi", "Soyadı", "soyadi", False),
         ("telefon", "Telefon", "telefon", False),
+        ("toplam_kalan", "Toplam Kalan", "(sayac_tutari + malzeme_tutari - alinan_tutar - malzeme_alinan)", True),
     ]
     ALAN_HARITASI = {k: (kolon, sayisal) for k, _, kolon, sayisal in ALAN_TANIMLARI}
     alan_listesi = [(k, etiket) for k, etiket, _, _ in ALAN_TANIMLARI]
@@ -258,13 +262,21 @@ def abone_sil(abone_id):
 def _abone_kaydet(abone_id):
     f = request.form
     sayac_tutari = _sayilastir(f.get("sayac_tutari"))
-    alinan_tutar = _sayilastir(f.get("alinan_tutar"))
     malzeme_tutari = _sayilastir(f.get("malzeme_tutari"))
-    malzeme_alinan = _sayilastir(f.get("malzeme_alinan"))
-    senet_tutari_hesap = sayac_tutari + malzeme_tutari - alinan_tutar - malzeme_alinan
 
     db = get_db()
     cur = db.cursor()
+
+    if abone_id is None:
+        alinan_tutar = 0.0
+        malzeme_alinan = 0.0
+    else:
+        cur.execute("SELECT alinan_tutar, malzeme_alinan FROM abone WHERE id = %s", (abone_id,))
+        mevcut = cur.fetchone()
+        alinan_tutar = (mevcut["alinan_tutar"] or 0) if mevcut else 0.0
+        malzeme_alinan = (mevcut["malzeme_alinan"] or 0) if mevcut else 0.0
+
+    senet_tutari_hesap = sayac_tutari + malzeme_tutari - alinan_tutar - malzeme_alinan
 
     if senet_tutari_hesap == 0:
         senet_no_final = ""
@@ -319,6 +331,78 @@ def _abone_kaydet(abone_id):
         )
     db.commit()
     cur.close()
+
+
+# ---------- Tahsilat (sonradan / farklı tarihli tahsilatlar) ----------
+
+@app.route("/abone/<int:abone_id>/tahsilat", methods=["GET", "POST"])
+@login_required
+def abone_tahsilat(abone_id):
+    db = get_db()
+    cur = db.cursor()
+
+    if request.method == "POST":
+        tur = request.form.get("tur")
+        tutar = _sayilastir(request.form.get("tutar"))
+        tarih = request.form.get("tarih", "").strip()
+        odeme_sekli = request.form.get("odeme_sekli", "").strip()
+        odemeyi_yapan = request.form.get("odemeyi_yapan", "").strip()
+        aciklama = request.form.get("aciklama", "").strip()
+
+        if tur in ("sayac", "malzeme") and tutar:
+            cur.execute(
+                """INSERT INTO tahsilat (abone_id, tarih, tur, tutar, odeme_sekli, odemeyi_yapan, aciklama)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                (abone_id, tarih, tur, tutar, odeme_sekli, odemeyi_yapan, aciklama),
+            )
+            kolon = "alinan_tutar" if tur == "sayac" else "malzeme_alinan"
+            cur.execute(
+                f"UPDATE abone SET {kolon} = {kolon} + %s WHERE id = %s",
+                (tutar, abone_id),
+            )
+            db.commit()
+
+        cur.close()
+        return redirect(url_for("abone_tahsilat", abone_id=abone_id))
+
+    cur.execute("SELECT * FROM abone WHERE id = %s", (abone_id,))
+    abone = cur.fetchone()
+    if abone is None:
+        cur.close()
+        flash("Kayıt bulunamadı.")
+        return redirect(url_for("abone_listesi"))
+
+    cur.execute(
+        "SELECT * FROM tahsilat WHERE abone_id = %s ORDER BY tarih DESC, id DESC",
+        (abone_id,),
+    )
+    tahsilatlar = cur.fetchall()
+    cur.close()
+
+    return render_template("abone_tahsilat.html", abone=abone, tahsilatlar=tahsilatlar)
+
+
+@app.route("/tahsilat/<int:tahsilat_id>/sil", methods=["POST"])
+@login_required
+def tahsilat_sil(tahsilat_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT abone_id, tur, tutar FROM tahsilat WHERE id = %s", (tahsilat_id,))
+    kayit = cur.fetchone()
+    abone_id = None
+    if kayit:
+        abone_id = kayit["abone_id"]
+        kolon = "alinan_tutar" if kayit["tur"] == "sayac" else "malzeme_alinan"
+        cur.execute(
+            f"UPDATE abone SET {kolon} = {kolon} - %s WHERE id = %s",
+            (kayit["tutar"], abone_id),
+        )
+        cur.execute("DELETE FROM tahsilat WHERE id = %s", (tahsilat_id,))
+        db.commit()
+    cur.close()
+    if abone_id:
+        return redirect(url_for("abone_tahsilat", abone_id=abone_id))
+    return redirect(url_for("abone_listesi"))
 
 
 # ---------- Tahsilat (köy bazlı özet) ----------
