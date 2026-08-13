@@ -76,14 +76,14 @@
             <td>{{ k['koy_adi'] }}</td>
             <td>{{ k['adi'] }} {{ k['soyadi'] }}</td>
             <td>{{ k['sayac_no'] }}</td>
-            <td>{{ "%.2f"|format(k['senet_tutari'] or 0) }}</td>
-            <td>{{ "%.2f"|format(k['sayac_tutari'] or 0) }}</td>
-            <td>{{ "%.2f"|format(k['alinan_tutar'] or 0) }}</td>
-            <td class="{{ 'kirmizi' if sayac_kalan > 0 else 'yesil' }}">{{ "%.2f"|format(sayac_kalan) }}</td>
-            <td>{{ "%.2f"|format(k['malzeme_tutari'] or 0) }}</td>
-            <td>{{ "%.2f"|format(k['malzeme_alinan'] or 0) }}</td>
-            <td class="{{ 'kirmizi' if malzeme_kalan > 0 else 'yesil' }}">{{ "%.2f"|format(malzeme_kalan) }}</td>
-            <td class="{{ 'kirmizi' if toplam_kalan > 0 else 'yesil' }}"><strong>{{ "%.2f"|format(toplam_kalan) }}</strong></td>
+            <td>{{ k['senet_tutari']|tl }}</td>
+            <td>{{ k['sayac_tutari']|tl }}</td>
+            <td>{{ k['alinan_tutar']|tl }}</td>
+            <td class="{{ 'kirmizi' if sayac_kalan > 0 else 'yesil' }}">{{ sayac_kalan|tl }}</td>
+            <td>{{ k['malzeme_tutari']|tl }}</td>
+            <td>{{ k['malzeme_alinan']|tl }}</td>
+            <td class="{{ 'kirmizi' if malzeme_kalan > 0 else 'yesil' }}">{{ malzeme_kalan|tl }}</td>
+            <td class="{{ 'kirmizi' if toplam_kalan > 0 else 'yesil' }}"><strong>{{ toplam_kalan|tl }}</strong></td>
             <td>{{ k['senet_no'] }}</td>
             <td>{{ k['senet_sahibi_adi'] }}</td>
             <td>{{ k['senet_sahibi_soyadi'] }}</td>
@@ -95,9 +95,9 @@
             <td>{{ k['odeme_gun_sozu'] }}</td>
             <td>{{ k['odemeyi_gonderen'] }}</td>
             <td>{{ k['aciklama'] }}</td>
-            <td>{{ "%.2f"|format(k['muhtara_odenecek'] or 0) }}</td>
-            <td>{{ "%.2f"|format(k['muhtara_odenen'] or 0) }}</td>
-            <td class="{{ 'kirmizi' if muhtara_kalan > 0 else 'yesil' }}">{{ "%.2f"|format(muhtara_kalan) }}</td>
+            <td>{{ k['muhtara_odenecek']|tl }}</td>
+            <td>{{ k['muhtara_odenen']|tl }}</td>
+            <td class="{{ 'kirmizi' if muhtara_kalan > 0 else 'yesil' }}">{{ muhtara_kalan|tl }}</td>
             <td>{{ k['fatura_no'] }}</td>
             <td class="islem-hucre sabit-sutun">
                 <a href="{{ url_for('abone_duzenle', abone_id=k['id']) }}">Düzenle</a>
