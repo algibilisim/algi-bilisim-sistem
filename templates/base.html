@@ -8,11 +8,12 @@
 </head>
 <body>
 {% if session.get('user_id') %}
-<header class="topbar">
+<header class="topbar no-print">
     <div class="brand">ALGI BİLİŞİM</div>
     <nav>
         <a href="{{ url_for('abone_listesi') }}">Abone Listesi</a>
         <a href="{{ url_for('tahsilat') }}">Köy Satış / Tahsilat Raporu</a>
+        <a href="{{ url_for('tahsilat_ciktisi') }}">Tahsilat Çıktısı</a>
     </nav>
     <div class="user-area">
         <span>{{ session.get('kullanici_adi') }}</span>
@@ -23,7 +24,7 @@
 <main class="container">
     {% with messages = get_flashed_messages() %}
         {% if messages %}
-            <div class="flash">
+            <div class="flash no-print">
                 {% for m in messages %}<p>{{ m }}</p>{% endfor %}
             </div>
         {% endif %}
