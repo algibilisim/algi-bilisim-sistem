@@ -8,112 +8,113 @@
     <div class="form-grid">
         <div>
             <label>S.No (otomatik)</label>
-            <input type="number" name="s_no" value="{{ kayit['s_no'] if kayit else sonraki_s_no }}" readonly>
+            <input type="number" name="s_no" value="{{ kayit['s_no'] if kayit else sonraki_s_no }}" readonly tabindex="-1">
         </div>
         <div>
             <label>Senet No (otomatik)</label>
-            <input type="text" value="{{ kayit['senet_no'] if kayit else '' }}" readonly>
+            <input type="text" value="{{ kayit['senet_no'] if kayit else '' }}" readonly tabindex="-1">
         </div>
         <div>
             <label>Senet Tutarı (otomatik hesaplanır)</label>
-            <input type="text" value="{{ kayit['senet_tutari'] if kayit else '0' }}" readonly>
+            <input type="text" value="{{ kayit['senet_tutari'] if kayit else '0' }}" readonly tabindex="-1">
         </div>
+
         <div>
             <label>Köy Adı *</label>
-            <input type="text" name="koy_adi" value="{{ kayit['koy_adi'] if kayit else '' }}" required>
+            <input type="text" name="koy_adi" value="{{ kayit['koy_adi'] if kayit else '' }}" required tabindex="1" autofocus>
         </div>
         <div>
             <label>Adı *</label>
-            <input type="text" name="adi" value="{{ kayit['adi'] if kayit else '' }}" required>
+            <input type="text" name="adi" value="{{ kayit['adi'] if kayit else '' }}" required tabindex="2">
         </div>
         <div>
             <label>Soyadı *</label>
-            <input type="text" name="soyadi" value="{{ kayit['soyadi'] if kayit else '' }}" required>
+            <input type="text" name="soyadi" value="{{ kayit['soyadi'] if kayit else '' }}" required tabindex="3">
         </div>
         <div>
             <label>Sayaç No</label>
-            <input type="text" name="sayac_no" value="{{ kayit['sayac_no'] if kayit else '' }}">
+            <input type="text" name="sayac_no" value="{{ kayit['sayac_no'] if kayit else '' }}" tabindex="4">
         </div>
         <div>
             <label>Baba Adı</label>
-            <input type="text" name="baba_adi" value="{{ kayit['baba_adi'] if kayit else '' }}">
+            <input type="text" name="baba_adi" value="{{ kayit['baba_adi'] if kayit else '' }}" tabindex="17">
         </div>
         <div>
             <label>Telefon</label>
-            <input type="text" name="telefon" value="{{ kayit['telefon'] if kayit else '' }}">
+            <input type="text" name="telefon" value="{{ kayit['telefon'] if kayit else '' }}" tabindex="18">
         </div>
 
         <div class="ayirici">Senet / Sayaç Bilgileri</div>
 
         <div>
             <label>Sayaç Tutarı</label>
-            <input type="text" name="sayac_tutari" value="{{ kayit['sayac_tutari'] if kayit else '0' }}">
+            <input type="text" name="sayac_tutari" value="{{ kayit['sayac_tutari'] if kayit else '0' }}" tabindex="5">
         </div>
         <div>
             <label>Alınan Tutar</label>
-            <input type="text" name="alinan_tutar" value="{{ kayit['alinan_tutar'] if kayit else '0' }}">
+            <input type="text" name="alinan_tutar" value="{{ kayit['alinan_tutar'] if kayit else '0' }}" tabindex="6">
         </div>
         <div>
             <label>Senet Sahibi Adı</label>
-            <input type="text" name="senet_sahibi_adi" value="{{ kayit['senet_sahibi_adi'] if kayit else '' }}">
+            <input type="text" name="senet_sahibi_adi" value="{{ kayit['senet_sahibi_adi'] if kayit else '' }}" tabindex="19">
         </div>
         <div>
             <label>Senet Sahibi Soyadı</label>
-            <input type="text" name="senet_sahibi_soyadi" value="{{ kayit['senet_sahibi_soyadi'] if kayit else '' }}">
+            <input type="text" name="senet_sahibi_soyadi" value="{{ kayit['senet_sahibi_soyadi'] if kayit else '' }}" tabindex="20">
         </div>
 
         <div class="ayirici">Malzeme Bilgileri</div>
 
         <div>
             <label>Malzeme Tutarı</label>
-            <input type="text" name="malzeme_tutari" value="{{ kayit['malzeme_tutari'] if kayit else '0' }}">
+            <input type="text" name="malzeme_tutari" value="{{ kayit['malzeme_tutari'] if kayit else '0' }}" tabindex="7">
         </div>
         <div>
             <label>Malzeme Alınan</label>
-            <input type="text" name="malzeme_alinan" value="{{ kayit['malzeme_alinan'] if kayit else '0' }}">
+            <input type="text" name="malzeme_alinan" value="{{ kayit['malzeme_alinan'] if kayit else '0' }}" tabindex="8">
         </div>
 
         <div class="ayirici">Tarih / Ödeme</div>
 
         <div>
             <label>Montaj Tarihi</label>
-            <input type="date" name="montaj_tarihi" value="{{ kayit['montaj_tarihi'] if kayit else '' }}">
+            <input type="date" name="montaj_tarihi" value="{{ kayit['montaj_tarihi'] if kayit else '' }}" tabindex="9">
         </div>
         <div>
             <label>Ödeme Tarihi</label>
-            <input type="date" name="odeme_tarihi" value="{{ kayit['odeme_tarihi'] if kayit else '' }}">
+            <input type="date" name="odeme_tarihi" value="{{ kayit['odeme_tarihi'] if kayit else '' }}" tabindex="10">
         </div>
         <div>
             <label>Ödeme Şekli</label>
-            <input type="text" name="odeme_sekli" value="{{ kayit['odeme_sekli'] if kayit else '' }}">
-        </div>
-        <div>
-            <label>Ödeme Gün Sözü</label>
-            <input type="text" name="odeme_gun_sozu" value="{{ kayit['odeme_gun_sozu'] if kayit else '' }}">
+            <input type="text" name="odeme_sekli" value="{{ kayit['odeme_sekli'] if kayit else '' }}" tabindex="11">
         </div>
         <div>
             <label>Ödemeyi Gönderen</label>
-            <input type="text" name="odemeyi_gonderen" value="{{ kayit['odemeyi_gonderen'] if kayit else '' }}">
+            <input type="text" name="odemeyi_gonderen" value="{{ kayit['odemeyi_gonderen'] if kayit else '' }}" tabindex="12">
+        </div>
+        <div>
+            <label>Ödeme Gün Sözü</label>
+            <input type="date" name="odeme_gun_sozu" value="{{ kayit['odeme_gun_sozu'] if kayit else '' }}" tabindex="13">
         </div>
         <div>
             <label>Fatura No</label>
-            <input type="text" name="fatura_no" value="{{ kayit['fatura_no'] if kayit else '' }}">
+            <input type="text" name="fatura_no" value="{{ kayit['fatura_no'] if kayit else '' }}" tabindex="21">
         </div>
 
         <div class="ayirici">Muhtar</div>
 
         <div>
             <label>Muhtara Ödenecek</label>
-            <input type="text" name="muhtara_odenecek" value="{{ kayit['muhtara_odenecek'] if kayit else '0' }}">
+            <input type="text" name="muhtara_odenecek" value="{{ kayit['muhtara_odenecek'] if kayit else '0' }}" tabindex="14">
         </div>
         <div>
             <label>Muhtara Ödenen</label>
-            <input type="text" name="muhtara_odenen" value="{{ kayit['muhtara_odenen'] if kayit else '0' }}">
+            <input type="text" name="muhtara_odenen" value="{{ kayit['muhtara_odenen'] if kayit else '0' }}" tabindex="15">
         </div>
 
         <div class="tam-genislik">
             <label>Açıklama</label>
-            <textarea name="aciklama" rows="3">{{ kayit['aciklama'] if kayit else '' }}</textarea>
+            <textarea name="aciklama" rows="3" tabindex="16">{{ kayit['aciklama'] if kayit else '' }}</textarea>
         </div>
     </div>
 
