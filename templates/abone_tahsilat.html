@@ -67,8 +67,10 @@
     </thead>
     <tbody>
         {% for t in tahsilatlar %}
+        {% set tt = t['tarih'] %}
+        {% set tt_g = (tt[8:10] + '.' + tt[5:7] + '.' + tt[0:4]) if tt and tt|length >= 10 else (tt or '') %}
         <tr>
-            <td>{{ t['tarih'] }}</td>
+            <td>{{ tt_g }}</td>
             <td>{{ 'Sayaç' if t['tur'] == 'sayac' else 'Malzeme' }}</td>
             <td>{{ t['tutar']|tl }}</td>
             <td>{{ t['odeme_sekli'] }}</td>
