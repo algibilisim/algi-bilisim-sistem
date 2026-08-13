@@ -12,7 +12,7 @@
     <div class="brand">ALGI BİLİŞİM</div>
     <nav>
         <a href="{{ url_for('abone_listesi') }}">Abone Listesi</a>
-        <a href="{{ url_for('tahsilat') }}">Tahsilat</a>
+        <a href="{{ url_for('tahsilat') }}">Köy Satış / Tahsilat Raporu</a>
     </nav>
     <div class="user-area">
         <span>{{ session.get('kullanici_adi') }}</span>
@@ -20,7 +20,6 @@
     </div>
 </header>
 {% endif %}
-
 <main class="container">
     {% with messages = get_flashed_messages() %}
         {% if messages %}
