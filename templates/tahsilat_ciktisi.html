@@ -34,7 +34,7 @@
     <thead>
         <tr>
             {% for anahtar, etiket in kolon_listesi %}
-            {% if anahtar in secili_kolonlar %}<th>{{ etiket }}</th>{% endif %}
+            {% if anahtar in goster_kolonlari %}<th>{{ etiket }}</th>{% endif %}
             {% endfor %}
         </tr>
     </thead>
@@ -42,7 +42,7 @@
         {% for s in satirlar %}
         <tr>
             {% for anahtar, etiket in kolon_listesi %}
-            {% if anahtar in secili_kolonlar %}<td>{{ s[anahtar] }}</td>{% endif %}
+            {% if anahtar in goster_kolonlari %}<td>{{ s[anahtar] }}</td>{% endif %}
             {% endfor %}
         </tr>
         {% else %}
