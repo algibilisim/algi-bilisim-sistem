@@ -151,3 +151,10 @@ th.sabit-sutun { background: #eef3ef; }
     color: #666;
     cursor: not-allowed;
 }
+@media print {
+    .no-print { display: none !important; }
+    body { background: #fff; }
+    .container { padding: 0; max-width: none; }
+    .tablo-kaydirici { overflow: visible; box-shadow: none; }
+    table { font-size: 11px; }
+}
