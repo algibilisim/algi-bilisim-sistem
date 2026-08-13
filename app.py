@@ -379,3 +379,241 @@ def abone_tahsilat(abone_id):
         cur.close()
         flash("Kayıt bulunamadı.")
         return redirect(url_for("abone_listesi"))
+
+    cur.execute("SELECT * FROM tahsilat WHERE abone_id = %s ORDER BY tarih DESC, id DESC", (abone_id,))
+    tahsilatlar = cur.fetchall()
+    cur.close()
+
+    return render_template("abone_tahsilat.html", abone=abone, tahsilatlar=tahsilatlar)
+
+
+@app.route("/tahsilat/<int:tahsilat_id>/sil", methods=["POST"])
+@login_required
+def tahsilat_sil(tahsilat_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT abone_id, tur, tutar FROM tahsilat WHERE id = %s", (tahsilat_id,))
+    kayit = cur.fetchone()
+    abone_id = None
+    if kayit:
+        abone_id = kayit["abone_id"]
+        kolon = "alinan_tutar" if kayit["tur"] == "sayac" else "malzeme_alinan"
+        cur.execute(f"UPDATE abone SET {kolon} = {kolon} - %s WHERE id = %s", (kayit["tutar"], abone_id))
+        cur.execute("DELETE FROM tahsilat WHERE id = %s", (tahsilat_id,))
+        db.commit()
+    cur.close()
+    if abone_id:
+        return redirect(url_for("abone_tahsilat", abone_id=abone_id))
+    return redirect(url_for("abone_listesi"))
+
+
+@app.route("/tahsilat")
+@login_required
+def tahsilat():
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT koy_adi, SUM(sayac_tutari) AS sayac_tutari_toplami, SUM(malzeme_tutari) AS malzeme_tutari_toplami, SUM(sayac_tutari + malzeme_tutari) AS genel_satis_tutari, SUM(alinan_tutar + malzeme_alinan) AS tahsil_edilen_tutar, SUM(sayac_tutari + malzeme_tutari - alinan_tutar - malzeme_alinan) AS kalan_tutar, SUM(muhtara_odenecek) AS muhtara_odenecek, SUM(muhtara_odenen) AS muhtara_odenen, SUM(muhtara_odenecek - muhtara_odenen) AS muhtara_kalan FROM abone GROUP BY koy_adi ORDER BY koy_adi"
+    )
+    satirlar = cur.fetchall()
+    cur.close()
+
+    genel = {
+        "sayac_tutari_toplami": sum(s["sayac_tutari_toplami"] or 0 for s in satirlar),
+        "malzeme_tutari_toplami": sum(s["malzeme_tutari_toplami"] or 0 for s in satirlar),
+        "genel_satis_tutari": sum(s["genel_satis_tutari"] or 0 for s in satirlar),
+        "tahsil_edilen_tutar": sum(s["tahsil_edilen_tutar"] or 0 for s in satirlar),
+        "kalan_tutar": sum(s["kalan_tutar"] or 0 for s in satirlar),
+        "muhtara_odenecek": sum(s["muhtara_odenecek"] or 0 for s in satirlar),
+        "muhtara_odenen": sum(s["muhtara_odenen"] or 0 for s in satirlar),
+        "muhtara_kalan": sum(s["muhtara_kalan"] or 0 for s in satirlar),
+    }
+    genel["firma_asil_alacagi"] = genel["kalan_tutar"] - genel["muhtara_odenecek"]
+
+    return render_template("tahsilat.html", satirlar=satirlar, genel=genel)
+
+
+DISPLAY_KOLONLARI = [
+    ("s_no", "S.No"),
+    ("koy_adi", "Köy"),
+    ("ad_soyad", "Adı Soyadı"),
+    ("sayac_no", "Sayaç No"),
+    ("senet_tutari", "Senet Tutarı"),
+    ("sayac_tutari", "Sayaç Tutarı"),
+    ("alinan_tutar", "Alınan"),
+    ("sayac_kalan", "Sayaç Kalan"),
+    ("malzeme_tutari", "Malzeme Tutarı"),
+    ("malzeme_alinan", "Malzeme Alınan"),
+    ("malzeme_kalan", "Malzeme Kalan"),
+    ("toplam_kalan", "Toplam Kalan"),
+    ("senet_no", "Senet No"),
+    ("senet_sahibi_adi", "Senet Sahibi Adı"),
+    ("senet_sahibi_soyadi", "Senet Sahibi Soyadı"),
+    ("telefon", "Telefon"),
+    ("baba_adi", "Baba Adı"),
+    ("montaj_tarihi", "Montaj Tarihi"),
+    ("odeme_tarihi", "Ödeme Tarihi"),
+    ("odeme_sekli", "Ödeme Şekli"),
+    ("odeme_gun_sozu", "Ödeme Gün Sözü"),
+    ("odemeyi_gonderen", "Ödemeyi Gönderen"),
+    ("aciklama", "Açıklama"),
+    ("muhtara_odenecek", "Muhtara Ödenecek"),
+    ("muhtara_odenen", "Muhtara Ödenen"),
+    ("muhtara_kalan", "Muhtara Kalan"),
+    ("fatura_no", "Fatura No"),
+]
+
+KOLON_BILGI = {
+    "s_no": ("s_no", "sayi"),
+    "koy_adi": ("koy_adi", "metin"),
+    "ad_soyad": ("(adi || ' ' || soyadi)", "metin"),
+    "sayac_no": ("sayac_no", "metin"),
+    "senet_tutari": ("senet_tutari", "sayi"),
+    "sayac_tutari": ("sayac_tutari", "sayi"),
+    "alinan_tutar": ("alinan_tutar", "sayi"),
+    "sayac_kalan": ("(sayac_tutari - alinan_tutar)", "sayi"),
+    "malzeme_tutari": ("malzeme_tutari", "sayi"),
+    "malzeme_alinan": ("malzeme_alinan", "sayi"),
+    "malzeme_kalan": ("(malzeme_tutari - malzeme_alinan)", "sayi"),
+    "toplam_kalan": ("(sayac_tutari + malzeme_tutari - alinan_tutar - malzeme_alinan)", "sayi"),
+    "senet_no": ("senet_no", "metin"),
+    "senet_sahibi_adi": ("senet_sahibi_adi", "metin"),
+    "senet_sahibi_soyadi": ("senet_sahibi_soyadi", "metin"),
+    "telefon": ("telefon", "metin"),
+    "baba_adi": ("baba_adi", "metin"),
+    "montaj_tarihi": ("montaj_tarihi", "tarih"),
+    "odeme_tarihi": ("odeme_tarihi", "tarih"),
+    "odeme_sekli": ("odeme_sekli", "metin"),
+    "odeme_gun_sozu": ("odeme_gun_sozu", "tarih"),
+    "odemeyi_gonderen": ("odemeyi_gonderen", "metin"),
+    "aciklama": ("aciklama", "metin"),
+    "muhtara_odenecek": ("muhtara_odenecek", "sayi"),
+    "muhtara_odenen": ("muhtara_odenen", "sayi"),
+    "muhtara_kalan": ("(muhtara_odenecek - muhtara_odenen)", "sayi"),
+    "fatura_no": ("fatura_no", "metin"),
+}
+
+
+def _gg_aa_yyyy(t):
+    if t and len(t) >= 10:
+        return t[8:10] + "." + t[5:7] + "." + t[0:4]
+    return t or ""
+
+
+def _kolon_secenekleri(db, anahtar):
+    ifade, tur = KOLON_BILGI[anahtar]
+    cur = db.cursor()
+    if tur == "sayi":
+        cur.execute(
+            f"SELECT DISTINCT deger FROM (SELECT ROUND(CAST({ifade} AS NUMERIC), 2) AS deger FROM abone) t WHERE deger IS NOT NULL ORDER BY deger"
+        )
+    else:
+        cur.execute(
+            f"SELECT DISTINCT {ifade} AS deger FROM abone WHERE {ifade} IS NOT NULL AND {ifade} != '' ORDER BY deger"
+        )
+    satirlar = cur.fetchall()
+    cur.close()
+    secenekler = []
+    for s in satirlar:
+        ham = s["deger"]
+        if ham is None:
+            continue
+        if tur == "sayi":
+            metin = tl_format(ham)
+        elif tur == "tarih":
+            metin = _gg_aa_yyyy(str(ham))
+        else:
+            metin = str(ham)
+        secenekler.append((str(ham), metin))
+    return secenekler
+
+
+def _kolon_kosul(anahtar, deger_str):
+    ifade, tur = KOLON_BILGI[anahtar]
+    if tur == "sayi":
+        try:
+            sayi = round(float(deger_str.replace(",", ".")), 2)
+        except ValueError:
+            return None, None
+        return f"ROUND(CAST({ifade} AS NUMERIC), 2) = %s", sayi
+    return f"{ifade} = %s", deger_str
+
+
+@app.route("/tahsilat-ciktisi")
+@login_required
+def tahsilat_ciktisi():
+    kolonlar_secili = request.args.getlist("kolon")
+    goster_kolonlari = kolonlar_secili if kolonlar_secili else [k for k, _ in DISPLAY_KOLONLARI]
+
+    db = get_db()
+
+    deger_secili = {}
+    sql = "SELECT * FROM abone WHERE 1=1"
+    params = []
+    for anahtar in goster_kolonlari:
+        deger = request.args.get(f"deger_{anahtar}", "").strip()
+        deger_secili[anahtar] = deger
+        if deger:
+            kosul, param = _kolon_kosul(anahtar, deger)
+            if kosul:
+                sql += f" AND {kosul}"
+                params.append(param)
+    sql += " ORDER BY s_no"
+
+    cur = db.cursor()
+    cur.execute(sql, params)
+    kayitlar_ham = cur.fetchall()
+    cur.close()
+
+    satirlar = []
+    for k in kayitlar_ham:
+        sayac_kalan = (k["sayac_tutari"] or 0) - (k["alinan_tutar"] or 0)
+        malzeme_kalan = (k["malzeme_tutari"] or 0) - (k["malzeme_alinan"] or 0)
+        toplam_kalan = sayac_kalan + malzeme_kalan
+        muhtara_kalan = (k["muhtara_odenecek"] or 0) - (k["muhtara_odenen"] or 0)
+        satirlar.append({
+            "s_no": k["s_no"],
+            "koy_adi": k["koy_adi"],
+            "ad_soyad": f"{k['adi']} {k['soyadi']}",
+            "sayac_no": k["sayac_no"],
+            "senet_tutari": tl_format(k["senet_tutari"]),
+            "sayac_tutari": tl_format(k["sayac_tutari"]),
+            "alinan_tutar": tl_format(k["alinan_tutar"]),
+            "sayac_kalan": tl_format(sayac_kalan),
+            "malzeme_tutari": tl_format(k["malzeme_tutari"]),
+            "malzeme_alinan": tl_format(k["malzeme_alinan"]),
+            "malzeme_kalan": tl_format(malzeme_kalan),
+            "toplam_kalan": tl_format(toplam_kalan),
+            "senet_no": k["senet_no"],
+            "senet_sahibi_adi": k["senet_sahibi_adi"],
+            "senet_sahibi_soyadi": k["senet_sahibi_soyadi"],
+            "telefon": k["telefon"],
+            "baba_adi": k["baba_adi"],
+            "montaj_tarihi": _gg_aa_yyyy(k["montaj_tarihi"]),
+            "odeme_tarihi": _gg_aa_yyyy(k["odeme_tarihi"]),
+            "odeme_sekli": k["odeme_sekli"],
+            "odeme_gun_sozu": _gg_aa_yyyy(k["odeme_gun_sozu"]),
+            "odemeyi_gonderen": k["odemeyi_gonderen"],
+            "aciklama": k["aciklama"],
+            "muhtara_odenecek": tl_format(k["muhtara_odenecek"]),
+            "muhtara_odenen": tl_format(k["muhtara_odenen"]),
+            "muhtara_kalan": tl_format(muhtara_kalan),
+            "fatura_no": k["fatura_no"],
+        })
+
+    deger_secenekleri = {}
+    for anahtar in goster_kolonlari:
+        deger_secenekleri[anahtar] = _kolon_secenekleri(db, anahtar)
+
+    return render_template(
+        "tahsilat_ciktisi.html",
+        satirlar=satirlar,
+        kolon_listesi=DISPLAY_KOLONLARI, goster_kolonlari=goster_kolonlari,
+        secili_kolonlar=kolonlar_secili,
+        deger_secili=deger_secili, deger_secenekleri=deger_secenekleri,
+    )
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
