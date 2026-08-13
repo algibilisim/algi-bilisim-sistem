@@ -30,13 +30,22 @@
             <tr class="no-print">
                 {% for anahtar, etiket in kolon_listesi %}
                 {% if anahtar in goster_kolonlari %}
-                <th style="padding-top:2px; padding-bottom:6px;">
-                    <select name="deger_{{ anahtar }}" onchange="this.form.submit()" style="width:100%; font-size:11px; padding:3px; border-radius:4px;">
-                        <option value="">Tümü</option>
+                <th style="padding-top:2px; padding-bottom:6px; position:relative;">
+                    <button type="button" class="btn filtre-ac-buton" data-hedef="filtre-kutu-{{ anahtar }}"
+                            style="width:100%; font-size:11px; padding:4px 6px; text-align:left;">
+                        {% if deger_secili[anahtar] %}{{ deger_secili[anahtar]|length }} seçili ▾{% else %}Tümü ▾{% endif %}
+                    </button>
+                    <div id="filtre-kutu-{{ anahtar }}" class="filtre-kutu"
+                         style="display:none; position:absolute; z-index:20; background:#fff; border:1px solid #ccc; border-radius:6px; box-shadow:0 4px 10px rgba(0,0,0,0.15); padding:8px; max-height:220px; overflow-y:auto; width:200px; text-align:left; white-space:normal; font-weight:normal;">
                         {% for ham, metin in deger_secenekleri[anahtar] %}
-                        <option value="{{ ham }}" {% if deger_secili[anahtar]==ham %}selected{% endif %}>{{ metin }}</option>
+                        <label style="display:flex; align-items:center; gap:6px; padding:3px 0; font-size:12px;">
+                            <input type="checkbox" name="deger_{{ anahtar }}" value="{{ ham }}"
+                                   {% if ham in deger_secili[anahtar] %}checked{% endif %}>
+                            {{ metin }}
+                        </label>
                         {% endfor %}
-                    </select>
+                        <button type="submit" class="btn btn-yesil" style="width:100%; margin-top:8px; font-size:12px;">Filtrele</button>
+                    </div>
                 </th>
                 {% endif %}
                 {% endfor %}
@@ -56,4 +65,23 @@
     </table>
     </div>
 </form>
+
+<script>
+document.addEventListener('click', function(e) {
+    var butonlar = document.querySelectorAll('.filtre-ac-buton');
+    var tiklananButon = e.target.closest('.filtre-ac-buton');
+    var tiklananKutu = e.target.closest('.filtre-kutu');
+
+    if (tiklananButon) {
+        var hedefId = tiklananButon.getAttribute('data-hedef');
+        var hedefKutu = document.getElementById(hedefId);
+        var acikMi = hedefKutu.style.display === 'block';
+        document.querySelectorAll('.filtre-kutu').forEach(function(k) { k.style.display = 'none'; });
+        hedefKutu.style.display = acikMi ? 'none' : 'block';
+        e.stopPropagation();
+    } else if (!tiklananKutu) {
+        document.querySelectorAll('.filtre-kutu').forEach(function(k) { k.style.display = 'none'; });
+    }
+});
+</script>
 {% endblock %}
