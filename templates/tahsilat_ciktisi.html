@@ -7,48 +7,53 @@
     <button type="button" class="btn btn-yesil" onclick="window.print()">Yazdır</button>
 </div>
 
-<form method="get" class="filtre-form no-print" style="flex-direction: column; align-items: stretch;">
-    <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <input type="text" name="q" value="{{ q }}" placeholder="Aranacak kelime (işaretli sütunlarda arar)..." style="flex:2; min-width:200px;">
-        <select name="koy" style="flex:1; min-width:150px;">
-            <option value="">Tüm Köyler</option>
-            {% for k in koyler %}
-            <option value="{{ k['koy_adi'] }}" {% if k['koy_adi']==secili_koy %}selected{% endif %}>{{ k['koy_adi'] }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    <div style="display:grid; grid-template-columns: repeat(4, minmax(170px, 1fr)); gap:6px 20px; margin-top:10px;">
+<form method="get">
+    <div class="no-print" style="display:grid; grid-template-columns: repeat(4, minmax(170px, 1fr)); gap:6px 20px; margin-bottom:12px;">
         {% for anahtar, etiket in kolon_listesi %}
         <label style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
             <input type="checkbox" name="kolon" value="{{ anahtar }}" {% if anahtar in secili_kolonlar %}checked{% endif %}> {{ etiket }}
         </label>
         {% endfor %}
     </div>
-    <div style="margin-top:12px;">
+    <div class="no-print" style="margin-bottom:16px;">
         <button type="submit" class="btn">Uygula</button>
     </div>
-</form>
 
-<div class="tablo-kaydirici">
-<table>
-    <thead>
-        <tr>
-            {% for anahtar, etiket in kolon_listesi %}
-            {% if anahtar in goster_kolonlari %}<th>{{ etiket }}</th>{% endif %}
+    <div class="tablo-kaydirici">
+    <table>
+        <thead>
+            <tr>
+                {% for anahtar, etiket in kolon_listesi %}
+                {% if anahtar in goster_kolonlari %}<th>{{ etiket }}</th>{% endif %}
+                {% endfor %}
+            </tr>
+            <tr class="no-print">
+                {% for anahtar, etiket in kolon_listesi %}
+                {% if anahtar in goster_kolonlari %}
+                <th style="padding-top:2px; padding-bottom:6px;">
+                    <select name="deger_{{ anahtar }}" onchange="this.form.submit()" style="width:100%; font-size:11px; padding:3px; border-radius:4px;">
+                        <option value="">Tümü</option>
+                        {% for ham, metin in deger_secenekleri[anahtar] %}
+                        <option value="{{ ham }}" {% if deger_secili[anahtar]==ham %}selected{% endif %}>{{ metin }}</option>
+                        {% endfor %}
+                    </select>
+                </th>
+                {% endif %}
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in satirlar %}
+            <tr>
+                {% for anahtar, etiket in kolon_listesi %}
+                {% if anahtar in goster_kolonlari %}<td>{{ s[anahtar] }}</td>{% endif %}
+                {% endfor %}
+            </tr>
+            {% else %}
+            <tr><td>Kayıt bulunamadı.</td></tr>
             {% endfor %}
-        </tr>
-    </thead>
-    <tbody>
-        {% for s in satirlar %}
-        <tr>
-            {% for anahtar, etiket in kolon_listesi %}
-            {% if anahtar in goster_kolonlari %}<td>{{ s[anahtar] }}</td>{% endif %}
-            {% endfor %}
-        </tr>
-        {% else %}
-        <tr><td>Kayıt bulunamadı.</td></tr>
-        {% endfor %}
-    </tbody>
-</table>
-</div>
+        </tbody>
+    </table>
+    </div>
+</form>
 {% endblock %}
