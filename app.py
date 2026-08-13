@@ -375,6 +375,86 @@ def abone_tahsilat(abone_id):
 
         if tur in ("sayac", "malzeme") and tutar:
             cur.execute(
-                """INSERT INTO tahsilat (abone_id, tarih, tur, tutar, odeme_sekli, odemeyi_yapan, aciklama)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                (abone_id, tarih, tur,
+                "INSERT INTO tahsilat (abone_id, tarih, tur, tutar, odeme_sekli, odemeyi_yapan, aciklama) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (abone_id, tarih, tur, tutar, odeme_sekli, odemeyi_yapan, aciklama),
+            )
+            kolon = "alinan_tutar" if tur == "sayac" else "malzeme_alinan"
+            cur.execute(
+                f"UPDATE abone SET {kolon} = {kolon} + %s WHERE id = %s",
+                (tutar, abone_id),
+            )
+            db.commit()
+
+        cur.close()
+        return redirect(url_for("abone_tahsilat", abone_id=abone_id))
+
+    cur.execute("SELECT * FROM abone WHERE id = %s", (abone_id,))
+    abone = cur.fetchone()
+    if abone is None:
+        cur.close()
+        flash("Kayıt bulunamadı.")
+        return redirect(url_for("abone_listesi"))
+
+    cur.execute(
+        "SELECT * FROM tahsilat WHERE abone_id = %s ORDER BY tarih DESC, id DESC",
+        (abone_id,),
+    )
+    tahsilatlar = cur.fetchall()
+    cur.close()
+
+    return render_template("abone_tahsilat.html", abone=abone, tahsilatlar=tahsilatlar)
+
+
+@app.route("/tahsilat/<int:tahsilat_id>/sil", methods=["POST"])
+@login_required
+def tahsilat_sil(tahsilat_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT abone_id, tur, tutar FROM tahsilat WHERE id = %s", (tahsilat_id,))
+    kayit = cur.fetchone()
+    abone_id = None
+    if kayit:
+        abone_id = kayit["abone_id"]
+        kolon = "alinan_tutar" if kayit["tur"] == "sayac" else "malzeme_alinan"
+        cur.execute(
+            f"UPDATE abone SET {kolon} = {kolon} - %s WHERE id = %s",
+            (kayit["tutar"], abone_id),
+        )
+        cur.execute("DELETE FROM tahsilat WHERE id = %s", (tahsilat_id,))
+        db.commit()
+    cur.close()
+    if abone_id:
+        return redirect(url_for("abone_tahsilat", abone_id=abone_id))
+    return redirect(url_for("abone_listesi"))
+
+
+# ---------- Tahsilat (köy bazlı özet) ----------
+
+@app.route("/tahsilat")
+@login_required
+def tahsilat():
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT koy_adi, SUM(sayac_tutari) AS sayac_tutari_toplami, SUM(malzeme_tutari) AS malzeme_tutari_toplami, SUM(sayac_tutari + malzeme_tutari) AS genel_satis_tutari, SUM(alinan_tutar + malzeme_alinan) AS tahsil_edilen_tutar, SUM(sayac_tutari + malzeme_tutari - alinan_tutar - malzeme_alinan) AS kalan_tutar, SUM(muhtara_odenecek) AS muhtara_odenecek, SUM(muhtara_odenen) AS muhtara_odenen, SUM(muhtara_odenecek - muhtara_odenen) AS muhtara_kalan FROM abone GROUP BY koy_adi ORDER BY koy_adi"
+    )
+    satirlar = cur.fetchall()
+    cur.close()
+
+    genel = {
+        "sayac_tutari_toplami": sum(s["sayac_tutari_toplami"] or 0 for s in satirlar),
+        "malzeme_tutari_toplami": sum(s["malzeme_tutari_toplami"] or 0 for s in satirlar),
+        "genel_satis_tutari": sum(s["genel_satis_tutari"] or 0 for s in satirlar),
+        "tahsil_edilen_tutar": sum(s["tahsil_edilen_tutar"] or 0 for s in satirlar),
+        "kalan_tutar": sum(s["kalan_tutar"] or 0 for s in satirlar),
+        "muhtara_odenecek": sum(s["muhtara_odenecek"] or 0 for s in satirlar),
+        "muhtara_odenen": sum(s["muhtara_odenen"] or 0 for s in satirlar),
+        "muhtara_kalan": sum(s["muhtara_kalan"] or 0 for s in satirlar),
+    }
+
+    return render_template("tahsilat.html", satirlar=satirlar, genel=genel)
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
