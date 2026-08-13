@@ -532,12 +532,13 @@ def tahsilat_ciktisi():
             "fatura_no": k["fatura_no"],
         })
 
-    secili = kolonlar_secili if kolonlar_secili else [k for k, _ in DISPLAY_KOLONLARI]
+    goster_kolonlari = kolonlar_secili if kolonlar_secili else [k for k, _ in DISPLAY_KOLONLARI]
 
     return render_template(
         "tahsilat_ciktisi.html",
         satirlar=satirlar, koyler=koyler, q=q, secili_koy=koy,
-        kolon_listesi=DISPLAY_KOLONLARI, secili_kolonlar=secili
+        kolon_listesi=DISPLAY_KOLONLARI, goster_kolonlari=goster_kolonlari,
+        secili_kolonlar=kolonlar_secili
     )
 
 
