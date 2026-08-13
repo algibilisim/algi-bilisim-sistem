@@ -1,13 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Tahsilat - ALGI BİLİŞİM{% endblock %}
+{% block title %}Köy Satış / Tahsilat Raporu - ALGI BİLİŞİM{% endblock %}
 {% block content %}
-
-<h2>Tahsilat Özeti (Köy Bazlı)</h2>
-
+<h2>Köy Satış / Tahsilat Raporu</h2>
 <div class="tablo-kaydirici">
 <table>
     <thead>
         <tr>
+            <th>S.No</th>
             <th>Köy Adı</th>
             <th>Sayaç Tutarı</th>
             <th>Malzeme Tutarı</th>
@@ -22,31 +21,33 @@
     <tbody>
         {% for s in satirlar %}
         <tr>
+            <td>{{ loop.index }}</td>
             <td>{{ s['koy_adi'] }}</td>
-            <td>{{ "%.2f"|format(s['sayac_tutari_toplami'] or 0) }}</td>
-            <td>{{ "%.2f"|format(s['malzeme_tutari_toplami'] or 0) }}</td>
-            <td>{{ "%.2f"|format(s['genel_satis_tutari'] or 0) }}</td>
-            <td>{{ "%.2f"|format(s['tahsil_edilen_tutar'] or 0) }}</td>
-            <td class="{{ 'kirmizi' if (s['kalan_tutar'] or 0) > 0 else 'yesil' }}">{{ "%.2f"|format(s['kalan_tutar'] or 0) }}</td>
-            <td>{{ "%.2f"|format(s['muhtara_odenecek'] or 0) }}</td>
-            <td>{{ "%.2f"|format(s['muhtara_odenen'] or 0) }}</td>
-            <td>{{ "%.2f"|format(s['muhtara_kalan'] or 0) }}</td>
+            <td>{{ s['sayac_tutari_toplami']|tl }}</td>
+            <td>{{ s['malzeme_tutari_toplami']|tl }}</td>
+            <td>{{ s['genel_satis_tutari']|tl }}</td>
+            <td>{{ s['tahsil_edilen_tutar']|tl }}</td>
+            <td class="{{ 'kirmizi' if (s['kalan_tutar'] or 0) > 0 else 'yesil' }}">{{ s['kalan_tutar']|tl }}</td>
+            <td>{{ s['muhtara_odenecek']|tl }}</td>
+            <td>{{ s['muhtara_odenen']|tl }}</td>
+            <td>{{ s['muhtara_kalan']|tl }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="9">Kayıt bulunamadı.</td></tr>
+        <tr><td colspan="10">Kayıt bulunamadı.</td></tr>
         {% endfor %}
     </tbody>
     <tfoot>
         <tr>
+            <td></td>
             <td><strong>TOPLAM</strong></td>
-            <td><strong>{{ "%.2f"|format(genel['sayac_tutari_toplami']) }}</strong></td>
-            <td><strong>{{ "%.2f"|format(genel['malzeme_tutari_toplami']) }}</strong></td>
-            <td><strong>{{ "%.2f"|format(genel['genel_satis_tutari']) }}</strong></td>
-            <td><strong>{{ "%.2f"|format(genel['tahsil_edilen_tutar']) }}</strong></td>
-            <td><strong>{{ "%.2f"|format(genel['kalan_tutar']) }}</strong></td>
-            <td><strong>{{ "%.2f"|format(genel['muhtara_odenecek']) }}</strong></td>
-            <td><strong>{{ "%.2f"|format(genel['muhtara_odenen']) }}</strong></td>
-            <td><strong>{{ "%.2f"|format(genel['muhtara_kalan']) }}</strong></td>
+            <td><strong>{{ genel['sayac_tutari_toplami']|tl }}</strong></td>
+            <td><strong>{{ genel['malzeme_tutari_toplami']|tl }}</strong></td>
+            <td><strong>{{ genel['genel_satis_tutari']|tl }}</strong></td>
+            <td><strong>{{ genel['tahsil_edilen_tutar']|tl }}</strong></td>
+            <td><strong>{{ genel['kalan_tutar']|tl }}</strong></td>
+            <td><strong>{{ genel['muhtara_odenecek']|tl }}</strong></td>
+            <td><strong>{{ genel['muhtara_odenen']|tl }}</strong></td>
+            <td><strong>{{ genel['muhtara_kalan']|tl }}</strong></td>
         </tr>
     </tfoot>
 </table>
