@@ -463,6 +463,35 @@ DISPLAY_KOLONLARI = [
     ("fatura_no", "Fatura No"),
 ]
 
+KOLON_ARAMA_HARITASI = {
+    "s_no": ("s_no", True),
+    "koy_adi": ("koy_adi", False),
+    "sayac_no": ("sayac_no", False),
+    "senet_tutari": ("senet_tutari", True),
+    "sayac_tutari": ("sayac_tutari", True),
+    "alinan_tutar": ("alinan_tutar", True),
+    "sayac_kalan": ("(sayac_tutari - alinan_tutar)", True),
+    "malzeme_tutari": ("malzeme_tutari", True),
+    "malzeme_alinan": ("malzeme_alinan", True),
+    "malzeme_kalan": ("(malzeme_tutari - malzeme_alinan)", True),
+    "toplam_kalan": ("(sayac_tutari + malzeme_tutari - alinan_tutar - malzeme_alinan)", True),
+    "senet_no": ("senet_no", False),
+    "senet_sahibi_adi": ("senet_sahibi_adi", False),
+    "senet_sahibi_soyadi": ("senet_sahibi_soyadi", False),
+    "telefon": ("telefon", False),
+    "baba_adi": ("baba_adi", False),
+    "montaj_tarihi": ("montaj_tarihi", False),
+    "odeme_tarihi": ("odeme_tarihi", False),
+    "odeme_sekli": ("odeme_sekli", False),
+    "odeme_gun_sozu": ("odeme_gun_sozu", False),
+    "odemeyi_gonderen": ("odemeyi_gonderen", False),
+    "aciklama": ("aciklama", False),
+    "muhtara_odenecek": ("muhtara_odenecek", True),
+    "muhtara_odenen": ("muhtara_odenen", True),
+    "muhtara_kalan": ("(muhtara_odenecek - muhtara_odenen)", True),
+    "fatura_no": ("fatura_no", False),
+}
+
 
 def _gg_aa_yyyy(t):
     if t and len(t) >= 10:
@@ -478,12 +507,40 @@ def tahsilat_ciktisi():
     kolonlar_secili = request.args.getlist("kolon")
     db = get_db()
 
+    arama_alanlari = kolonlar_secili if kolonlar_secili else [k for k, _ in DISPLAY_KOLONLARI]
+
     sql = "SELECT * FROM abone WHERE 1=1"
     params = []
     if q:
-        sql += " AND (adi LIKE %s OR soyadi LIKE %s OR koy_adi LIKE %s OR sayac_no LIKE %s)"
-        like = f"%{q}%"
-        params += [like, like, like, like]
+        q_sayi = None
+        q_temiz = q.replace(",", ".").strip()
+        try:
+            q_sayi = float(q_temiz)
+        except ValueError:
+            q_sayi = None
+
+        kosul_listesi = []
+        kosul_params = []
+        for anahtar in arama_alanlari:
+            if anahtar == "ad_soyad":
+                kosul_listesi.append("adi LIKE %s")
+                kosul_params.append(f"%{q}%")
+                kosul_listesi.append("soyadi LIKE %s")
+                kosul_params.append(f"%{q}%")
+            elif anahtar in KOLON_ARAMA_HARITASI:
+                kolon, sayisal = KOLON_ARAMA_HARITASI[anahtar]
+                if sayisal and q_sayi is not None:
+                    kosul_listesi.append(f"ROUND(CAST({kolon} AS NUMERIC), 2) = %s")
+                    kosul_params.append(round(q_sayi, 2))
+                elif sayisal:
+                    kosul_listesi.append(f"CAST({kolon} AS TEXT) LIKE %s")
+                    kosul_params.append(f"%{q}%")
+                else:
+                    kosul_listesi.append(f"{kolon} LIKE %s")
+                    kosul_params.append(f"%{q}%")
+        if kosul_listesi:
+            sql += " AND (" + " OR ".join(kosul_listesi) + ")"
+            params += kosul_params
     if koy:
         sql += " AND koy_adi = %s"
         params.append(koy)
