@@ -451,6 +451,7 @@ def tahsilat():
         "muhtara_odenen": sum(s["muhtara_odenen"] or 0 for s in satirlar),
         "muhtara_kalan": sum(s["muhtara_kalan"] or 0 for s in satirlar),
     }
+    genel["firma_asil_alacagi"] = genel["kalan_tutar"] - genel["muhtara_odenecek"]
 
     return render_template("tahsilat.html", satirlar=satirlar, genel=genel)
 
