@@ -17,12 +17,24 @@ body {
 }
 .topbar .brand { font-weight: 700; letter-spacing: 1px; }
 .topbar nav a {
+    display: inline-block;
     color: #fff;
     text-decoration: none;
-    margin-right: 16px;
-    font-size: 14px;
+    margin-right: 10px;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+    background: rgba(255,255,255,0.12);
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.25);
+    transition: background 0.15s ease;
 }
-.topbar nav a:hover { text-decoration: underline; }
+.topbar nav a:hover {
+    background: rgba(255,255,255,0.25);
+    text-decoration: none;
+}
 .user-area { font-size: 13px; display: flex; gap: 12px; align-items: center; }
 .user-area a { color: #cde9d6; text-decoration: none; }
 .container { padding: 16px; max-width: 1200px; margin: 0 auto; }
