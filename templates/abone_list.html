@@ -101,6 +101,7 @@
             <td>{{ k['fatura_no'] }}</td>
             <td class="islem-hucre sabit-sutun">
                 <a href="{{ url_for('abone_duzenle', abone_id=k['id']) }}">Düzenle</a>
+                <a href="{{ url_for('abone_tahsilat', abone_id=k['id']) }}">Tahsilat</a>
                 <form method="post" action="{{ url_for('abone_sil', abone_id=k['id']) }}"
                       onsubmit="return confirm('Bu kaydı silmek istediğinize emin misiniz?');">
                     <button type="submit" class="link-buton">Sil</button>
