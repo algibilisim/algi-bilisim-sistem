@@ -40,3 +40,17 @@ CREATE TABLE IF NOT EXISTS kullanici (
     kullanici_adi TEXT UNIQUE NOT NULL,
     sifre_hash TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS tahsilat (
+    id SERIAL PRIMARY KEY,
+    abone_id INTEGER NOT NULL REFERENCES abone(id) ON DELETE CASCADE,
+    tarih TEXT,
+    tur TEXT NOT NULL,
+    tutar REAL DEFAULT 0,
+    odeme_sekli TEXT,
+    odemeyi_yapan TEXT,
+    aciklama TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tahsilat_abone ON tahsilat(abone_id);
