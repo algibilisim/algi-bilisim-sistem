@@ -528,15 +528,21 @@ def _kolon_secenekleri(db, anahtar):
     return secenekler
 
 
-def _kolon_kosul(anahtar, deger_str):
+def _kolon_kosul_coklu(anahtar, deger_listesi):
     ifade, tur = KOLON_BILGI[anahtar]
     if tur == "sayi":
-        try:
-            sayi = round(float(deger_str.replace(",", ".")), 2)
-        except ValueError:
-            return None, None
-        return f"ROUND(CAST({ifade} AS NUMERIC), 2) = %s", sayi
-    return f"{ifade} = %s", deger_str
+        sayilar = []
+        for d in deger_listesi:
+            try:
+                sayilar.append(round(float(str(d).replace(",", ".")), 2))
+            except ValueError:
+                pass
+        if not sayilar:
+            return None, []
+        yer_tutucular = ", ".join(["%s"] * len(sayilar))
+        return f"ROUND(CAST({ifade} AS NUMERIC), 2) IN ({yer_tutucular})", sayilar
+    yer_tutucular = ", ".join(["%s"] * len(deger_listesi))
+    return f"{ifade} IN ({yer_tutucular})", deger_listesi
 
 
 @app.route("/tahsilat-ciktisi")
@@ -551,13 +557,13 @@ def tahsilat_ciktisi():
     sql = "SELECT * FROM abone WHERE 1=1"
     params = []
     for anahtar in goster_kolonlari:
-        deger = request.args.get(f"deger_{anahtar}", "").strip()
-        deger_secili[anahtar] = deger
-        if deger:
-            kosul, param = _kolon_kosul(anahtar, deger)
+        secilenler = request.args.getlist(f"deger_{anahtar}")
+        deger_secili[anahtar] = secilenler
+        if secilenler:
+            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler)
             if kosul:
                 sql += f" AND {kosul}"
-                params.append(param)
+                params += param_listesi
     sql += " ORDER BY s_no"
 
     cur = db.cursor()
