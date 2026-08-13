@@ -9,7 +9,7 @@
 
 <form method="get" class="filtre-form no-print" style="flex-direction: column; align-items: stretch;">
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <input type="text" name="q" value="{{ q }}" placeholder="Aranacak kelime (ad, soyad, köy, sayaç no)..." style="flex:2; min-width:200px;">
+        <input type="text" name="q" value="{{ q }}" placeholder="Aranacak kelime (işaretli sütunlarda arar)..." style="flex:2; min-width:200px;">
         <select name="koy" style="flex:1; min-width:150px;">
             <option value="">Tüm Köyler</option>
             {% for k in koyler %}
