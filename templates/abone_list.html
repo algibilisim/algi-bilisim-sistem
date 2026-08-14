@@ -7,7 +7,7 @@
     <a class="btn btn-yesil" href="{{ url_for('abone_yeni') }}">+ Yeni Abone</a>
 </div>
 
-<form class="filtre-form" method="get" style="flex-direction: column; align-items: stretch;">
+<form class="filtre-form no-print" method="get" style="flex-direction: column; align-items: stretch;">
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <input type="text" name="q" value="{{ q }}" placeholder="Aranacak kelime..." style="flex:2; min-width:200px;">
         <select name="koy" style="flex:1; min-width:150px;">
@@ -27,91 +27,62 @@
     </div>
 </form>
 
-<div class="tablo-kaydirici">
-<table>
-    <thead>
-        <tr>
-            <th>S.No</th>
-            <th>Köy</th>
-            <th>Adı Soyadı</th>
-            <th>Sayaç No</th>
-            <th>Senet Tutarı</th>
-            <th>Sayaç Tutarı</th>
-            <th>Alınan</th>
-            <th>Sayaç Kalan</th>
-            <th>Malzeme Tutarı</th>
-            <th>Malzeme Alınan</th>
-            <th>Malzeme Kalan</th>
-            <th>Toplam Kalan</th>
-            <th>Senet No</th>
-            <th>Senet Sahibi Adı</th>
-            <th>Senet Sahibi Soyadı</th>
-            <th>Telefon</th>
-            <th>Baba Adı</th>
-            <th>Montaj Tarihi</th>
-            <th>Ödeme Tarihi</th>
-            <th>Ödeme Şekli</th>
-            <th>Ödeme Gün Sözü</th>
-            <th>Ödemeyi Gönderen</th>
-            <th>Açıklama</th>
-            <th>Muhtara Ödenecek</th>
-            <th>Muhtara Ödenen</th>
-            <th>Muhtara Kalan</th>
-            <th>Fatura No</th>
-            <th class="sabit-sutun"></th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for k in kayitlar %}
-        {% set sayac_kalan = (k['sayac_tutari'] or 0) - (k['alinan_tutar'] or 0) %}
-        {% set malzeme_kalan = (k['malzeme_tutari'] or 0) - (k['malzeme_alinan'] or 0) %}
-        {% set toplam_kalan = sayac_kalan + malzeme_kalan %}
-        {% set muhtara_kalan = (k['muhtara_odenecek'] or 0) - (k['muhtara_odenen'] or 0) %}
-        {% set mt = k['montaj_tarihi'] %}
-        {% set ot = k['odeme_tarihi'] %}
-        {% set mt_g = (mt[8:10] + '.' + mt[5:7] + '.' + mt[0:4]) if mt and mt|length >= 10 else (mt or '') %}
-        {% set ot_g = (ot[8:10] + '.' + ot[5:7] + '.' + ot[0:4]) if ot and ot|length >= 10 else (ot or '') %}
-        <tr>
-            <td>{{ k['s_no'] }}</td>
-            <td>{{ k['koy_adi'] }}</td>
-            <td>{{ k['adi'] }} {{ k['soyadi'] }}</td>
-            <td>{{ k['sayac_no'] }}</td>
-            <td>{{ k['senet_tutari']|tl }}</td>
-            <td>{{ k['sayac_tutari']|tl }}</td>
-            <td>{{ k['alinan_tutar']|tl }}</td>
-            <td class="{{ 'kirmizi' if sayac_kalan > 0 else 'yesil' }}">{{ sayac_kalan|tl }}</td>
-            <td>{{ k['malzeme_tutari']|tl }}</td>
-            <td>{{ k['malzeme_alinan']|tl }}</td>
-            <td class="{{ 'kirmizi' if malzeme_kalan > 0 else 'yesil' }}">{{ malzeme_kalan|tl }}</td>
-            <td class="{{ 'kirmizi' if toplam_kalan > 0 else 'yesil' }}"><strong>{{ toplam_kalan|tl }}</strong></td>
-            <td>{{ k['senet_no'] }}</td>
-            <td>{{ k['senet_sahibi_adi'] }}</td>
-            <td>{{ k['senet_sahibi_soyadi'] }}</td>
-            <td>{{ k['telefon'] }}</td>
-            <td>{{ k['baba_adi'] }}</td>
-            <td>{{ mt_g }}</td>
-            <td>{{ ot_g }}</td>
-            <td>{{ k['odeme_sekli'] }}</td>
-            <td>{{ k['odeme_gun_sozu'] }}</td>
-            <td>{{ k['odemeyi_gonderen'] }}</td>
-            <td>{{ k['aciklama'] }}</td>
-            <td>{{ k['muhtara_odenecek']|tl }}</td>
-            <td>{{ k['muhtara_odenen']|tl }}</td>
-            <td class="{{ 'kirmizi' if muhtara_kalan > 0 else 'yesil' }}">{{ muhtara_kalan|tl }}</td>
-            <td>{{ k['fatura_no'] }}</td>
-            <td class="islem-hucre sabit-sutun">
-                <a href="{{ url_for('abone_duzenle', abone_id=k['id']) }}">Düzenle</a>
-                <a href="{{ url_for('abone_tahsilat', abone_id=k['id']) }}">Tahsilat</a>
-                <form method="post" action="{{ url_for('abone_sil', abone_id=k['id']) }}"
-                      onsubmit="return confirm('Bu kaydı silmek istediğinize emin misiniz?');">
-                    <button type="submit" class="link-buton">Sil</button>
-                </form>
-            </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="28">Kayıt bulunamadı.</td></tr>
-        {% endfor %}
-    </tbody>
-</table>
-</div>
+<form method="get" id="kolon-filtre-form">
+    <input type="hidden" name="q" value="{{ q }}">
+    <input type="hidden" name="koy" value="{{ secili_koy }}">
+    {% for anahtar in secili_alanlar %}<input type="hidden" name="alan" value="{{ anahtar }}">{% endfor %}
+
+    <div class="tablo-kaydirici">
+    <table>
+        <thead>
+            <tr>
+                {% for anahtar, etiket in kolon_listesi %}<th>{{ etiket }}</th>{% endfor %}
+                <th class="sabit-sutun"></th>
+            </tr>
+            <tr class="no-print">
+                {% for anahtar, etiket in kolon_listesi %}
+                <th class="kolon-filtre-th">
+                    <button type="button" class="btn filtre-ac-buton" data-hedef="afiltre-{{ anahtar }}">
+                        {% if deger_secili[anahtar] %}{{ deger_secili[anahtar]|length }} seçili ▾{% else %}Tümü ▾{% endif %}
+                    </button>
+                    <div id="afiltre-{{ anahtar }}" class="filtre-kutu">
+                        <label class="tumu-satir"><input type="checkbox" class="tumu-tik"> Tümü</label>
+                        {% for ham, metin in deger_secenekleri[anahtar] %}
+                        <label>
+                            <input type="checkbox" name="deger_{{ anahtar }}" value="{{ ham }}"
+                                   {% if ham in deger_secili[anahtar] %}checked{% endif %}>
+                            {{ metin }}
+                        </label>
+                        {% endfor %}
+                        <button type="submit" class="btn btn-yesil" style="width:100%; margin-top:8px; font-size:12px;">Filtrele</button>
+                    </div>
+                </th>
+                {% endfor %}
+                <th class="sabit-sutun"></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in satirlar %}
+            <tr>
+                {% for anahtar, etiket in kolon_listesi %}
+                <td class="{{ 'sayi' if anahtar in sayisal_kolonlar else '' }} {{ s['_renk'][anahtar] }}">
+                    {% if anahtar in ['toplam_kalan'] %}<strong>{{ s[anahtar] }}</strong>{% else %}{{ s[anahtar] }}{% endif %}
+                </td>
+                {% endfor %}
+                <td class="islem-hucre sabit-sutun">
+                    <a href="{{ url_for('abone_duzenle', abone_id=s['id']) }}">Düzenle</a>
+                    <a href="{{ url_for('abone_tahsilat', abone_id=s['id']) }}">Tahsilat</a>
+                    <form method="post" action="{{ url_for('abone_sil', abone_id=s['id']) }}"
+                          onsubmit="return confirm('Bu kaydı silmek istediğinize emin misiniz?');">
+                        <button type="submit" class="link-buton">Sil</button>
+                    </form>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="28">Kayıt bulunamadı.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</form>
 {% endblock %}
