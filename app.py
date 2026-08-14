@@ -41,6 +41,72 @@ def _telefon_formatla(deger):
     return f"{rakamlar[0]} {rakamlar[1:4]} {rakamlar[4:7]} {rakamlar[7:9]} {rakamlar[9:11]}"
 
 
+BIRLER = ["", "Bir", "İki", "Üç", "Dört", "Beş", "Altı", "Yedi", "Sekiz", "Dokuz"]
+ONLAR = ["", "On", "Yirmi", "Otuz", "Kırk", "Elli", "Altmış", "Yetmiş", "Seksen", "Doksan"]
+BASAMAK = ["", "Bin", "Milyon", "Milyar", "Trilyon"]
+
+
+def _uc_basamak_oku(sayi):
+    yuzler = sayi // 100
+    kalan = sayi % 100
+    onlar = kalan // 10
+    birler = kalan % 10
+    metin = ""
+    if yuzler > 0:
+        if yuzler == 1:
+            metin += "Yüz "
+        else:
+            metin += BIRLER[yuzler] + " Yüz "
+    if onlar > 0:
+        metin += ONLAR[onlar] + " "
+    if birler > 0:
+        metin += BIRLER[birler] + " "
+    return metin.strip()
+
+
+def _sayi_yaziya_cevir(sayi):
+    sayi = int(sayi)
+    if sayi == 0:
+        return "Sıfır"
+    parcalar = []
+    grup_no = 0
+    while sayi > 0:
+        grup = sayi % 1000
+        if grup > 0:
+            grup_metni = _uc_basamak_oku(grup)
+            if grup_no == 1 and grup == 1:
+                grup_metni = "Bin"
+            elif grup_no > 0:
+                grup_metni = (grup_metni + " " + BASAMAK[grup_no]).strip()
+            parcalar.insert(0, grup_metni)
+        sayi //= 1000
+        grup_no += 1
+    return " ".join(parcalar).strip()
+
+
+def _tutar_yaziya_cevir(tutar):
+    tutar = round(float(tutar or 0), 2)
+    tl_kismi = int(tutar)
+    kurus_kismi = int(round((tutar - tl_kismi) * 100))
+    metin = _sayi_yaziya_cevir(tl_kismi) + " Türk Lirası"
+    if kurus_kismi > 0:
+        metin += " " + _sayi_yaziya_cevir(kurus_kismi) + " Kuruş"
+    return metin
+
+
+def _odeme_sekli_esle(metin):
+    m = (metin or "").strip().upper()
+    if any(k in m for k in ["NAKİT", "NAKIT", "ELDEN"]):
+        return "nakit"
+    if any(k in m for k in ["HAVALE", "BANKA", "EFT"]):
+        return "havale"
+    if "KART" in m:
+        return "kredi_karti"
+    if any(k in m for k in ["ÇEK", "CEK"]):
+        return "cek"
+    return None
+
+
 DISPLAY_KOLONLARI = [
     ("s_no", "S.No"),
     ("koy_adi", "Köy"),
@@ -756,6 +822,44 @@ def tahsilat_sil(tahsilat_id):
     return redirect(url_for("abone_listesi"))
 
 
+@app.route("/tahsilat/<int:tahsilat_id>/makbuz")
+@login_required
+def tahsilat_makbuz(tahsilat_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT t.*, a.adi AS abone_adi, a.soyadi AS abone_soyadi, a.sayac_no AS abone_sayac_no "
+        "FROM tahsilat t JOIN abone a ON a.id = t.abone_id WHERE t.id = %s",
+        (tahsilat_id,),
+    )
+    kayit = cur.fetchone()
+    cur.close()
+    if kayit is None:
+        flash("Kayıt bulunamadı.")
+        return redirect(url_for("abone_listesi"))
+
+    ad_soyad = f"{kayit['abone_adi']} {kayit['abone_soyadi']}"
+    aciklama_basligi = "Sayaç Ücreti Ödemesi" if kayit["tur"] == "sayac" else "Malzeme Ücreti Ödemesi"
+    odemeyi_yapan = kayit["odemeyi_yapan"] or ad_soyad
+    not_goster = bool(kayit["odemeyi_yapan"]) and kayit["odemeyi_yapan"].strip().upper() != ad_soyad.strip().upper()
+
+    return render_template(
+        "makbuz.html",
+        sira_no=str(kayit["id"]).zfill(6),
+        tarih=_gg_aa_yyyy(kayit["tarih"]),
+        sayin=ad_soyad,
+        tutar=kayit["tutar"],
+        tutar_yazi=_tutar_yaziya_cevir(kayit["tutar"]),
+        odeme_esles=_odeme_sekli_esle(kayit["odeme_sekli"]),
+        odeme_sekli_metin=kayit["odeme_sekli"],
+        aciklama_basligi=aciklama_basligi,
+        seri_no=kayit["abone_sayac_no"],
+        odemeyi_yapan=odemeyi_yapan,
+        ad_soyad=ad_soyad,
+        not_goster=not_goster,
+    )
+
+
 KOY_KOLONLARI = [
     ("koy_adi", "Köy Adı", "metin"),
     ("sayac_tutari_toplami", "Sayaç Tutarı", "sayi"),
@@ -1141,6 +1245,43 @@ def ariza_tahsilat_sil(tahsilat_id):
     if ariza_id:
         return redirect(url_for("ariza_tahsilat", ariza_id=ariza_id))
     return redirect(url_for("ariza_listesi"))
+
+
+@app.route("/ariza-tahsilat/<int:tahsilat_id>/makbuz")
+@login_required
+def ariza_tahsilat_makbuz(tahsilat_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT t.*, a.adi AS ariza_adi, a.soyadi AS ariza_soyadi, a.seri_no AS ariza_seri_no "
+        "FROM ariza_tahsilat t JOIN ariza a ON a.id = t.ariza_id WHERE t.id = %s",
+        (tahsilat_id,),
+    )
+    kayit = cur.fetchone()
+    cur.close()
+    if kayit is None:
+        flash("Kayıt bulunamadı.")
+        return redirect(url_for("ariza_listesi"))
+
+    ad_soyad = f"{kayit['ariza_adi']} {kayit['ariza_soyadi']}"
+    odemeyi_yapan = kayit["odemeyi_yapan"] or ad_soyad
+    not_goster = bool(kayit["odemeyi_yapan"]) and kayit["odemeyi_yapan"].strip().upper() != ad_soyad.strip().upper()
+
+    return render_template(
+        "makbuz.html",
+        sira_no=str(kayit["id"]).zfill(6),
+        tarih=_gg_aa_yyyy(kayit["tarih"]),
+        sayin=ad_soyad,
+        tutar=kayit["tutar"],
+        tutar_yazi=_tutar_yaziya_cevir(kayit["tutar"]),
+        odeme_esles=_odeme_sekli_esle(kayit["odeme_sekli"]),
+        odeme_sekli_metin=kayit["odeme_sekli"],
+        aciklama_basligi="Arıza Ücreti Ödemesi",
+        seri_no=kayit["ariza_seri_no"],
+        odemeyi_yapan=odemeyi_yapan,
+        ad_soyad=ad_soyad,
+        not_goster=not_goster,
+    )
 
 
 if __name__ == "__main__":
