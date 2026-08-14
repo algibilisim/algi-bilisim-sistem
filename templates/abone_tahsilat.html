@@ -2,9 +2,28 @@
 {% block title %}Tahsilat - {{ abone['adi'] }} {{ abone['soyadi'] }} - ALGI BİLİŞİM{% endblock %}
 {% block content %}
 
+{% set sayac_kalan = (abone['sayac_tutari'] or 0) - (abone['alinan_tutar'] or 0) %}
+{% set malzeme_kalan = (abone['malzeme_tutari'] or 0) - (abone['malzeme_alinan'] or 0) %}
+{% set toplam_kalan = sayac_kalan + malzeme_kalan %}
+
 <div class="sayfa-basligi">
     <h2>{{ abone['adi'] }} {{ abone['soyadi'] }} - Tahsilat</h2>
     <a class="btn" href="{{ url_for('abone_listesi') }}">Abone Listesine Dön</a>
+</div>
+
+<div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-bottom:20px;">
+    <div style="background:#fff; border-radius:8px; padding:16px; text-align:center; box-shadow:0 1px 4px rgba(0,0,0,0.12);">
+        <div style="font-size:12px; color:#666; font-weight:600; text-transform:uppercase; letter-spacing:0.5px;">Sayaç Kalan</div>
+        <div style="font-size:24px; font-weight:800; margin-top:6px; color:{{ '#c0392b' if sayac_kalan > 0 else '#1e7d3c' }};">{{ sayac_kalan|tl }}</div>
+    </div>
+    <div style="background:#fff; border-radius:8px; padding:16px; text-align:center; box-shadow:0 1px 4px rgba(0,0,0,0.12);">
+        <div style="font-size:12px; color:#666; font-weight:600; text-transform:uppercase; letter-spacing:0.5px;">Malzeme Kalan</div>
+        <div style="font-size:24px; font-weight:800; margin-top:6px; color:{{ '#c0392b' if malzeme_kalan > 0 else '#1e7d3c' }};">{{ malzeme_kalan|tl }}</div>
+    </div>
+    <div style="background:#fff; border-radius:8px; padding:16px; text-align:center; box-shadow:0 2px 8px rgba(192,57,43,0.25); border:2px solid {{ '#c0392b' if toplam_kalan > 0 else '#1e7d3c' }};">
+        <div style="font-size:12px; color:#666; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">Toplam Kalan Bakiye</div>
+        <div style="font-size:28px; font-weight:900; margin-top:6px; color:{{ '#c0392b' if toplam_kalan > 0 else '#1e7d3c' }};">{{ toplam_kalan|tl }}</div>
+    </div>
 </div>
 
 <div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:20px;">
@@ -72,11 +91,12 @@
         <tr>
             <td>{{ tt_g }}</td>
             <td>{{ 'Sayaç' if t['tur'] == 'sayac' else 'Malzeme' }}</td>
-            <td>{{ t['tutar']|tl }}</td>
+            <td class="sayi">{{ t['tutar']|tl }}</td>
             <td>{{ t['odeme_sekli'] }}</td>
             <td>{{ t['odemeyi_yapan'] }}</td>
             <td>{{ t['aciklama'] }}</td>
-            <td>
+            <td class="islem-hucre">
+                <a href="{{ url_for('tahsilat_makbuz', tahsilat_id=t['id']) }}" target="_blank">Makbuz</a>
                 <form method="post" action="{{ url_for('tahsilat_sil', tahsilat_id=t['id']) }}"
                       onsubmit="return confirm('Bu tahsilat kaydını silmek istediğinize emin misiniz?');">
                     <button type="submit" class="link-buton">Sil</button>
