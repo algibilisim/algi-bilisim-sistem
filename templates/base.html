@@ -42,7 +42,29 @@ document.addEventListener('click', function(e) {
         var hedefKutu = document.getElementById(hedefId);
         var acikMi = hedefKutu.style.display === 'block';
         document.querySelectorAll('.filtre-kutu').forEach(function(k) { k.style.display = 'none'; });
-        hedefKutu.style.display = acikMi ? 'none' : 'block';
+        if (!acikMi) {
+            var dikdortgen = tiklananButon.getBoundingClientRect();
+            var genislik = 220;
+            var sol = dikdortgen.left;
+            if (sol + genislik > window.innerWidth - 10) {
+                sol = window.innerWidth - genislik - 10;
+            }
+            if (sol < 10) { sol = 10; }
+            var ust = dikdortgen.bottom + 2;
+            var kalanYukseklik = window.innerHeight - ust - 10;
+            if (kalanYukseklik < 150) {
+                hedefKutu.style.top = 'auto';
+                hedefKutu.style.bottom = (window.innerHeight - dikdortgen.top + 2) + 'px';
+                hedefKutu.style.maxHeight = Math.min(240, dikdortgen.top - 10) + 'px';
+            } else {
+                hedefKutu.style.bottom = 'auto';
+                hedefKutu.style.top = ust + 'px';
+                hedefKutu.style.maxHeight = Math.min(240, kalanYukseklik) + 'px';
+            }
+            hedefKutu.style.left = sol + 'px';
+            hedefKutu.style.width = genislik + 'px';
+            hedefKutu.style.display = 'block';
+        }
         e.stopPropagation();
     } else if (!tiklananKutu) {
         document.querySelectorAll('.filtre-kutu').forEach(function(k) { k.style.display = 'none'; });
@@ -54,6 +76,9 @@ document.addEventListener('change', function(e) {
         var digerleri = kutu.querySelectorAll('input[type=checkbox]:not(.tumu-tik)');
         digerleri.forEach(function(cb) { cb.checked = e.target.checked; });
     }
+});
+window.addEventListener('resize', function() {
+    document.querySelectorAll('.filtre-kutu').forEach(function(k) { k.style.display = 'none'; });
 });
 </script>
 </body>
