@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Arıza Takip Çıktısı - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi no-print">
+    <h2>Arıza Takip Çıktısı</h2>
+    <button type="button" class="btn btn-yesil" onclick="window.print()">Yazdır</button>
+</div>
+
+<form method="get">
+    <div class="no-print" style="display:grid; grid-template-columns: repeat(4, minmax(170px, 1fr)); gap:6px 20px; margin-bottom:12px;">
+        {% for anahtar, etiket in kolon_listesi %}
+        <label style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
+            <input type="checkbox" name="kolon" value="{{ anahtar }}" {% if anahtar in secili_kolonlar %}checked{% endif %}> {{ etiket }}
+        </label>
+        {% endfor %}
+    </div>
+    <div class="no-print" style="margin-bottom:16px;">
+        <button type="submit" class="btn">Uygula</button>
+    </div>
+
+    <div class="tablo-kaydirici">
+    <table>
+        <thead>
+            <tr>
+                {% for anahtar, etiket in kolon_listesi %}
+                {% if anahtar in goster_kolonlari %}<th>{{ etiket }}</th>{% endif %}
+                {% endfor %}
+            </tr>
+            <tr class="no-print">
+                {% for anahtar, etiket in kolon_listesi %}
+                {% if anahtar in goster_kolonlari %}
+                <th class="kolon-filtre-th">
+                    <button type="button" class="btn filtre-ac-buton" data-hedef="arcfiltre-{{ anahtar }}">
+                        {% if deger_secili[anahtar] %}{{ deger_secili[anahtar]|length }} seçili ▾{% else %}Tümü ▾{% endif %}
+                    </button>
+                    <div id="arcfiltre-{{ anahtar }}" class="filtre-kutu">
+                        <label class="tumu-satir"><input type="checkbox" class="tumu-tik"> Tümü</label>
+                        {% for ham, metin in deger_secenekleri[anahtar] %}
+                        <label>
+                            <input type="checkbox" name="deger_{{ anahtar }}" value="{{ ham }}"
+                                   {% if ham in deger_secili[anahtar] %}checked{% endif %}>
+                            {{ metin }}
+                        </label>
+                        {% endfor %}
+                        <button type="submit" class="btn btn-yesil" style="width:100%; margin-top:8px; font-size:12px;">Filtrele</button>
+                    </div>
+                </th>
+                {% endif %}
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in satirlar %}
+            <tr>
+                {% for anahtar, etiket in kolon_listesi %}
+                {% if anahtar in goster_kolonlari %}
+                <td class="{{ 'sayi' if anahtar in sayisal_kolonlar else '' }} {{ s['_renk'][anahtar] }}">{{ s[anahtar] }}</td>
+                {% endif %}
+                {% endfor %}
+            </tr>
+            {% else %}
+            <tr><td>Kayıt bulunamadı.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</form>
+{% endblock %}
