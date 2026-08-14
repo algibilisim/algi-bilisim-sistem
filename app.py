@@ -1,11 +1,12 @@
 import os
+from datetime import datetime
 from functools import wraps
 
 import psycopg2
 import psycopg2.extras
 from flask import (
     Flask, render_template, request, redirect,
-    url_for, session, g, flash, jsonify
+    url_for, session, g, flash, jsonify, Response
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -168,6 +169,8 @@ YAPILAN_ISLEMLER_SECENEKLERI = [
     "Motor Değişti", "Motor Switch Değişti", "Motor Tamir Edildi",
     "Pil Takıldı", "Resetlendi", "Sayım Aparatı Değişti",
 ]
+
+YEDEKLENECEK_TABLOLAR = ["abone", "tahsilat", "ariza", "ariza_tahsilat", "kullanici"]
 
 
 def _gg_aa_yyyy(t):
@@ -377,6 +380,26 @@ def logout():
 @login_required
 def index():
     return redirect(url_for("abone_listesi"))
+
+
+@app.route("/yedek-al")
+@login_required
+def yedek_al():
+    db = get_db()
+    cur = db.cursor()
+    parcalar = []
+    for t in YEDEKLENECEK_TABLOLAR:
+        cur.execute(f"SELECT * FROM {t}")
+        for row in cur.fetchall():
+            parcalar.append(cur.mogrify(f"INSERT INTO {t} VALUES %s;", (row,)).decode())
+    cur.close()
+    icerik = "\n".join(parcalar)
+    tarih = datetime.now().strftime("%d_%m_%Y")
+    return Response(
+        icerik,
+        mimetype="text/plain",
+        headers={"Content-Disposition": f"attachment; filename=algi_bilisim_yedek_{tarih}.sql"},
+    )
 
 
 @app.route("/api/abone-ara")
