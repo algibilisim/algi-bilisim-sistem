@@ -54,3 +54,26 @@ CREATE TABLE IF NOT EXISTS tahsilat (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tahsilat_abone ON tahsilat(abone_id);
+
+CREATE TABLE IF NOT EXISTS ariza (
+    id SERIAL PRIMARY KEY,
+    s_no INTEGER,
+    ozel_s_no TEXT,
+    koy_adi TEXT,
+    yeni_seri_no TEXT,
+    seri_no TEXT,
+    adi TEXT,
+    soyadi TEXT,
+    ariza_ucret REAL DEFAULT 0,
+    alinan_ucret REAL DEFAULT 0,
+    gelis_tarihi TEXT,
+    takilan_tarih TEXT,
+    sayac_kredisi TEXT,
+    tespit_edilen_ariza TEXT,
+    yapilan_islemler TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ariza_koy ON ariza(koy_adi);
+CREATE INDEX IF NOT EXISTS idx_ariza_seri_no ON ariza(seri_no);
