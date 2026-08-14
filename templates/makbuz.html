@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Tahsilat Makbuzu - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi no-print">
+    <h2>Tahsilat Makbuzu</h2>
+    <button type="button" class="btn btn-yesil" onclick="window.print()">Yazdır</button>
+</div>
+
+<div style="background:#fff; max-width:650px; margin:0 auto; padding:30px; border:1px solid #ccc; font-size:14px; line-height:1.7;">
+    <div style="text-align:center; font-weight:700; margin-bottom:10px;">
+        Bahçelievler Mahallesi Şehir Yolu Caddesi<br>
+        Emirseyit No:227 – 227A TOKAT
+    </div>
+    <div style="display:flex; justify-content:space-between; margin:20px 0 10px 0;">
+        <div>Sıra No : {{ sira_no }}</div>
+        <div>{{ tarih if tarih else '……/……./2026' }}</div>
+    </div>
+    <div style="margin-bottom:10px;">Sayın : {{ sayin }}</div>
+    <div style="margin-bottom:20px;">Yalnız {{ tutar_yazi }} ({{ tutar|tl }} TL) Tahsil edilmiştir.</div>
+
+    <table style="width:100%; border-collapse:collapse; margin-bottom:20px;">
+        <tr><td colspan="2" style="text-align:center; font-weight:700; border:1px solid #333; padding:6px;">TAHSİLAT MAKBUZU</td></tr>
+        <tr><td style="border:1px solid #333; padding:6px; width:60%;">ÖDEME ŞEKLİ</td><td style="border:1px solid #333; padding:6px;"></td></tr>
+        <tr><td style="border:1px solid #333; padding:6px;">Nakit</td><td style="border:1px solid #333; padding:6px; text-align:center;">{{ '✓' if odeme_esles == 'nakit' else '' }}</td></tr>
+        <tr><td style="border:1px solid #333; padding:6px;">Havale</td><td style="border:1px solid #333; padding:6px; text-align:center;">{{ '✓' if odeme_esles == 'havale' else '' }}</td></tr>
+        <tr><td style="border:1px solid #333; padding:6px;">Kredi Kartı</td><td style="border:1px solid #333; padding:6px; text-align:center;">{{ '✓' if odeme_esles == 'kredi_karti' else '' }}</td></tr>
+        <tr><td style="border:1px solid #333; padding:6px;">Çek</td><td style="border:1px solid #333; padding:6px; text-align:center;">{{ '✓' if odeme_esles == 'cek' else '' }}</td></tr>
+        <tr><td style="border:1px solid #333; padding:6px; font-weight:700;">TOPLAM</td><td style="border:1px solid #333; padding:6px; text-align:center; font-weight:700;">{{ tutar|tl }}</td></tr>
+    </table>
+
+    <div style="margin-bottom:20px;">
+        <strong>AÇIKLAMA :</strong> {{ aciklama_basligi }}{% if seri_no %} — Seri No: {{ seri_no }}{% endif %}{% if odeme_sekli_metin %} — Ödeme Şekli: {{ odeme_sekli_metin }}{% endif %}
+    </div>
+
+    {% if not_goster %}
+    <div style="margin-bottom:20px; font-style:italic;">
+        Not : {{ odemeyi_yapan }} tarafından {{ ad_soyad }} adına ödeme yapılmıştır.
+    </div>
+    {% endif %}
+
+    <div style="text-align:right; margin-top:40px;">
+        TAHSİL EDEN<br><br>
+        ......................................
+    </div>
+</div>
+{% endblock %}
