@@ -5,7 +5,7 @@ import psycopg2
 import psycopg2.extras
 from flask import (
     Flask, render_template, request, redirect,
-    url_for, session, g, flash
+    url_for, session, g, flash, jsonify
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -90,6 +90,61 @@ KOLON_BILGI = {
 SAYISAL_KOLONLAR = {k for k, (_, tur) in KOLON_BILGI.items() if tur == "sayi"}
 RENK_KOLONLARI = {"sayac_kalan", "malzeme_kalan", "toplam_kalan", "muhtara_kalan"}
 
+ARIZA_DISPLAY_KOLONLARI = [
+    ("s_no", "S.No"),
+    ("ozel_s_no", "Özel S.No"),
+    ("koy_adi", "Köy Adı"),
+    ("yeni_seri_no", "Yeni Seri No"),
+    ("seri_no", "Seri No"),
+    ("adi", "Adı"),
+    ("soyadi", "Soyadı"),
+    ("ariza_ucret", "Arıza Ücret"),
+    ("alinan_ucret", "Alınan Ücret"),
+    ("kalan_ucret", "Kalan Ücret"),
+    ("gelis_tarihi", "Geliş Tarihi"),
+    ("takilan_tarih", "Takılan Tarih"),
+    ("sayac_kredisi", "Sayaç Kredisi"),
+    ("tespit_edilen_ariza", "Tespit Edilen Arıza"),
+    ("yapilan_islemler", "Yapılan İşlemler"),
+]
+
+ARIZA_KOLON_BILGI = {
+    "s_no": ("s_no", "sayi"),
+    "ozel_s_no": ("ozel_s_no", "metin"),
+    "koy_adi": ("koy_adi", "metin"),
+    "yeni_seri_no": ("yeni_seri_no", "metin"),
+    "seri_no": ("seri_no", "metin"),
+    "adi": ("adi", "metin"),
+    "soyadi": ("soyadi", "metin"),
+    "ariza_ucret": ("ariza_ucret", "sayi"),
+    "alinan_ucret": ("alinan_ucret", "sayi"),
+    "kalan_ucret": ("(ariza_ucret - alinan_ucret)", "sayi"),
+    "gelis_tarihi": ("gelis_tarihi", "tarih"),
+    "takilan_tarih": ("takilan_tarih", "tarih"),
+    "sayac_kredisi": ("sayac_kredisi", "metin"),
+    "tespit_edilen_ariza": ("tespit_edilen_ariza", "metin"),
+    "yapilan_islemler": ("yapilan_islemler", "metin"),
+}
+
+ARIZA_SAYISAL_KOLONLAR = {k for k, (_, tur) in ARIZA_KOLON_BILGI.items() if tur == "sayi"}
+
+TESPIT_EDILEN_ARIZA_SECENEKLERI = [
+    "Ekran Yok", "Mekanik Patlak", "Dijital Su Almış", "Pil Bitik", "Pil Zayıf",
+    "Motor Oksitli", "Sıkıntı Yok", "Motor Switch Arızalı", "Error 1", "Error 2",
+    "Error 3", "Error 4", "Error 5", "Arıza Simgesi", "Harcama Uyuşmuyor",
+    "Magnet", "Data", "Küre Dönmüyor", "Küre Zor Dönüyor", "Küre Paslı",
+    "Harcama Yapmıyor", "Kondansatör Yok", "Kondansatör Devre Dışı",
+]
+
+YAPILAN_ISLEMLER_SECENEKLERI = [
+    "Pil Takıldı", "Motor Değişti", "Kart Değişti", "Kart Ekran Değişti",
+    "Kart Okuyucu Değişti", "Mekanik Değişti", "Mekanik Patlak Tamir",
+    "Sayım Aparatı Değişti", "Motor Switch Değişti", "Formatlandı", "Resetlendi",
+    "Mekanik Pervane Değişti", "Küre Değişti", "Küre Temizlendi",
+    "Kondansatör Takıldı", "Kondansatör Devreye Alındı", "Kart Temizlendi",
+    "Motor Tamir Edildi",
+]
+
 
 def _gg_aa_yyyy(t):
     if t and len(t) >= 10:
@@ -97,16 +152,16 @@ def _gg_aa_yyyy(t):
     return t or ""
 
 
-def _kolon_secenekleri(db, anahtar):
-    ifade, tur = KOLON_BILGI[anahtar]
+def _kolon_secenekleri(db, anahtar, tablo, bilgi_sozlugu):
+    ifade, tur = bilgi_sozlugu[anahtar]
     cur = db.cursor()
     if tur == "sayi":
         cur.execute(
-            f"SELECT DISTINCT deger FROM (SELECT ROUND(CAST({ifade} AS NUMERIC), 2) AS deger FROM abone) t WHERE deger IS NOT NULL ORDER BY deger"
+            f"SELECT DISTINCT deger FROM (SELECT ROUND(CAST({ifade} AS NUMERIC), 2) AS deger FROM {tablo}) t WHERE deger IS NOT NULL ORDER BY deger"
         )
     else:
         cur.execute(
-            f"SELECT DISTINCT {ifade} AS deger FROM abone WHERE {ifade} IS NOT NULL AND {ifade} != '' ORDER BY deger"
+            f"SELECT DISTINCT {ifade} AS deger FROM {tablo} WHERE {ifade} IS NOT NULL AND {ifade} != '' ORDER BY deger"
         )
     satirlar = cur.fetchall()
     cur.close()
@@ -125,8 +180,8 @@ def _kolon_secenekleri(db, anahtar):
     return secenekler
 
 
-def _kolon_kosul_coklu(anahtar, deger_listesi):
-    ifade, tur = KOLON_BILGI[anahtar]
+def _kolon_kosul_coklu(anahtar, deger_listesi, bilgi_sozlugu):
+    ifade, tur = bilgi_sozlugu[anahtar]
     if tur == "sayi":
         sayilar = []
         for d in deger_listesi:
@@ -181,6 +236,31 @@ def _abone_satir_sozlugu(k):
         "muhtara_odenen": tl_format(k["muhtara_odenen"]),
         "muhtara_kalan": tl_format(muhtara_kalan),
         "fatura_no": k["fatura_no"],
+        "_renk": renk,
+    }
+
+
+def _ariza_satir_sozlugu(k):
+    kalan_ucret = (k["ariza_ucret"] or 0) - (k["alinan_ucret"] or 0)
+    renk = {anahtar: '' for anahtar, _ in ARIZA_DISPLAY_KOLONLARI}
+    renk["kalan_ucret"] = 'kirmizi' if kalan_ucret > 0 else 'yesil'
+    return {
+        "id": k["id"],
+        "s_no": k["s_no"],
+        "ozel_s_no": k["ozel_s_no"],
+        "koy_adi": k["koy_adi"],
+        "yeni_seri_no": k["yeni_seri_no"],
+        "seri_no": k["seri_no"],
+        "adi": k["adi"],
+        "soyadi": k["soyadi"],
+        "ariza_ucret": tl_format(k["ariza_ucret"]),
+        "alinan_ucret": tl_format(k["alinan_ucret"]),
+        "kalan_ucret": tl_format(kalan_ucret),
+        "gelis_tarihi": _gg_aa_yyyy(k["gelis_tarihi"]),
+        "takilan_tarih": _gg_aa_yyyy(k["takilan_tarih"]),
+        "sayac_kredisi": k["sayac_kredisi"],
+        "tespit_edilen_ariza": k["tespit_edilen_ariza"],
+        "yapilan_islemler": k["yapilan_islemler"],
         "_renk": renk,
     }
 
@@ -270,6 +350,22 @@ def index():
     return redirect(url_for("abone_listesi"))
 
 
+@app.route("/api/abone-ara")
+@login_required
+def abone_ara():
+    sayac_no = request.args.get("sayac_no", "").strip()
+    if not sayac_no:
+        return jsonify({"bulundu": False})
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT adi, soyadi FROM abone WHERE sayac_no = %s LIMIT 1", (sayac_no,))
+    satir = cur.fetchone()
+    cur.close()
+    if satir:
+        return jsonify({"bulundu": True, "adi": satir["adi"], "soyadi": satir["soyadi"]})
+    return jsonify({"bulundu": False})
+
+
 @app.route("/abone")
 @login_required
 def abone_listesi():
@@ -349,7 +445,7 @@ def abone_listesi():
         secilenler = request.args.getlist(f"deger_{anahtar}")
         deger_secili[anahtar] = secilenler
         if secilenler:
-            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler)
+            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, KOLON_BILGI)
             if kosul:
                 sql += f" AND {kosul}"
                 params += param_listesi
@@ -366,7 +462,7 @@ def abone_listesi():
 
     deger_secenekleri = {}
     for anahtar, _ in DISPLAY_KOLONLARI:
-        deger_secenekleri[anahtar] = _kolon_secenekleri(db, anahtar)
+        deger_secenekleri[anahtar] = _kolon_secenekleri(db, anahtar, "abone", KOLON_BILGI)
     cur.close()
 
     return render_template(
@@ -683,7 +779,7 @@ def tahsilat_ciktisi():
         secilenler = request.args.getlist(f"deger_{anahtar}")
         deger_secili[anahtar] = secilenler
         if secilenler:
-            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler)
+            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, KOLON_BILGI)
             if kosul:
                 sql += f" AND {kosul}"
                 params += param_listesi
@@ -698,7 +794,7 @@ def tahsilat_ciktisi():
 
     deger_secenekleri = {}
     for anahtar in goster_kolonlari:
-        deger_secenekleri[anahtar] = _kolon_secenekleri(db, anahtar)
+        deger_secenekleri[anahtar] = _kolon_secenekleri(db, anahtar, "abone", KOLON_BILGI)
 
     return render_template(
         "tahsilat_ciktisi.html",
@@ -707,6 +803,180 @@ def tahsilat_ciktisi():
         secili_kolonlar=kolonlar_secili,
         deger_secili=deger_secili, deger_secenekleri=deger_secenekleri,
         sayisal_kolonlar=SAYISAL_KOLONLAR,
+    )
+
+
+def _ariza_sonraki_s_no(db):
+    cur = db.cursor()
+    cur.execute("SELECT MAX(s_no) AS m FROM ariza")
+    satir = cur.fetchone()
+    cur.close()
+    return (satir["m"] or 0) + 1
+
+
+def _ariza_kaydet(ariza_id):
+    f = request.form
+    ariza_ucret = _sayilastir(f.get("ariza_ucret"))
+    alinan_ucret = _sayilastir(f.get("alinan_ucret"))
+    tespit_metni = ", ".join(f.getlist("tespit_edilen_ariza"))
+    islem_metni = ", ".join(f.getlist("yapilan_islemler"))
+
+    alanlar = dict(
+        s_no=f.get("s_no") or None,
+        ozel_s_no=f.get("ozel_s_no", "").strip(),
+        koy_adi=f.get("koy_adi", "").strip(),
+        yeni_seri_no=f.get("yeni_seri_no", "").strip(),
+        seri_no=f.get("seri_no", "").strip(),
+        adi=f.get("adi", "").strip(),
+        soyadi=f.get("soyadi", "").strip(),
+        ariza_ucret=ariza_ucret,
+        alinan_ucret=alinan_ucret,
+        gelis_tarihi=f.get("gelis_tarihi", "").strip(),
+        takilan_tarih=f.get("takilan_tarih", "").strip(),
+        sayac_kredisi=f.get("sayac_kredisi", "").strip(),
+        tespit_edilen_ariza=tespit_metni,
+        yapilan_islemler=islem_metni,
+    )
+
+    db = get_db()
+    cur = db.cursor()
+    if ariza_id is None:
+        kolonlar = ", ".join(alanlar.keys())
+        yer_tutucular = ", ".join(["%s"] * len(alanlar))
+        cur.execute(f"INSERT INTO ariza ({kolonlar}) VALUES ({yer_tutucular})", list(alanlar.values()))
+    else:
+        set_ifadesi = ", ".join([f"{k} = %s" for k in alanlar.keys()])
+        cur.execute(f"UPDATE ariza SET {set_ifadesi}, updated_at = NOW() WHERE id = %s", list(alanlar.values()) + [ariza_id])
+    db.commit()
+    cur.close()
+
+
+@app.route("/ariza/yeni", methods=["GET", "POST"])
+@login_required
+def ariza_yeni():
+    if request.method == "POST":
+        _ariza_kaydet(None)
+        return redirect(url_for("ariza_listesi"))
+    db = get_db()
+    return render_template(
+        "ariza_form.html", kayit=None,
+        sonraki_s_no=_ariza_sonraki_s_no(db),
+        tespit_secenekleri=TESPIT_EDILEN_ARIZA_SECENEKLERI,
+        islem_secenekleri=YAPILAN_ISLEMLER_SECENEKLERI,
+        secili_tespit=set(), secili_islem=set(),
+    )
+
+
+@app.route("/ariza/<int:ariza_id>/duzenle", methods=["GET", "POST"])
+@login_required
+def ariza_duzenle(ariza_id):
+    db = get_db()
+    if request.method == "POST":
+        _ariza_kaydet(ariza_id)
+        return redirect(url_for("ariza_listesi"))
+    cur = db.cursor()
+    cur.execute("SELECT * FROM ariza WHERE id = %s", (ariza_id,))
+    kayit = cur.fetchone()
+    cur.close()
+    if kayit is None:
+        flash("Kayıt bulunamadı.")
+        return redirect(url_for("ariza_listesi"))
+    secili_tespit = set((kayit["tespit_edilen_ariza"] or "").split(", ")) if kayit["tespit_edilen_ariza"] else set()
+    secili_islem = set((kayit["yapilan_islemler"] or "").split(", ")) if kayit["yapilan_islemler"] else set()
+    return render_template(
+        "ariza_form.html", kayit=kayit,
+        tespit_secenekleri=TESPIT_EDILEN_ARIZA_SECENEKLERI,
+        islem_secenekleri=YAPILAN_ISLEMLER_SECENEKLERI,
+        secili_tespit=secili_tespit, secili_islem=secili_islem,
+    )
+
+
+@app.route("/ariza/<int:ariza_id>/sil", methods=["POST"])
+@login_required
+def ariza_sil(ariza_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM ariza WHERE id = %s", (ariza_id,))
+    db.commit()
+    cur.close()
+    return redirect(url_for("ariza_listesi"))
+
+
+@app.route("/ariza")
+@login_required
+def ariza_listesi():
+    db = get_db()
+    sql = "SELECT * FROM ariza WHERE 1=1"
+    params = []
+    deger_secili = {}
+    for anahtar, _ in ARIZA_DISPLAY_KOLONLARI:
+        secilenler = request.args.getlist(f"deger_{anahtar}")
+        deger_secili[anahtar] = secilenler
+        if secilenler:
+            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, ARIZA_KOLON_BILGI)
+            if kosul:
+                sql += f" AND {kosul}"
+                params += param_listesi
+    sql += " ORDER BY s_no"
+
+    cur = db.cursor()
+    cur.execute(sql, params)
+    kayitlar_ham = cur.fetchall()
+    cur.close()
+
+    satirlar = [_ariza_satir_sozlugu(k) for k in kayitlar_ham]
+
+    deger_secenekleri = {}
+    for anahtar, _ in ARIZA_DISPLAY_KOLONLARI:
+        deger_secenekleri[anahtar] = _kolon_secenekleri(db, anahtar, "ariza", ARIZA_KOLON_BILGI)
+
+    return render_template(
+        "ariza_listesi.html", satirlar=satirlar,
+        kolon_listesi=ARIZA_DISPLAY_KOLONLARI,
+        deger_secili=deger_secili, deger_secenekleri=deger_secenekleri,
+        sayisal_kolonlar=ARIZA_SAYISAL_KOLONLAR,
+    )
+
+
+@app.route("/ariza-ciktisi")
+@login_required
+def ariza_ciktisi():
+    kolonlar_secili = request.args.getlist("kolon")
+    goster_kolonlari = kolonlar_secili if kolonlar_secili else [k for k, _ in ARIZA_DISPLAY_KOLONLARI]
+
+    db = get_db()
+
+    deger_secili = {}
+    sql = "SELECT * FROM ariza WHERE 1=1"
+    params = []
+    for anahtar in goster_kolonlari:
+        secilenler = request.args.getlist(f"deger_{anahtar}")
+        deger_secili[anahtar] = secilenler
+        if secilenler:
+            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, ARIZA_KOLON_BILGI)
+            if kosul:
+                sql += f" AND {kosul}"
+                params += param_listesi
+    sql += " ORDER BY s_no"
+
+    cur = db.cursor()
+    cur.execute(sql, params)
+    kayitlar_ham = cur.fetchall()
+    cur.close()
+
+    satirlar = [_ariza_satir_sozlugu(k) for k in kayitlar_ham]
+
+    deger_secenekleri = {}
+    for anahtar in goster_kolonlari:
+        deger_secenekleri[anahtar] = _kolon_secenekleri(db, anahtar, "ariza", ARIZA_KOLON_BILGI)
+
+    return render_template(
+        "ariza_ciktisi.html",
+        satirlar=satirlar,
+        kolon_listesi=ARIZA_DISPLAY_KOLONLARI, goster_kolonlari=goster_kolonlari,
+        secili_kolonlar=kolonlar_secili,
+        deger_secili=deger_secili, deger_secenekleri=deger_secenekleri,
+        sayisal_kolonlar=ARIZA_SAYISAL_KOLONLAR,
     )
 
 
