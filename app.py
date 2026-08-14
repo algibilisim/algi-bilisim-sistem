@@ -88,9 +88,9 @@ def _tutar_yaziya_cevir(tutar):
     tutar = round(float(tutar or 0), 2)
     tl_kismi = int(tutar)
     kurus_kismi = int(round((tutar - tl_kismi) * 100))
-    metin = _sayi_yaziya_cevir(tl_kismi) + " Türk Lirası"
+    metin = _sayi_yaziya_cevir(tl_kismi)
     if kurus_kismi > 0:
-        metin += " " + _sayi_yaziya_cevir(kurus_kismi) + " Kuruş"
+        metin += f" Lira {_sayi_yaziya_cevir(kurus_kismi)} Kuruş"
     return metin
 
 
@@ -857,6 +857,7 @@ def tahsilat_makbuz(tahsilat_id):
         odemeyi_yapan=odemeyi_yapan,
         ad_soyad=ad_soyad,
         not_goster=not_goster,
+        geri_url=url_for("abone_tahsilat", abone_id=kayit["abone_id"]),
     )
 
 
@@ -1281,6 +1282,7 @@ def ariza_tahsilat_makbuz(tahsilat_id):
         odemeyi_yapan=odemeyi_yapan,
         ad_soyad=ad_soyad,
         not_goster=not_goster,
+        geri_url=url_for("ariza_tahsilat", ariza_id=kayit["ariza_id"]),
     )
 
 
