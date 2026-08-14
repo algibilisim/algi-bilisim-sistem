@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Arıza Takip - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi">
+    <h2>Arıza Takip</h2>
+    <a class="btn btn-yesil" href="{{ url_for('ariza_yeni') }}">+ Yeni Arıza</a>
+</div>
+
+<form method="get">
+    <div class="tablo-kaydirici">
+    <table>
+        <thead>
+            <tr>
+                {% for anahtar, etiket in kolon_listesi %}<th>{{ etiket }}</th>{% endfor %}
+                <th class="sabit-sutun"></th>
+            </tr>
+            <tr class="no-print">
+                {% for anahtar, etiket in kolon_listesi %}
+                <th class="kolon-filtre-th">
+                    <button type="button" class="btn filtre-ac-buton" data-hedef="arfiltre-{{ anahtar }}">
+                        {% if deger_secili[anahtar] %}{{ deger_secili[anahtar]|length }} seçili ▾{% else %}Tümü ▾{% endif %}
+                    </button>
+                    <div id="arfiltre-{{ anahtar }}" class="filtre-kutu">
+                        <label class="tumu-satir"><input type="checkbox" class="tumu-tik"> Tümü</label>
+                        {% for ham, metin in deger_secenekleri[anahtar] %}
+                        <label>
+                            <input type="checkbox" name="deger_{{ anahtar }}" value="{{ ham }}"
+                                   {% if ham in deger_secili[anahtar] %}checked{% endif %}>
+                            {{ metin }}
+                        </label>
+                        {% endfor %}
+                        <button type="submit" class="btn btn-yesil" style="width:100%; margin-top:8px; font-size:12px;">Filtrele</button>
+                    </div>
+                </th>
+                {% endfor %}
+                <th class="sabit-sutun"></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in satirlar %}
+            <tr>
+                {% for anahtar, etiket in kolon_listesi %}
+                <td class="{{ 'sayi' if anahtar in sayisal_kolonlar else '' }} {{ s['_renk'][anahtar] }}">{{ s[anahtar] }}</td>
+                {% endfor %}
+                <td class="islem-hucre sabit-sutun">
+                    <a href="{{ url_for('ariza_duzenle', ariza_id=s['id']) }}">Düzenle</a>
+                    <form method="post" action="{{ url_for('ariza_sil', ariza_id=s['id']) }}"
+                          onsubmit="return confirm('Bu kaydı silmek istediğinize emin misiniz?');">
+                        <button type="submit" class="link-buton">Sil</button>
+                    </form>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="16">Kayıt bulunamadı.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</form>
+{% endblock %}
