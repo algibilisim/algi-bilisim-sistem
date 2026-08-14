@@ -4,7 +4,10 @@
 
 <div class="sayfa-basligi no-print">
     <h2>Arıza Takip Çıktısı</h2>
-    <button type="button" class="btn btn-yesil" onclick="window.print()">Yazdır</button>
+    <div style="display:flex; gap:8px;">
+        <a class="btn" href="{{ url_for('ariza_ciktisi_excel') }}?{{ request.query_string.decode() }}">Excel'e Aktar</a>
+        <button type="button" class="btn btn-yesil" onclick="window.print()">Yazdır</button>
+    </div>
 </div>
 
 <form method="get">
