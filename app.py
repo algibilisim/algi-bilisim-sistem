@@ -391,7 +391,7 @@ def yedek_al():
     for t in YEDEKLENECEK_TABLOLAR:
         cur.execute(f"SELECT * FROM {t}")
         for row in cur.fetchall():
-            parcalar.append(cur.mogrify(f"INSERT INTO {t} VALUES %s;", (row,)).decode())
+            parcalar.append(cur.mogrify(f"INSERT INTO {t} VALUES %s;", (tuple(row.values()),)).decode())
     cur.close()
     icerik = "\n".join(parcalar)
     tarih = datetime.now().strftime("%d_%m_%Y")
