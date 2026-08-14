@@ -10,44 +10,49 @@
     </div>
 </div>
 
-<div style="background:#fff; max-width:650px; margin:0 auto; padding:30px; border:1px solid #ccc; font-size:14px; line-height:1.7;">
-    <img src="{{ url_for('static', filename='logo.jpg') }}" alt="ALGI Logo" style="width:240px; display:block; margin-bottom:10px;">
-    <div style="margin-bottom:16px;">
-        Bahçelievler Mahallesi Şehir Yolu Caddesi<br>
-        Emirseyit No:227 – 227A TOKAT
+<div style="background:#fff; max-width:750px; margin:0 auto; padding:30px; border:1px solid #ccc; font-size:14px; line-height:1.6;">
+
+    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div>
+            <img src="{{ url_for('static', filename='logo.jpg') }}" alt="ALGI Logo" style="width:220px; display:block;">
+            <div style="font-size:12px; margin-top:4px;">
+                Bahçelievler Mahallesi Şehir Yolu Caddesi<br>
+                Emirseyit No:227 – 227A TOKAT
+            </div>
+        </div>
+        <div style="text-align:right;">
+            <div style="border:1px solid #333; padding:8px 16px; font-weight:700; font-size:15px; display:inline-block;">TAHSİLAT MAKBUZU</div>
+            <div style="font-weight:700; color:#c0392b; margin-top:8px; font-size:15px;">Sıra No : {{ sira_no }}</div>
+            <div>{{ tarih if tarih else '……/……./2026' }}</div>
+        </div>
     </div>
 
-    <div style="text-align:center; font-weight:700; font-size:16px; margin-bottom:10px;">TAHSİLAT MAKBUZU</div>
+    <div style="margin:24px 0 10px 0;">Sayın : {{ sayin }}</div>
+    <div style="margin-bottom:24px;">Yalnız {{ tutar_yazi }} Tahsil edilmiştir.</div>
 
-    <div style="font-weight:700; color:#c0392b; font-size:15px;">Sıra No : {{ sira_no }}</div>
-    <div style="margin-bottom:16px;">{{ tarih if tarih else '……/……./2026' }}</div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; gap:20px;">
+        <table style="width:60%; border-collapse:collapse;">
+            <tr><td style="border:1px solid #333; padding:6px;" colspan="2"><strong>ÖDEME ŞEKLİ</strong></td></tr>
+            <tr><td style="border:1px solid #333; padding:6px;">Nakit</td><td style="border:1px solid #333; padding:6px; text-align:right;">{{ tutar|tl if odeme_esles == 'nakit' else '' }}</td></tr>
+            <tr><td style="border:1px solid #333; padding:6px;">Havale</td><td style="border:1px solid #333; padding:6px; text-align:right;">{{ tutar|tl if odeme_esles == 'havale' else '' }}</td></tr>
+            <tr><td style="border:1px solid #333; padding:6px;">Kredi Kartı</td><td style="border:1px solid #333; padding:6px; text-align:right;">{{ tutar|tl if odeme_esles == 'kredi_karti' else '' }}</td></tr>
+            <tr><td style="border:1px solid #333; padding:6px;">Çek</td><td style="border:1px solid #333; padding:6px; text-align:right;">{{ tutar|tl if odeme_esles == 'cek' else '' }}</td></tr>
+            <tr><td style="border:1px solid #333; padding:6px; font-weight:700;">TOPLAM</td><td style="border:1px solid #333; padding:6px; text-align:right; font-weight:700;">{{ tutar|tl }}</td></tr>
+        </table>
+        <div style="text-align:center; white-space:nowrap;">
+            TAHSİL EDEN<br><br>
+            ......................................
+        </div>
+    </div>
 
-    <div style="margin-bottom:20px;">Sayın : {{ sayin }}</div>
-
-    <table style="width:100%; border-collapse:collapse; margin-bottom:16px;">
-        <tr><td style="border:1px solid #333; padding:6px; width:60%;">ÖDEME ŞEKLİ</td><td style="border:1px solid #333; padding:6px;"></td></tr>
-        <tr><td style="border:1px solid #333; padding:6px;">Nakit</td><td style="border:1px solid #333; padding:6px; text-align:right;">{{ tutar|tl if odeme_esles == 'nakit' else '' }}</td></tr>
-        <tr><td style="border:1px solid #333; padding:6px;">Havale</td><td style="border:1px solid #333; padding:6px; text-align:right;">{{ tutar|tl if odeme_esles == 'havale' else '' }}</td></tr>
-        <tr><td style="border:1px solid #333; padding:6px;">Kredi Kartı</td><td style="border:1px solid #333; padding:6px; text-align:right;">{{ tutar|tl if odeme_esles == 'kredi_karti' else '' }}</td></tr>
-        <tr><td style="border:1px solid #333; padding:6px;">Çek</td><td style="border:1px solid #333; padding:6px; text-align:right;">{{ tutar|tl if odeme_esles == 'cek' else '' }}</td></tr>
-        <tr><td style="border:1px solid #333; padding:6px; font-weight:700;">TOPLAM</td><td style="border:1px solid #333; padding:6px; text-align:right; font-weight:700;">{{ tutar|tl }}</td></tr>
-    </table>
-
-    <div style="margin-bottom:20px;">Yalnız {{ tutar_yazi }} Tahsil edilmiştir.</div>
-
-    <div style="margin-bottom:20px;">
+    <div style="border:1px solid #333; padding:10px 12px;">
         <strong>AÇIKLAMA :</strong> {{ aciklama_basligi }}{% if seri_no %} — Seri No: {{ seri_no }}{% endif %}{% if odeme_sekli_metin %} — Ödeme Şekli: {{ odeme_sekli_metin }}{% endif %}
     </div>
 
     {% if not_goster %}
-    <div style="margin-bottom:20px; font-style:italic;">
+    <div style="margin-top:16px; font-style:italic;">
         Not : {{ odemeyi_yapan }} tarafından {{ ad_soyad }} adına ödeme yapılmıştır.
     </div>
     {% endif %}
-
-    <div style="text-align:center; margin-top:40px;">
-        TAHSİL EDEN<br><br>
-        ......................................
-    </div>
 </div>
 {% endblock %}
