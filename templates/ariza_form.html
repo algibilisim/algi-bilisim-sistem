@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Arıza Düzenle' if kayit else 'Yeni Arıza' }} - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<h2>{{ 'Arıza Düzenle' if kayit else 'Yeni Arıza' }}</h2>
+
+<form method="post" class="abone-form">
+    <div class="form-grid">
+        <div>
+            <label>S.No (otomatik)</label>
+            <input type="number" name="s_no" value="{{ kayit['s_no'] if kayit else sonraki_s_no }}" readonly tabindex="-1">
+        </div>
+        <div>
+            <label>Özel S.No</label>
+            <input type="text" name="ozel_s_no" value="{{ kayit['ozel_s_no'] if kayit else '' }}">
+        </div>
+        <div>
+            <label>Köy Adı</label>
+            <input type="text" name="koy_adi" value="{{ kayit['koy_adi'] if kayit else '' }}" autofocus>
+        </div>
+        <div>
+            <label>Yeni Seri No</label>
+            <input type="text" name="yeni_seri_no" value="{{ kayit['yeni_seri_no'] if kayit else '' }}">
+        </div>
+        <div>
+            <label>Seri No</label>
+            <input type="text" id="seri_no_girisi" name="seri_no" value="{{ kayit['seri_no'] if kayit else '' }}">
+        </div>
+        <div>
+            <label>Adı</label>
+            <input type="text" id="ariza_adi" name="adi" value="{{ kayit['adi'] if kayit else '' }}">
+        </div>
+        <div>
+            <label>Soyadı</label>
+            <input type="text" id="ariza_soyadi" name="soyadi" value="{{ kayit['soyadi'] if kayit else '' }}">
+        </div>
+
+        <div class="ayirici">Ücret Bilgileri</div>
+
+        <div>
+            <label>Arıza Ücret</label>
+            <input type="text" name="ariza_ucret" value="{{ kayit['ariza_ucret'] if kayit else '0' }}">
+        </div>
+        <div>
+            <label>Alınan Ücret</label>
+            <input type="text" name="alinan_ucret" value="{{ kayit['alinan_ucret'] if kayit else '0' }}">
+        </div>
+
+        <div class="ayirici">Tarih / Kredi</div>
+
+        <div>
+            <label>Geliş Tarihi</label>
+            <input type="date" name="gelis_tarihi" value="{{ kayit['gelis_tarihi'] if kayit else '' }}">
+        </div>
+        <div>
+            <label>Takılan Tarih</label>
+            <input type="date" name="takilan_tarih" value="{{ kayit['takilan_tarih'] if kayit else '' }}">
+        </div>
+        <div>
+            <label>Sayaç Kredisi</label>
+            <input type="text" name="sayac_kredisi" value="{{ kayit['sayac_kredisi'] if kayit else '' }}">
+        </div>
+
+        <div class="ayirici">Tespit Edilen Arıza</div>
+        <div class="tam-genislik" style="display:grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap:6px 16px;">
+            {% for secenek in tespit_secenekleri %}
+            <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:normal; color:#333;">
+                <input type="checkbox" name="tespit_edilen_ariza" value="{{ secenek }}" {% if secenek in secili_tespit %}checked{% endif %}>
+                {{ secenek }}
+            </label>
+            {% endfor %}
+        </div>
+
+        <div class="ayirici">Yapılan İşlemler</div>
+        <div class="tam-genislik" style="display:grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap:6px 16px;">
+            {% for secenek in islem_secenekleri %}
+            <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:normal; color:#333;">
+                <input type="checkbox" name="yapilan_islemler" value="{{ secenek }}" {% if secenek in secili_islem %}checked{% endif %}>
+                {{ secenek }}
+            </label>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="form-butonlar">
+        <button type="submit" class="btn btn-yesil">Kaydet</button>
+        <a class="btn" href="{{ url_for('ariza_listesi') }}">Vazgeç</a>
+    </div>
+</form>
+
+<script>
+document.getElementById('seri_no_girisi').addEventListener('blur', function() {
+    var deger = this.value.trim();
+    if (!deger) { return; }
+    fetch('/api/abone-ara?sayac_no=' + encodeURIComponent(deger))
+        .then(function(r) { return r.json(); })
+        .then(function(veri) {
+            if (veri.bulundu) {
+                document.getElementById('ariza_adi').value = veri.adi;
+                document.getElementById('ariza_soyadi').value = veri.soyadi;
+            }
+        });
+});
+</script>
+{% endblock %}
