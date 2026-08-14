@@ -1,4 +1,6 @@
 import os
+import io
+import csv
 from datetime import datetime
 from functools import wraps
 
@@ -399,6 +401,22 @@ def yedek_al():
         icerik,
         mimetype="text/plain",
         headers={"Content-Disposition": f"attachment; filename=algi_bilisim_yedek_{tarih}.sql"},
+    )
+
+
+def _csv_olustur(kolon_listesi, goster_kolonlari, satirlar, dosya_adi):
+    cikti = io.StringIO()
+    yazici = csv.writer(cikti, delimiter=';')
+    basliklar = [etiket for anahtar, etiket in kolon_listesi if anahtar in goster_kolonlari]
+    yazici.writerow(basliklar)
+    for s in satirlar:
+        satir = [s[anahtar] for anahtar, etiket in kolon_listesi if anahtar in goster_kolonlari]
+        yazici.writerow(satir)
+    icerik = "\ufeff" + cikti.getvalue()
+    return Response(
+        icerik,
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={dosya_adi}"},
     )
 
 
@@ -822,33 +840,38 @@ def tahsilat():
     )
 
 
-@app.route("/tahsilat-ciktisi")
-@login_required
-def tahsilat_ciktisi():
+def _tahsilat_ciktisi_satirlar():
     kolonlar_secili = request.args.getlist("kolon")
     goster_kolonlari = kolonlar_secili if kolonlar_secili else [k for k, _ in DISPLAY_KOLONLARI]
-
     db = get_db()
-
-    deger_secili = {}
     sql = "SELECT * FROM abone WHERE 1=1"
     params = []
     for anahtar in goster_kolonlari:
         secilenler = request.args.getlist(f"deger_{anahtar}")
-        deger_secili[anahtar] = secilenler
         if secilenler:
             kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, KOLON_BILGI)
             if kosul:
                 sql += f" AND {kosul}"
                 params += param_listesi
     sql += " ORDER BY s_no"
-
     cur = db.cursor()
     cur.execute(sql, params)
     kayitlar_ham = cur.fetchall()
     cur.close()
-
     satirlar = [_abone_satir_sozlugu(k) for k in kayitlar_ham]
+    return satirlar, goster_kolonlari
+
+
+@app.route("/tahsilat-ciktisi")
+@login_required
+def tahsilat_ciktisi():
+    satirlar, goster_kolonlari = _tahsilat_ciktisi_satirlar()
+    kolonlar_secili = request.args.getlist("kolon")
+    db = get_db()
+
+    deger_secili = {}
+    for anahtar in goster_kolonlari:
+        deger_secili[anahtar] = request.args.getlist(f"deger_{anahtar}")
 
     deger_secenekleri = {}
     for anahtar in goster_kolonlari:
@@ -862,6 +885,14 @@ def tahsilat_ciktisi():
         deger_secili=deger_secili, deger_secenekleri=deger_secenekleri,
         sayisal_kolonlar=SAYISAL_KOLONLAR,
     )
+
+
+@app.route("/tahsilat-ciktisi-excel")
+@login_required
+def tahsilat_ciktisi_excel():
+    satirlar, goster_kolonlari = _tahsilat_ciktisi_satirlar()
+    tarih = datetime.now().strftime("%d_%m_%Y")
+    return _csv_olustur(DISPLAY_KOLONLARI, goster_kolonlari, satirlar, f"tahsilat_ciktisi_{tarih}.csv")
 
 
 def _ariza_sonraki_s_no(db):
@@ -1000,33 +1031,38 @@ def ariza_listesi():
     )
 
 
-@app.route("/ariza-ciktisi")
-@login_required
-def ariza_ciktisi():
+def _ariza_ciktisi_satirlar():
     kolonlar_secili = request.args.getlist("kolon")
     goster_kolonlari = kolonlar_secili if kolonlar_secili else [k for k, _ in ARIZA_DISPLAY_KOLONLARI]
-
     db = get_db()
-
-    deger_secili = {}
     sql = "SELECT * FROM ariza WHERE 1=1"
     params = []
     for anahtar in goster_kolonlari:
         secilenler = request.args.getlist(f"deger_{anahtar}")
-        deger_secili[anahtar] = secilenler
         if secilenler:
             kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, ARIZA_KOLON_BILGI)
             if kosul:
                 sql += f" AND {kosul}"
                 params += param_listesi
     sql += " ORDER BY s_no"
-
     cur = db.cursor()
     cur.execute(sql, params)
     kayitlar_ham = cur.fetchall()
     cur.close()
-
     satirlar = [_ariza_satir_sozlugu(k) for k in kayitlar_ham]
+    return satirlar, goster_kolonlari
+
+
+@app.route("/ariza-ciktisi")
+@login_required
+def ariza_ciktisi():
+    satirlar, goster_kolonlari = _ariza_ciktisi_satirlar()
+    kolonlar_secili = request.args.getlist("kolon")
+    db = get_db()
+
+    deger_secili = {}
+    for anahtar in goster_kolonlari:
+        deger_secili[anahtar] = request.args.getlist(f"deger_{anahtar}")
 
     deger_secenekleri = {}
     for anahtar in goster_kolonlari:
@@ -1040,6 +1076,14 @@ def ariza_ciktisi():
         deger_secili=deger_secili, deger_secenekleri=deger_secenekleri,
         sayisal_kolonlar=ARIZA_SAYISAL_KOLONLAR,
     )
+
+
+@app.route("/ariza-ciktisi-excel")
+@login_required
+def ariza_ciktisi_excel():
+    satirlar, goster_kolonlari = _ariza_ciktisi_satirlar()
+    tarih = datetime.now().strftime("%d_%m_%Y")
+    return _csv_olustur(ARIZA_DISPLAY_KOLONLARI, goster_kolonlari, satirlar, f"ariza_ciktisi_{tarih}.csv")
 
 
 @app.route("/ariza/<int:ariza_id>/tahsilat", methods=["GET", "POST"])
