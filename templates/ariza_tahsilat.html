@@ -2,9 +2,18 @@
 {% block title %}Tahsilat - {{ kayit['adi'] }} {{ kayit['soyadi'] }} - ALGI BİLİŞİM{% endblock %}
 {% block content %}
 
+{% set kalan_ucret = (kayit['ariza_ucret'] or 0) - (kayit['alinan_ucret'] or 0) %}
+
 <div class="sayfa-basligi">
     <h2>{{ kayit['adi'] }} {{ kayit['soyadi'] }} - Arıza Tahsilatı</h2>
     <a class="btn" href="{{ url_for('ariza_listesi') }}">Arıza Listesine Dön</a>
+</div>
+
+<div style="display:grid; grid-template-columns: 1fr; max-width:320px; margin-bottom:20px;">
+    <div style="background:#fff; border-radius:8px; padding:18px; text-align:center; box-shadow:0 2px 8px rgba(192,57,43,0.25); border:2px solid {{ '#c0392b' if kalan_ucret > 0 else '#1e7d3c' }};">
+        <div style="font-size:12px; color:#666; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">Kalan Ücret</div>
+        <div style="font-size:28px; font-weight:900; margin-top:6px; color:{{ '#c0392b' if kalan_ucret > 0 else '#1e7d3c' }};">{{ kalan_ucret|tl }}</div>
+    </div>
 </div>
 
 <div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:20px;">
@@ -66,7 +75,8 @@
             <td>{{ t['odeme_sekli'] }}</td>
             <td>{{ t['odemeyi_yapan'] }}</td>
             <td>{{ t['aciklama'] }}</td>
-            <td>
+            <td class="islem-hucre">
+                <a href="{{ url_for('ariza_tahsilat_makbuz', tahsilat_id=t['id']) }}" target="_blank">Makbuz</a>
                 <form method="post" action="{{ url_for('ariza_tahsilat_sil', tahsilat_id=t['id']) }}"
                       onsubmit="return confirm('Bu tahsilat kaydını silmek istediğinize emin misiniz?');">
                     <button type="submit" class="link-buton">Sil</button>
