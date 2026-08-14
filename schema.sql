@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS abone (
 );
 
 ALTER TABLE abone ADD COLUMN IF NOT EXISTS odeme_gun_sozu TEXT;
+ALTER TABLE abone ADD COLUMN IF NOT EXISTS telefon2 TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_abone_koy ON abone(koy_adi);
 CREATE INDEX IF NOT EXISTS idx_abone_sayac_no ON abone(sayac_no);
@@ -75,5 +76,23 @@ CREATE TABLE IF NOT EXISTS ariza (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
+ALTER TABLE ariza ADD COLUMN IF NOT EXISTS telefon TEXT;
+ALTER TABLE ariza ADD COLUMN IF NOT EXISTS telefon2 TEXT;
+ALTER TABLE ariza ADD COLUMN IF NOT EXISTS tespit_aciklama TEXT;
+ALTER TABLE ariza ADD COLUMN IF NOT EXISTS islem_aciklama TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_ariza_koy ON ariza(koy_adi);
 CREATE INDEX IF NOT EXISTS idx_ariza_seri_no ON ariza(seri_no);
+
+CREATE TABLE IF NOT EXISTS ariza_tahsilat (
+    id SERIAL PRIMARY KEY,
+    ariza_id INTEGER NOT NULL REFERENCES ariza(id) ON DELETE CASCADE,
+    tarih TEXT,
+    tutar REAL DEFAULT 0,
+    odeme_sekli TEXT,
+    odemeyi_yapan TEXT,
+    aciklama TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ariza_tahsilat_ariza ON ariza_tahsilat(ariza_id);
