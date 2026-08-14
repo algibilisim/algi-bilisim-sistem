@@ -27,6 +27,17 @@ def tl_format(deger):
     return s
 
 
+def _telefon_formatla(deger):
+    rakamlar = "".join(ch for ch in str(deger or "") if ch.isdigit())
+    if not rakamlar:
+        return ""
+    if len(rakamlar) == 10:
+        rakamlar = "0" + rakamlar
+    if len(rakamlar) != 11:
+        return str(deger).strip()
+    return f"{rakamlar[0]} {rakamlar[1:4]} {rakamlar[4:7]} {rakamlar[7:9]} {rakamlar[9:11]}"
+
+
 DISPLAY_KOLONLARI = [
     ("s_no", "S.No"),
     ("koy_adi", "Köy"),
@@ -44,6 +55,7 @@ DISPLAY_KOLONLARI = [
     ("senet_sahibi_adi", "Senet Sahibi Adı"),
     ("senet_sahibi_soyadi", "Senet Sahibi Soyadı"),
     ("telefon", "Telefon"),
+    ("telefon2", "Telefon 2"),
     ("baba_adi", "Baba Adı"),
     ("montaj_tarihi", "Montaj Tarihi"),
     ("odeme_tarihi", "Ödeme Tarihi"),
@@ -74,6 +86,7 @@ KOLON_BILGI = {
     "senet_sahibi_adi": ("senet_sahibi_adi", "metin"),
     "senet_sahibi_soyadi": ("senet_sahibi_soyadi", "metin"),
     "telefon": ("telefon", "metin"),
+    "telefon2": ("telefon2", "metin"),
     "baba_adi": ("baba_adi", "metin"),
     "montaj_tarihi": ("montaj_tarihi", "tarih"),
     "odeme_tarihi": ("odeme_tarihi", "tarih"),
@@ -98,6 +111,8 @@ ARIZA_DISPLAY_KOLONLARI = [
     ("seri_no", "Seri No"),
     ("adi", "Adı"),
     ("soyadi", "Soyadı"),
+    ("telefon", "Telefon"),
+    ("telefon2", "Telefon 2"),
     ("ariza_ucret", "Arıza Ücret"),
     ("alinan_ucret", "Alınan Ücret"),
     ("kalan_ucret", "Kalan Ücret"),
@@ -105,7 +120,9 @@ ARIZA_DISPLAY_KOLONLARI = [
     ("takilan_tarih", "Takılan Tarih"),
     ("sayac_kredisi", "Sayaç Kredisi"),
     ("tespit_edilen_ariza", "Tespit Edilen Arıza"),
+    ("tespit_aciklama", "Tespit Açıklama"),
     ("yapilan_islemler", "Yapılan İşlemler"),
+    ("islem_aciklama", "İşlem Açıklama"),
 ]
 
 ARIZA_KOLON_BILGI = {
@@ -116,6 +133,8 @@ ARIZA_KOLON_BILGI = {
     "seri_no": ("seri_no", "metin"),
     "adi": ("adi", "metin"),
     "soyadi": ("soyadi", "metin"),
+    "telefon": ("telefon", "metin"),
+    "telefon2": ("telefon2", "metin"),
     "ariza_ucret": ("ariza_ucret", "sayi"),
     "alinan_ucret": ("alinan_ucret", "sayi"),
     "kalan_ucret": ("(ariza_ucret - alinan_ucret)", "sayi"),
@@ -123,26 +142,31 @@ ARIZA_KOLON_BILGI = {
     "takilan_tarih": ("takilan_tarih", "tarih"),
     "sayac_kredisi": ("sayac_kredisi", "metin"),
     "tespit_edilen_ariza": ("tespit_edilen_ariza", "metin"),
+    "tespit_aciklama": ("tespit_aciklama", "metin"),
     "yapilan_islemler": ("yapilan_islemler", "metin"),
+    "islem_aciklama": ("islem_aciklama", "metin"),
 }
 
 ARIZA_SAYISAL_KOLONLAR = {k for k, (_, tur) in ARIZA_KOLON_BILGI.items() if tur == "sayi"}
 
 TESPIT_EDILEN_ARIZA_SECENEKLERI = [
-    "Ekran Yok", "Mekanik Patlak", "Dijital Su Almış", "Pil Bitik", "Pil Zayıf",
-    "Motor Oksitli", "Sıkıntı Yok", "Motor Switch Arızalı", "Error 1", "Error 2",
-    "Error 3", "Error 4", "Error 5", "Arıza Simgesi", "Harcama Uyuşmuyor",
-    "Magnet", "Data", "Küre Dönmüyor", "Küre Zor Dönüyor", "Küre Paslı",
-    "Harcama Yapmıyor", "Kondansatör Yok", "Kondansatör Devre Dışı",
+    "Arıza Simgesi", "Data", "Dijital Su Almış", "Ekran Yok",
+    "Error 1", "Error 2", "Error 3", "Error 4", "Error 5",
+    "Harcama Uyuşmuyor", "Harcama Yapmıyor",
+    "Kondansatör Devre Dışı", "Kondansatör Yok",
+    "Küre Dönmüyor", "Küre Paslı", "Küre Zor Dönüyor",
+    "Magnet", "Mekanik Patlak", "Motor Oksitli", "Motor Switch Arızalı",
+    "Pil Bitik", "Pil Zayıf", "Sıkıntı Yok",
 ]
 
 YAPILAN_ISLEMLER_SECENEKLERI = [
-    "Pil Takıldı", "Motor Değişti", "Kart Değişti", "Kart Ekran Değişti",
-    "Kart Okuyucu Değişti", "Mekanik Değişti", "Mekanik Patlak Tamir",
-    "Sayım Aparatı Değişti", "Motor Switch Değişti", "Formatlandı", "Resetlendi",
-    "Mekanik Pervane Değişti", "Küre Değişti", "Küre Temizlendi",
-    "Kondansatör Takıldı", "Kondansatör Devreye Alındı", "Kart Temizlendi",
-    "Motor Tamir Edildi",
+    "Formatlandı",
+    "Kart Değişti", "Kart Ekran Değişti", "Kart Okuyucu Değişti", "Kart Temizlendi",
+    "Kondansatör Devreye Alındı", "Kondansatör Takıldı",
+    "Küre Değişti", "Küre Temizlendi",
+    "Mekanik Değişti", "Mekanik Patlak Tamir", "Mekanik Pervane Değişti",
+    "Motor Değişti", "Motor Switch Değişti", "Motor Tamir Edildi",
+    "Pil Takıldı", "Resetlendi", "Sayım Aparatı Değişti",
 ]
 
 
@@ -225,6 +249,7 @@ def _abone_satir_sozlugu(k):
         "senet_sahibi_adi": k["senet_sahibi_adi"],
         "senet_sahibi_soyadi": k["senet_sahibi_soyadi"],
         "telefon": k["telefon"],
+        "telefon2": k["telefon2"],
         "baba_adi": k["baba_adi"],
         "montaj_tarihi": _gg_aa_yyyy(k["montaj_tarihi"]),
         "odeme_tarihi": _gg_aa_yyyy(k["odeme_tarihi"]),
@@ -253,6 +278,8 @@ def _ariza_satir_sozlugu(k):
         "seri_no": k["seri_no"],
         "adi": k["adi"],
         "soyadi": k["soyadi"],
+        "telefon": k["telefon"],
+        "telefon2": k["telefon2"],
         "ariza_ucret": tl_format(k["ariza_ucret"]),
         "alinan_ucret": tl_format(k["alinan_ucret"]),
         "kalan_ucret": tl_format(kalan_ucret),
@@ -260,7 +287,9 @@ def _ariza_satir_sozlugu(k):
         "takilan_tarih": _gg_aa_yyyy(k["takilan_tarih"]),
         "sayac_kredisi": k["sayac_kredisi"],
         "tespit_edilen_ariza": k["tespit_edilen_ariza"],
+        "tespit_aciklama": k["tespit_aciklama"],
         "yapilan_islemler": k["yapilan_islemler"],
+        "islem_aciklama": k["islem_aciklama"],
         "_renk": renk,
     }
 
@@ -358,11 +387,15 @@ def abone_ara():
         return jsonify({"bulundu": False})
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT adi, soyadi FROM abone WHERE sayac_no = %s LIMIT 1", (sayac_no,))
+    cur.execute("SELECT adi, soyadi, telefon, telefon2 FROM abone WHERE sayac_no = %s LIMIT 1", (sayac_no,))
     satir = cur.fetchone()
     cur.close()
     if satir:
-        return jsonify({"bulundu": True, "adi": satir["adi"], "soyadi": satir["soyadi"]})
+        return jsonify({
+            "bulundu": True,
+            "adi": satir["adi"], "soyadi": satir["soyadi"],
+            "telefon": satir["telefon"] or "", "telefon2": satir["telefon2"] or "",
+        })
     return jsonify({"bulundu": False})
 
 
@@ -402,6 +435,7 @@ def abone_listesi():
         ("senet_tutari", "Senet Tutarı", "senet_tutari", True),
         ("soyadi", "Soyadı", "soyadi", False),
         ("telefon", "Telefon", "telefon", False),
+        ("telefon2", "Telefon 2", "telefon2", False),
         ("toplam_kalan", "Toplam Kalan", "(sayac_tutari + malzeme_tutari - alinan_tutar - malzeme_alinan)", True),
     ]
     ALAN_HARITASI = {k: (kolon, sayisal) for k, _, kolon, sayisal in ALAN_TANIMLARI}
@@ -590,7 +624,8 @@ def _abone_kaydet(abone_id):
         senet_no=senet_no_final,
         senet_sahibi_adi=f.get("senet_sahibi_adi", "").strip(),
         senet_sahibi_soyadi=f.get("senet_sahibi_soyadi", "").strip(),
-        telefon=f.get("telefon", "").strip(),
+        telefon=_telefon_formatla(f.get("telefon", "")),
+        telefon2=_telefon_formatla(f.get("telefon2", "")),
         baba_adi=f.get("baba_adi", "").strip(),
         montaj_tarihi=f.get("montaj_tarihi", "").strip(),
         odeme_tarihi=f.get("odeme_tarihi", "").strip(),
@@ -829,13 +864,17 @@ def _ariza_kaydet(ariza_id):
         seri_no=f.get("seri_no", "").strip(),
         adi=f.get("adi", "").strip(),
         soyadi=f.get("soyadi", "").strip(),
+        telefon=_telefon_formatla(f.get("telefon", "")),
+        telefon2=_telefon_formatla(f.get("telefon2", "")),
         ariza_ucret=ariza_ucret,
         alinan_ucret=alinan_ucret,
         gelis_tarihi=f.get("gelis_tarihi", "").strip(),
         takilan_tarih=f.get("takilan_tarih", "").strip(),
         sayac_kredisi=f.get("sayac_kredisi", "").strip(),
         tespit_edilen_ariza=tespit_metni,
+        tespit_aciklama=f.get("tespit_aciklama", "").strip(),
         yapilan_islemler=islem_metni,
+        islem_aciklama=f.get("islem_aciklama", "").strip(),
     )
 
     db = get_db()
@@ -978,6 +1017,63 @@ def ariza_ciktisi():
         deger_secili=deger_secili, deger_secenekleri=deger_secenekleri,
         sayisal_kolonlar=ARIZA_SAYISAL_KOLONLAR,
     )
+
+
+@app.route("/ariza/<int:ariza_id>/tahsilat", methods=["GET", "POST"])
+@login_required
+def ariza_tahsilat(ariza_id):
+    db = get_db()
+    cur = db.cursor()
+
+    if request.method == "POST":
+        tutar = _sayilastir(request.form.get("tutar"))
+        tarih = request.form.get("tarih", "").strip()
+        odeme_sekli = request.form.get("odeme_sekli", "").strip()
+        odemeyi_yapan = request.form.get("odemeyi_yapan", "").strip()
+        aciklama = request.form.get("aciklama", "").strip()
+
+        if tutar:
+            cur.execute(
+                "INSERT INTO ariza_tahsilat (ariza_id, tarih, tutar, odeme_sekli, odemeyi_yapan, aciklama) VALUES (%s, %s, %s, %s, %s, %s)",
+                (ariza_id, tarih, tutar, odeme_sekli, odemeyi_yapan, aciklama),
+            )
+            cur.execute("UPDATE ariza SET alinan_ucret = alinan_ucret + %s WHERE id = %s", (tutar, ariza_id))
+            db.commit()
+
+        cur.close()
+        return redirect(url_for("ariza_tahsilat", ariza_id=ariza_id))
+
+    cur.execute("SELECT * FROM ariza WHERE id = %s", (ariza_id,))
+    kayit = cur.fetchone()
+    if kayit is None:
+        cur.close()
+        flash("Kayıt bulunamadı.")
+        return redirect(url_for("ariza_listesi"))
+
+    cur.execute("SELECT * FROM ariza_tahsilat WHERE ariza_id = %s ORDER BY tarih DESC, id DESC", (ariza_id,))
+    tahsilatlar = cur.fetchall()
+    cur.close()
+
+    return render_template("ariza_tahsilat.html", kayit=kayit, tahsilatlar=tahsilatlar)
+
+
+@app.route("/ariza-tahsilat/<int:tahsilat_id>/sil", methods=["POST"])
+@login_required
+def ariza_tahsilat_sil(tahsilat_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT ariza_id, tutar FROM ariza_tahsilat WHERE id = %s", (tahsilat_id,))
+    kayit = cur.fetchone()
+    ariza_id = None
+    if kayit:
+        ariza_id = kayit["ariza_id"]
+        cur.execute("UPDATE ariza SET alinan_ucret = alinan_ucret - %s WHERE id = %s", (kayit["tutar"], ariza_id))
+        cur.execute("DELETE FROM ariza_tahsilat WHERE id = %s", (tahsilat_id,))
+        db.commit()
+    cur.close()
+    if ariza_id:
+        return redirect(url_for("ariza_tahsilat", ariza_id=ariza_id))
+    return redirect(url_for("ariza_listesi"))
 
 
 if __name__ == "__main__":
