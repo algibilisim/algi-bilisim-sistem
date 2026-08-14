@@ -26,54 +26,69 @@
     </div>
 </div>
 
-<div class="tablo-kaydirici">
-<table>
-    <thead>
-        <tr>
-            <th>S.No</th>
-            <th>Köy Adı</th>
-            <th>Sayaç Tutarı</th>
-            <th>Malzeme Tutarı</th>
-            <th>Genel Satış</th>
-            <th>Tahsil Edilen</th>
-            <th>Kalan Tutar</th>
-            <th>Muhtara Ödenecek</th>
-            <th>Muhtara Ödenen</th>
-            <th>Muhtar Kalan</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for s in satirlar %}
-        <tr>
-            <td>{{ loop.index }}</td>
-            <td>{{ s['koy_adi'] }}</td>
-            <td>{{ s['sayac_tutari_toplami']|tl }}</td>
-            <td>{{ s['malzeme_tutari_toplami']|tl }}</td>
-            <td>{{ s['genel_satis_tutari']|tl }}</td>
-            <td>{{ s['tahsil_edilen_tutar']|tl }}</td>
-            <td class="{{ 'kirmizi' if (s['kalan_tutar'] or 0) > 0 else 'yesil' }}">{{ s['kalan_tutar']|tl }}</td>
-            <td>{{ s['muhtara_odenecek']|tl }}</td>
-            <td>{{ s['muhtara_odenen']|tl }}</td>
-            <td>{{ s['muhtara_kalan']|tl }}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="10">Kayıt bulunamadı.</td></tr>
-        {% endfor %}
-    </tbody>
-    <tfoot>
-        <tr>
-            <td></td>
-            <td><strong>TOPLAM</strong></td>
-            <td><strong>{{ genel['sayac_tutari_toplami']|tl }}</strong></td>
-            <td><strong>{{ genel['malzeme_tutari_toplami']|tl }}</strong></td>
-            <td><strong>{{ genel['genel_satis_tutari']|tl }}</strong></td>
-            <td><strong>{{ genel['tahsil_edilen_tutar']|tl }}</strong></td>
-            <td><strong>{{ genel['kalan_tutar']|tl }}</strong></td>
-            <td><strong>{{ genel['muhtara_odenecek']|tl }}</strong></td>
-            <td><strong>{{ genel['muhtara_odenen']|tl }}</strong></td>
-            <td><strong>{{ genel['muhtara_kalan']|tl }}</strong></td>
-        </tr>
-    </tfoot>
-</table>
-</div>
+<form method="get">
+    <div class="tablo-kaydirici">
+    <table>
+        <thead>
+            <tr>
+                <th>S.No</th>
+                {% for anahtar, etiket, tur in kolon_listesi %}<th>{{ etiket }}</th>{% endfor %}
+            </tr>
+            <tr class="no-print">
+                <th></th>
+                {% for anahtar, etiket, tur in kolon_listesi %}
+                <th class="kolon-filtre-th">
+                    <button type="button" class="btn filtre-ac-buton" data-hedef="kfiltre-{{ anahtar }}">
+                        {% if deger_secili[anahtar] %}{{ deger_secili[anahtar]|length }} seçili ▾{% else %}Tümü ▾{% endif %}
+                    </button>
+                    <div id="kfiltre-{{ anahtar }}" class="filtre-kutu">
+                        <label class="tumu-satir"><input type="checkbox" class="tumu-tik"> Tümü</label>
+                        {% for ham, metin in deger_secenekleri[anahtar] %}
+                        <label>
+                            <input type="checkbox" name="deger_{{ anahtar }}" value="{{ ham }}"
+                                   {% if ham in deger_secili[anahtar] %}checked{% endif %}>
+                            {{ metin }}
+                        </label>
+                        {% endfor %}
+                        <button type="submit" class="btn btn-yesil" style="width:100%; margin-top:8px; font-size:12px;">Filtrele</button>
+                    </div>
+                </th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in satirlar %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td>{{ s['koy_adi'] }}</td>
+                <td class="sayi">{{ s['sayac_tutari_toplami']|tl }}</td>
+                <td class="sayi">{{ s['malzeme_tutari_toplami']|tl }}</td>
+                <td class="sayi">{{ s['genel_satis_tutari']|tl }}</td>
+                <td class="sayi">{{ s['tahsil_edilen_tutar']|tl }}</td>
+                <td class="sayi {{ 'kirmizi' if (s['kalan_tutar'] or 0) > 0 else 'yesil' }}">{{ s['kalan_tutar']|tl }}</td>
+                <td class="sayi">{{ s['muhtara_odenecek']|tl }}</td>
+                <td class="sayi">{{ s['muhtara_odenen']|tl }}</td>
+                <td class="sayi">{{ s['muhtara_kalan']|tl }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="10">Kayıt bulunamadı.</td></tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td></td>
+                <td><strong>TOPLAM</strong></td>
+                <td class="sayi"><strong>{{ genel['sayac_tutari_toplami']|tl }}</strong></td>
+                <td class="sayi"><strong>{{ genel['malzeme_tutari_toplami']|tl }}</strong></td>
+                <td class="sayi"><strong>{{ genel['genel_satis_tutari']|tl }}</strong></td>
+                <td class="sayi"><strong>{{ genel['tahsil_edilen_tutar']|tl }}</strong></td>
+                <td class="sayi"><strong>{{ genel['kalan_tutar']|tl }}</strong></td>
+                <td class="sayi"><strong>{{ genel['muhtara_odenecek']|tl }}</strong></td>
+                <td class="sayi"><strong>{{ genel['muhtara_odenen']|tl }}</strong></td>
+                <td class="sayi"><strong>{{ genel['muhtara_kalan']|tl }}</strong></td>
+            </tr>
+        </tfoot>
+    </table>
+    </div>
+</form>
 {% endblock %}
