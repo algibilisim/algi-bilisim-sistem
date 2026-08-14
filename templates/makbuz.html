@@ -10,6 +10,13 @@
     </div>
 </div>
 
+<style>
+@media print {
+    @page { size: A5; margin: 10mm; }
+    body { margin: 0; }
+}
+</style>
+
 <div style="background:#fff; max-width:750px; margin:0 auto; padding:30px; border:1px solid #ccc; font-size:14px; line-height:1.6;">
 
     <div style="display:flex; justify-content:space-between; align-items:flex-start;">
@@ -28,9 +35,8 @@
     </div>
 
     <div style="margin:24px 0 10px 0;">Sayın : {{ sayin }}</div>
-    <div style="margin-bottom:24px;">Yalnız {{ tutar_yazi }} Tahsil edilmiştir.</div>
 
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; gap:20px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:20px;">
         <table style="width:60%; border-collapse:collapse;">
             <tr><td style="border:1px solid #333; padding:6px;" colspan="2"><strong>ÖDEME ŞEKLİ</strong></td></tr>
             <tr><td style="border:1px solid #333; padding:6px;">Nakit</td><td style="border:1px solid #333; padding:6px; text-align:right;">{{ tutar|tl if odeme_esles == 'nakit' else '' }}</td></tr>
@@ -44,6 +50,8 @@
             ......................................
         </div>
     </div>
+
+    <div style="margin-bottom:24px;">Yalnız {{ tutar_yazi }} Tahsil edilmiştir.</div>
 
     <div style="border:1px solid #333; padding:10px 12px;">
         <strong>AÇIKLAMA :</strong> {{ aciklama_basligi }}{% if seri_no %} — Seri No: {{ seri_no }}{% endif %}{% if odeme_sekli_metin %} — Ödeme Şekli: {{ odeme_sekli_metin }}{% endif %}
