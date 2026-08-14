@@ -88,9 +88,9 @@ def _tutar_yaziya_cevir(tutar):
     tutar = round(float(tutar or 0), 2)
     tl_kismi = int(tutar)
     kurus_kismi = int(round((tutar - tl_kismi) * 100))
-    metin = _sayi_yaziya_cevir(tl_kismi)
+    metin = _sayi_yaziya_cevir(tl_kismi) + " Türk Lirası"
     if kurus_kismi > 0:
-        metin += f" Lira {_sayi_yaziya_cevir(kurus_kismi)} Kuruş"
+        metin += " " + _sayi_yaziya_cevir(kurus_kismi) + " Kuruş"
     return metin
 
 
