@@ -4,11 +4,15 @@
 
 <div class="sayfa-basligi no-print">
     <h2>Tahsilat Makbuzu</h2>
-    <button type="button" class="btn btn-yesil" onclick="window.print()">Yazdır</button>
+    <div style="display:flex; gap:8px;">
+        <a class="btn" href="{{ geri_url }}">Geri Dön</a>
+        <button type="button" class="btn btn-yesil" onclick="window.print()">Yazdır</button>
+    </div>
 </div>
 
 <div style="background:#fff; max-width:650px; margin:0 auto; padding:30px; border:1px solid #ccc; font-size:14px; line-height:1.7;">
-    <div style="text-align:center; font-weight:700; margin-bottom:10px;">
+    <img src="{{ url_for('static', filename='logo.jpg') }}" alt="ALGI Logo" style="width:240px; display:block; margin-bottom:10px;">
+    <div style="margin-bottom:20px;">
         Bahçelievler Mahallesi Şehir Yolu Caddesi<br>
         Emirseyit No:227 – 227A TOKAT
     </div>
@@ -17,7 +21,7 @@
         <div>{{ tarih if tarih else '……/……./2026' }}</div>
     </div>
     <div style="margin-bottom:10px;">Sayın : {{ sayin }}</div>
-    <div style="margin-bottom:20px;">Yalnız {{ tutar_yazi }} ({{ tutar|tl }} TL) Tahsil edilmiştir.</div>
+    <div style="margin-bottom:20px;">Yalnız {{ tutar_yazi }} TL Tahsil edilmiştir.</div>
 
     <table style="width:100%; border-collapse:collapse; margin-bottom:20px;">
         <tr><td colspan="2" style="text-align:center; font-weight:700; border:1px solid #333; padding:6px;">TAHSİLAT MAKBUZU</td></tr>
@@ -39,7 +43,7 @@
     </div>
     {% endif %}
 
-    <div style="text-align:right; margin-top:40px;">
+    <div style="text-align:center; margin-top:40px;">
         TAHSİL EDEN<br><br>
         ......................................
     </div>
