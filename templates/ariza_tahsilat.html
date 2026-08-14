@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Tahsilat - {{ kayit['adi'] }} {{ kayit['soyadi'] }} - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi">
+    <h2>{{ kayit['adi'] }} {{ kayit['soyadi'] }} - Arıza Tahsilatı</h2>
+    <a class="btn" href="{{ url_for('ariza_listesi') }}">Arıza Listesine Dön</a>
+</div>
+
+<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:20px;">
+    <strong>Köy:</strong> {{ kayit['koy_adi'] }} &nbsp;|&nbsp;
+    <strong>Seri No:</strong> {{ kayit['seri_no'] }} &nbsp;|&nbsp;
+    <strong>Arıza Ücret:</strong> {{ kayit['ariza_ucret']|tl }} &nbsp;|&nbsp;
+    <strong>Alınan Ücret:</strong> {{ kayit['alinan_ucret']|tl }}
+</div>
+
+<h3>Yeni Tahsilat Ekle</h3>
+<form method="post" class="abone-form">
+    <div class="form-grid">
+        <div>
+            <label>Tutar *</label>
+            <input type="text" name="tutar" required>
+        </div>
+        <div>
+            <label>Tarih</label>
+            <input type="date" name="tarih">
+        </div>
+        <div>
+            <label>Ödeme Şekli</label>
+            <input type="text" name="odeme_sekli">
+        </div>
+        <div>
+            <label>Ödemeyi Yapan</label>
+            <input type="text" name="odemeyi_yapan">
+        </div>
+        <div class="tam-genislik">
+            <label>Açıklama</label>
+            <textarea name="aciklama" rows="2"></textarea>
+        </div>
+    </div>
+    <div class="form-butonlar">
+        <button type="submit" class="btn btn-yesil">Tahsilat Ekle</button>
+    </div>
+</form>
+
+<h3 style="margin-top:30px;">Tahsilat Geçmişi</h3>
+<div class="tablo-kaydirici">
+<table>
+    <thead>
+        <tr>
+            <th>Tarih</th>
+            <th>Tutar</th>
+            <th>Ödeme Şekli</th>
+            <th>Ödemeyi Yapan</th>
+            <th>Açıklama</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for t in tahsilatlar %}
+        {% set tt = t['tarih'] %}
+        {% set tt_g = (tt[8:10] + '.' + tt[5:7] + '.' + tt[0:4]) if tt and tt|length >= 10 else (tt or '') %}
+        <tr>
+            <td>{{ tt_g }}</td>
+            <td class="sayi">{{ t['tutar']|tl }}</td>
+            <td>{{ t['odeme_sekli'] }}</td>
+            <td>{{ t['odemeyi_yapan'] }}</td>
+            <td>{{ t['aciklama'] }}</td>
+            <td>
+                <form method="post" action="{{ url_for('ariza_tahsilat_sil', tahsilat_id=t['id']) }}"
+                      onsubmit="return confirm('Bu tahsilat kaydını silmek istediğinize emin misiniz?');">
+                    <button type="submit" class="link-buton">Sil</button>
+                </form>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6">Henüz tahsilat kaydı yok.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% endblock %}
