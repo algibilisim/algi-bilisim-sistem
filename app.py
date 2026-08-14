@@ -1,6 +1,8 @@
 import os
 import io
 import csv
+import gzip
+import base64
 from datetime import datetime
 from functools import wraps
 
@@ -1284,6 +1286,112 @@ def ariza_tahsilat_makbuz(tahsilat_id):
         not_goster=not_goster,
         geri_url=url_for("ariza_tahsilat", ariza_id=kayit["ariza_id"]),
     )
+
+
+@app.route("/admin/toplu-abone-yukle")
+@login_required
+def toplu_abone_yukle():
+    veri_dosyasi = os.path.join(os.path.dirname(os.path.abspath(__file__)), "abone_toplu_veri.b64")
+    if not os.path.exists(veri_dosyasi):
+        return (
+            "Veri dosyası (abone_toplu_veri.b64) bulunamadı. "
+            "Bu dosyanın app.py ile aynı klasörde (repo kök dizininde) olduğundan emin olun.",
+            404,
+        )
+
+    with open(veri_dosyasi, "rb") as f:
+        b64_veri = f.read()
+    csv_metin = gzip.decompress(base64.b64decode(b64_veri)).decode("utf-8-sig")
+    satirlar = list(csv.DictReader(io.StringIO(csv_metin)))
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT COUNT(*) AS c FROM abone")
+    mevcut_sayi = cur.fetchone()["c"]
+
+    onay = request.args.get("onayla") == "1"
+    zorla = request.args.get("zorla") == "1"
+
+    if not onay:
+        if mevcut_sayi > 50:
+            aksiyon = (
+                f"<p style='color:#b00;font-weight:bold'>Dikkat: tabloda hâlihazırda {mevcut_sayi} kayıt var. "
+                f"Bu işlem mevcut kayıtları SİLMEZ, üzerine {len(satirlar)} yeni kayıt EKLER. "
+                f"Bu veriyi daha önce yüklediyseniz tekrar yüklemeyin, kayıtlar çiftlenir.</p>"
+                f"<p><a href='?onayla=1&zorla=1' style='font-size:20px;color:#b00'>"
+                f"Yine de devam et ve {len(satirlar)} kaydı ekle</a></p>"
+            )
+        else:
+            aksiyon = (
+                f"<p><a href='?onayla=1' style='font-size:20px'>"
+                f"Evet, {len(satirlar)} kaydı içe aktar</a></p>"
+            )
+        cur.close()
+        return f"""
+        <html><body style="font-family:sans-serif;max-width:640px;margin:40px auto;line-height:1.5">
+        <h2>Toplu Abone Yükleme</h2>
+        <p>Excel dosyasından hazırlanan <b>{len(satirlar)}</b> abone kaydı,
+        veritabanındaki <b>abone</b> tablosuna eklenmeye hazır.</p>
+        <p>Şu anda tabloda <b>{mevcut_sayi}</b> kayıt bulunuyor.</p>
+        {aksiyon}
+        </body></html>
+        """
+
+    if mevcut_sayi > 50 and not zorla:
+        cur.close()
+        return "Güvenlik nedeniyle işlem durduruldu. Lütfen onay sayfasındaki linke tekrar tıklayın.", 400
+
+    kolonlar = [
+        "s_no", "koy_adi", "adi", "soyadi", "sayac_no", "senet_tutari", "sayac_tutari",
+        "alinan_tutar", "malzeme_tutari", "malzeme_alinan", "senet_no",
+        "senet_sahibi_adi", "senet_sahibi_soyadi", "telefon", "baba_adi",
+        "montaj_tarihi", "odeme_tarihi", "odeme_sekli", "odemeyi_gonderen",
+        "aciklama", "muhtara_odenecek", "muhtara_odenen", "fatura_no",
+    ]
+    sayisal_alanlar = {
+        "senet_tutari", "sayac_tutari", "alinan_tutar", "malzeme_tutari",
+        "malzeme_alinan", "muhtara_odenecek", "muhtara_odenen",
+    }
+
+    def _sayi(v):
+        try:
+            return float(v) if v not in (None, "") else 0.0
+        except ValueError:
+            return 0.0
+
+    def _metin(v):
+        return (v or "").strip()
+
+    toplu_degerler = []
+    for satir in satirlar:
+        degerler = []
+        for kolon in kolonlar:
+            deger_ham = satir.get(kolon, "")
+            if kolon == "s_no":
+                degerler.append(deger_ham if deger_ham not in (None, "") else None)
+            elif kolon in sayisal_alanlar:
+                degerler.append(_sayi(deger_ham))
+            else:
+                degerler.append(_metin(deger_ham))
+        toplu_degerler.append(tuple(degerler))
+
+    kolonlar_sql = ", ".join(kolonlar)
+    yer_tutucular = ", ".join(["%s"] * len(kolonlar))
+    cur.executemany(
+        f"INSERT INTO abone ({kolonlar_sql}) VALUES ({yer_tutucular})",
+        toplu_degerler,
+    )
+    db.commit()
+    eklenen = len(toplu_degerler)
+    cur.close()
+
+    return f"""
+    <html><body style="font-family:sans-serif;max-width:640px;margin:40px auto;line-height:1.5">
+    <h2 style="color:#0a0">Başarılı</h2>
+    <p><b>{eklenen}</b> abone kaydı başarıyla eklendi.</p>
+    <p><a href="/abone">Abone listesine git</a></p>
+    </body></html>
+    """
 
 
 if __name__ == "__main__":
