@@ -34,6 +34,14 @@
             <label>Soyadı</label>
             <input type="text" id="ariza_soyadi" name="soyadi" value="{{ kayit['soyadi'] if kayit else '' }}">
         </div>
+        <div>
+            <label>Telefon</label>
+            <input type="text" id="ariza_telefon" name="telefon" value="{{ kayit['telefon'] if kayit else '' }}">
+        </div>
+        <div>
+            <label>Telefon 2</label>
+            <input type="text" id="ariza_telefon2" name="telefon2" value="{{ kayit['telefon2'] if kayit else '' }}">
+        </div>
 
         <div class="ayirici">Ücret Bilgileri</div>
 
@@ -62,23 +70,31 @@
         </div>
 
         <div class="ayirici">Tespit Edilen Arıza</div>
-        <div class="tam-genislik" style="display:grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap:6px 16px;">
+        <div class="tam-genislik" style="display:flex; flex-wrap:wrap; gap:10px 24px;">
             {% for secenek in tespit_secenekleri %}
-            <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:normal; color:#333;">
+            <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:normal; color:#333; white-space:nowrap;">
                 <input type="checkbox" name="tespit_edilen_ariza" value="{{ secenek }}" {% if secenek in secili_tespit %}checked{% endif %}>
                 {{ secenek }}
             </label>
             {% endfor %}
         </div>
+        <div class="tam-genislik" style="margin-top:10px;">
+            <label>Açıklama</label>
+            <textarea name="tespit_aciklama" rows="2">{{ kayit['tespit_aciklama'] if kayit else '' }}</textarea>
+        </div>
 
         <div class="ayirici">Yapılan İşlemler</div>
-        <div class="tam-genislik" style="display:grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap:6px 16px;">
+        <div class="tam-genislik" style="display:flex; flex-wrap:wrap; gap:10px 24px;">
             {% for secenek in islem_secenekleri %}
-            <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:normal; color:#333;">
+            <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:normal; color:#333; white-space:nowrap;">
                 <input type="checkbox" name="yapilan_islemler" value="{{ secenek }}" {% if secenek in secili_islem %}checked{% endif %}>
                 {{ secenek }}
             </label>
             {% endfor %}
+        </div>
+        <div class="tam-genislik" style="margin-top:10px;">
+            <label>Açıklama</label>
+            <textarea name="islem_aciklama" rows="2">{{ kayit['islem_aciklama'] if kayit else '' }}</textarea>
         </div>
     </div>
 
@@ -98,6 +114,8 @@ document.getElementById('seri_no_girisi').addEventListener('blur', function() {
             if (veri.bulundu) {
                 document.getElementById('ariza_adi').value = veri.adi;
                 document.getElementById('ariza_soyadi').value = veri.soyadi;
+                document.getElementById('ariza_telefon').value = veri.telefon;
+                document.getElementById('ariza_telefon2').value = veri.telefon2;
             }
         });
 });
