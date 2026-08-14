@@ -31,5 +31,28 @@
     {% endwith %}
     {% block content %}{% endblock %}
 </main>
+<script>
+document.addEventListener('click', function(e) {
+    var tiklananButon = e.target.closest('.filtre-ac-buton');
+    var tiklananKutu = e.target.closest('.filtre-kutu');
+    if (tiklananButon) {
+        var hedefId = tiklananButon.getAttribute('data-hedef');
+        var hedefKutu = document.getElementById(hedefId);
+        var acikMi = hedefKutu.style.display === 'block';
+        document.querySelectorAll('.filtre-kutu').forEach(function(k) { k.style.display = 'none'; });
+        hedefKutu.style.display = acikMi ? 'none' : 'block';
+        e.stopPropagation();
+    } else if (!tiklananKutu) {
+        document.querySelectorAll('.filtre-kutu').forEach(function(k) { k.style.display = 'none'; });
+    }
+});
+document.addEventListener('change', function(e) {
+    if (e.target.classList.contains('tumu-tik')) {
+        var kutu = e.target.closest('.filtre-kutu');
+        var digerleri = kutu.querySelectorAll('input[type=checkbox]:not(.tumu-tik)');
+        digerleri.forEach(function(cb) { cb.checked = e.target.checked; });
+    }
+});
+</script>
 </body>
 </html>
