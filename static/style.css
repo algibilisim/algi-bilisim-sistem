@@ -156,16 +156,14 @@ th.sabit-sutun { background: #eef3ef; }
 .filtre-ac-buton { width: 100%; font-size: 11px; padding: 4px 6px; text-align: left; }
 .filtre-kutu {
     display: none;
-    position: absolute;
-    z-index: 20;
+    position: fixed;
+    z-index: 999;
     background: #fff;
     border: 1px solid #ccc;
     border-radius: 6px;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.2);
     padding: 8px;
-    max-height: 240px;
     overflow-y: auto;
-    width: 200px;
     text-align: left;
     white-space: normal;
     font-weight: normal;
