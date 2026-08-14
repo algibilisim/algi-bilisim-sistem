@@ -30,15 +30,14 @@
             <tr class="no-print">
                 {% for anahtar, etiket in kolon_listesi %}
                 {% if anahtar in goster_kolonlari %}
-                <th style="padding-top:2px; padding-bottom:6px; position:relative;">
-                    <button type="button" class="btn filtre-ac-buton" data-hedef="filtre-kutu-{{ anahtar }}"
-                            style="width:100%; font-size:11px; padding:4px 6px; text-align:left;">
+                <th class="kolon-filtre-th">
+                    <button type="button" class="btn filtre-ac-buton" data-hedef="cfiltre-{{ anahtar }}">
                         {% if deger_secili[anahtar] %}{{ deger_secili[anahtar]|length }} seçili ▾{% else %}Tümü ▾{% endif %}
                     </button>
-                    <div id="filtre-kutu-{{ anahtar }}" class="filtre-kutu"
-                         style="display:none; position:absolute; z-index:20; background:#fff; border:1px solid #ccc; border-radius:6px; box-shadow:0 4px 10px rgba(0,0,0,0.15); padding:8px; max-height:220px; overflow-y:auto; width:200px; text-align:left; white-space:normal; font-weight:normal;">
+                    <div id="cfiltre-{{ anahtar }}" class="filtre-kutu">
+                        <label class="tumu-satir"><input type="checkbox" class="tumu-tik"> Tümü</label>
                         {% for ham, metin in deger_secenekleri[anahtar] %}
-                        <label style="display:flex; align-items:center; gap:6px; padding:3px 0; font-size:12px;">
+                        <label>
                             <input type="checkbox" name="deger_{{ anahtar }}" value="{{ ham }}"
                                    {% if ham in deger_secili[anahtar] %}checked{% endif %}>
                             {{ metin }}
@@ -55,7 +54,9 @@
             {% for s in satirlar %}
             <tr>
                 {% for anahtar, etiket in kolon_listesi %}
-                {% if anahtar in goster_kolonlari %}<td>{{ s[anahtar] }}</td>{% endif %}
+                {% if anahtar in goster_kolonlari %}
+                <td class="{{ 'sayi' if anahtar in sayisal_kolonlar else '' }} {{ s['_renk'][anahtar] }}">{{ s[anahtar] }}</td>
+                {% endif %}
                 {% endfor %}
             </tr>
             {% else %}
@@ -65,23 +66,4 @@
     </table>
     </div>
 </form>
-
-<script>
-document.addEventListener('click', function(e) {
-    var butonlar = document.querySelectorAll('.filtre-ac-buton');
-    var tiklananButon = e.target.closest('.filtre-ac-buton');
-    var tiklananKutu = e.target.closest('.filtre-kutu');
-
-    if (tiklananButon) {
-        var hedefId = tiklananButon.getAttribute('data-hedef');
-        var hedefKutu = document.getElementById(hedefId);
-        var acikMi = hedefKutu.style.display === 'block';
-        document.querySelectorAll('.filtre-kutu').forEach(function(k) { k.style.display = 'none'; });
-        hedefKutu.style.display = acikMi ? 'none' : 'block';
-        e.stopPropagation();
-    } else if (!tiklananKutu) {
-        document.querySelectorAll('.filtre-kutu').forEach(function(k) { k.style.display = 'none'; });
-    }
-});
-</script>
 {% endblock %}
