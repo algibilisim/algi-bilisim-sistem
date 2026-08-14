@@ -96,7 +96,7 @@
             <td>{{ t['odemeyi_yapan'] }}</td>
             <td>{{ t['aciklama'] }}</td>
             <td class="islem-hucre">
-                <a href="{{ url_for('tahsilat_makbuz', tahsilat_id=t['id']) }}" target="_blank">Makbuz</a>
+                <a href="{{ url_for('tahsilat_makbuz', tahsilat_id=t['id']) }}">Makbuz</a>
                 <form method="post" action="{{ url_for('tahsilat_sil', tahsilat_id=t['id']) }}"
                       onsubmit="return confirm('Bu tahsilat kaydını silmek istediğinize emin misiniz?');">
                     <button type="submit" class="link-buton">Sil</button>
