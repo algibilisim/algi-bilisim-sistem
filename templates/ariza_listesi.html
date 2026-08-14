@@ -45,6 +45,7 @@
                 {% endfor %}
                 <td class="islem-hucre sabit-sutun">
                     <a href="{{ url_for('ariza_duzenle', ariza_id=s['id']) }}">Düzenle</a>
+                    <a href="{{ url_for('ariza_tahsilat', ariza_id=s['id']) }}">Tahsilat</a>
                     <form method="post" action="{{ url_for('ariza_sil', ariza_id=s['id']) }}"
                           onsubmit="return confirm('Bu kaydı silmek istediğinize emin misiniz?');">
                         <button type="submit" class="link-buton">Sil</button>
@@ -52,7 +53,7 @@
                 </td>
             </tr>
             {% else %}
-            <tr><td colspan="16">Kayıt bulunamadı.</td></tr>
+            <tr><td colspan="20">Kayıt bulunamadı.</td></tr>
             {% endfor %}
         </tbody>
     </table>
