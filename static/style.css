@@ -82,11 +82,12 @@ h1, h2 { color: #1e5631; }
 }
 .tablo-kaydirici { overflow-x: auto; background: #fff; border-radius: 8px; }
 table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
-th, td { padding: 8px 8px; border-bottom: 1px solid #e8e8e8; text-align: left; }
+th, td { padding: 8px 8px; border-bottom: 2px solid #9fb0a4; text-align: left; }
 th { background: #eef3ef; color: #1e5631; position: sticky; top: 0; }
-tfoot td { background: #eef3ef; }
+tfoot td { background: #eef3ef; border-bottom: none; border-top: 2px solid #9fb0a4; }
 .kirmizi { color: #c0392b; font-weight: 600; }
 .yesil { color: #1e7d3c; font-weight: 600; }
+.sayi { text-align: right; }
 .islem-hucre { display: flex; gap: 10px; align-items: center; }
 .islem-hucre a { color: #1e5631; }
 .sabit-sutun {
@@ -150,6 +151,37 @@ th.sabit-sutun { background: #eef3ef; }
     background: #f0f0f0;
     color: #666;
     cursor: not-allowed;
+}
+.kolon-filtre-th { position: relative; padding-top: 2px; padding-bottom: 6px; }
+.filtre-ac-buton { width: 100%; font-size: 11px; padding: 4px 6px; text-align: left; }
+.filtre-kutu {
+    display: none;
+    position: absolute;
+    z-index: 20;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+    padding: 8px;
+    max-height: 240px;
+    overflow-y: auto;
+    width: 200px;
+    text-align: left;
+    white-space: normal;
+    font-weight: normal;
+}
+.filtre-kutu label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 0;
+    font-size: 12px;
+}
+.filtre-kutu .tumu-satir {
+    border-bottom: 1px solid #ddd;
+    margin-bottom: 4px;
+    padding-bottom: 6px;
+    font-weight: 600;
 }
 @media print {
     .no-print { display: none !important; }
