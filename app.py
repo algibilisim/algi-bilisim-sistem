@@ -270,6 +270,100 @@ _ABONE_ALFABETIK_SIRA = [
 _DISPLAY_KOLON_HARITASI = dict(DISPLAY_KOLONLARI)
 DISPLAY_KOLONLARI_ALFABETIK = [(k, _DISPLAY_KOLON_HARITASI[k]) for k in _ABONE_ALFABETIK_SIRA]
 
+# abone_listesi() sayfasındaki serbest metin araması hangi alanlarda yapılabilir
+# tanımı. Hem abone_listesi() route'u hem de Montaj Formu'nun toplu oluşturma
+# özelliği aynı filtreleme mantığını (_abone_filtreli_kayitlari_getir) kullanır.
+_ABONE_ALAN_TANIMLARI = [
+    ("aciklama", "Açıklama", "aciklama", False),
+    ("adi", "Adı", "adi", False),
+    ("alinan_tutar", "Alınan", "alinan_tutar", True),
+    ("baba_adi", "Baba Adı", "baba_adi", False),
+    ("fatura_no", "Fatura No", "fatura_no", False),
+    ("koy", "Köy", "koy_adi", False),
+    ("malzeme_alinan", "Malzeme Alınan", "malzeme_alinan", True),
+    ("malzeme_kalan", "Malzeme Kalan", "(malzeme_tutari - malzeme_alinan)", True),
+    ("malzeme_tutari", "Malzeme Tutarı", "malzeme_tutari", True),
+    ("montaj_tarihi", "Montaj Tarihi", "montaj_tarihi", False),
+    ("muhtara_kalan", "Muhtara Kalan", "(muhtara_odenecek - muhtara_odenen)", True),
+    ("muhtara_odenecek", "Muhtara Ödenecek", "muhtara_odenecek", True),
+    ("muhtara_odenen", "Muhtara Ödenen", "muhtara_odenen", True),
+    ("odeme_gun_sozu", "Ödeme Gün Sözü", "odeme_gun_sozu", False),
+    ("odeme_sekli", "Ödeme Şekli", "odeme_sekli", False),
+    ("odeme_tarihi", "Ödeme Tarihi", "odeme_tarihi", False),
+    ("odemeyi_gonderen", "Ödemeyi Gönderen", "odemeyi_gonderen", False),
+    ("s_no", "S.No", "s_no", True),
+    ("sayac_kalan", "Sayaç Kalan", "(sayac_tutari - alinan_tutar)", True),
+    ("sayac_no", "Sayaç No", "sayac_no", False),
+    ("sayac_tutari", "Sayaç Tutarı", "sayac_tutari", True),
+    ("senet_no", "Senet No", "senet_no", False),
+    ("senet_sahibi_adi", "Senet Sahibi Adı", "senet_sahibi_adi", False),
+    ("senet_sahibi_soyadi", "Senet Sahibi Soyadı", "senet_sahibi_soyadi", False),
+    ("senet_tutari", "Senet Tutarı", "senet_tutari", True),
+    ("soyadi", "Soyadı", "soyadi", False),
+    ("telefon", "Telefon", "telefon", False),
+    ("telefon2", "Telefon 2", "telefon2", False),
+    ("toplam_kalan", "Toplam Kalan", "(sayac_tutari + malzeme_tutari - alinan_tutar - malzeme_alinan)", True),
+]
+_ABONE_ALAN_HARITASI = {k: (kolon, sayisal) for k, _, kolon, sayisal in _ABONE_ALAN_TANIMLARI}
+
+
+def _abone_filtreli_kayitlari_getir(db):
+    """Abone Listesi sayfasındaki (q / koy / alan / deger_*) filtrelerinin aynısını
+    mevcut request.args'a göre uygulayarak, filtrelenmiş ham abone satırlarını döndürür.
+    Montaj Formu'nun toplu oluşturma özelliği, Abone Listesi'nde o an görülen
+    filtrelenmiş kayıt kümesiyle birebir aynı sonucu almak için bunu kullanır."""
+    q = request.args.get("q", "").strip()
+    koy = request.args.get("koy", "").strip()
+    alanlar_secili = request.args.getlist("alan")
+
+    sql = "SELECT * FROM abone WHERE 1=1"
+    params = []
+    if q:
+        secili = alanlar_secili if alanlar_secili else [k for k, *_ in _ABONE_ALAN_TANIMLARI]
+        q_sayi = None
+        q_temiz = q.replace(",", ".").strip()
+        try:
+            q_sayi = float(q_temiz)
+        except ValueError:
+            q_sayi = None
+        kosul_listesi = []
+        kosul_params = []
+        for s in secili:
+            if s in _ABONE_ALAN_HARITASI:
+                kolon, sayisal = _ABONE_ALAN_HARITASI[s]
+                if sayisal and q_sayi is not None:
+                    kosul_listesi.append(f"ROUND(CAST({kolon} AS NUMERIC), 2) = %s")
+                    kosul_params.append(round(q_sayi, 2))
+                elif sayisal:
+                    kosul_listesi.append(f"CAST({kolon} AS TEXT) ILIKE %s")
+                    kosul_params.append(f"%{q}%")
+                else:
+                    kosul_listesi.append(f"{kolon} ILIKE %s")
+                    kosul_params.append(f"%{q}%")
+        if kosul_listesi:
+            sql += " AND (" + " OR ".join(kosul_listesi) + ")"
+            params += kosul_params
+    if koy:
+        sql += " AND koy_adi = %s"
+        params.append(koy)
+
+    deger_secili = {}
+    for anahtar, _ in DISPLAY_KOLONLARI:
+        secilenler = request.args.getlist(f"deger_{anahtar}")
+        deger_secili[anahtar] = secilenler
+        if secilenler:
+            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, KOLON_BILGI)
+            if kosul:
+                sql += f" AND {kosul}"
+                params += param_listesi
+
+    sql += " ORDER BY s_no"
+    cur = db.cursor()
+    cur.execute(sql, params)
+    kayitlar_ham = cur.fetchall()
+    cur.close()
+    return kayitlar_ham
+
 _ARIZA_ALFABETIK_SIRA = [
     "adi", "alinan_ucret", "ariza_ucret", "gelis_tarihi", "islem_aciklama",
     "kalan_ucret", "koy_adi", "ozel_s_no", "s_no", "sayac_kredisi", "seri_no",
@@ -477,6 +571,142 @@ def _ariza_satir_sozlugu(k):
     }
 
 
+# Montaj Formu'nun varsayılan tasarımı. Bu, sadece TEK bir kopyayı tanımlar —
+# A4 kağıda basıldığında sayfanın üstünde ve altında aynı abonenin bilgileriyle
+# İKİ KEZ basılması, şablonun kendisinde değil montaj_formu.html sayfasında
+# (aynı render'ı iki kez yazdırarak) sağlanır. Böylece kullanıcı Montaj Formu
+# Tasarımı ekranından sadece TEK kopyayı düzenler, iki kopyanın birbirinden
+# farklılaşma riski olmaz. Alanlar arasında {{ adi }}, {{ soyadi }}, {{ koy_adi }},
+# {{ sayac_no }}, {{ telefon }}, {{ telefon2 }}, {{ montaj_tarihi }} kullanılabilir.
+_MONTAJ_FORMU_VARSAYILAN_SABLON = """<div class="montaj-formu-kopya" style="border:1px solid #999; border-radius:6px; padding:14px 18px; margin-bottom:14px; font-size:12.5px; line-height:1.5; color:#1f2a24;">
+    <img src="{{ url_for('static', filename='montaj_formu_header.png') }}" alt="ALGI - ELEKTROMED" style="max-width:560px; width:100%; display:block; margin-bottom:8px;">
+
+    <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-weight:700;">
+        <div>KÖY ADI&nbsp;&nbsp;:&nbsp;&nbsp;{{ koy_adi }}</div>
+        <div>{{ montaj_tarihi }}</div>
+    </div>
+
+    <table style="width:100%; border-collapse:collapse; margin-bottom:6px;">
+        <tr><td colspan="4" style="border:1px solid #333; background:#eee; text-align:center; font-weight:700; padding:4px;">GARANTİ BELGESİ - ABONE BİLGİLERİ</td></tr>
+        <tr>
+            <td style="border:1px solid #333; padding:5px; width:18%; font-weight:700; background:#f7f7f7;">Adı Soyadı</td>
+            <td style="border:1px solid #333; padding:5px; width:32%;">{{ adi }} {{ soyadi }}</td>
+            <td style="border:1px solid #333; padding:5px; width:18%; font-weight:700; background:#f7f7f7;">Sayaç No</td>
+            <td style="border:1px solid #333; padding:5px; width:32%;">{{ sayac_no }}</td>
+        </tr>
+        <tr>
+            <td style="border:1px solid #333; padding:5px; font-weight:700; background:#f7f7f7;">İletişim</td>
+            <td style="border:1px solid #333; padding:5px;">{{ telefon }}{% if telefon2 %} / {{ telefon2 }}{% endif %}</td>
+            <td style="border:1px solid #333; padding:5px; font-weight:700; background:#f7f7f7;">Mekanik Sayaç Alındı</td>
+            <td style="border:1px solid #333; padding:5px;">&nbsp;</td>
+        </tr>
+        <tr>
+            <td style="border:1px solid #333; padding:5px; font-weight:700; background:#f7f7f7;">Sayaç Ücreti</td>
+            <td style="border:1px solid #333; padding:5px;">&nbsp;</td>
+            <td style="border:1px solid #333; padding:5px; font-weight:700; background:#f7f7f7;">Tesisat Ücreti</td>
+            <td style="border:1px solid #333; padding:5px;">&nbsp;</td>
+        </tr>
+        <tr>
+            <td style="border:1px solid #333; padding:5px; font-weight:700; background:#f7f7f7;">Alınan</td>
+            <td style="border:1px solid #333; padding:5px;">&nbsp;</td>
+            <td style="border:1px solid #333; padding:5px; font-weight:700; background:#f7f7f7;">Alınan</td>
+            <td style="border:1px solid #333; padding:5px;">&nbsp;</td>
+        </tr>
+    </table>
+
+    <table style="width:100%; border-collapse:collapse; margin-bottom:6px; font-size:11px;">
+        <tr><td colspan="6" style="border:1px solid #333; background:#eee; text-align:center; font-weight:700; padding:3px;">MONTAJDA KULLANILAN MALZEMELER</td></tr>
+        <tr style="font-weight:700; background:#f7f7f7;">
+            <td style="border:1px solid #333; padding:3px;">MALZEME</td><td style="border:1px solid #333; padding:3px; width:8%;">ADET</td>
+            <td style="border:1px solid #333; padding:3px;">MALZEME</td><td style="border:1px solid #333; padding:3px; width:8%;">ADET</td>
+            <td style="border:1px solid #333; padding:3px;">MALZEME</td><td style="border:1px solid #333; padding:3px; width:8%;">ADET</td>
+        </tr>
+        <tr>
+            <td style="border:1px solid #333; padding:3px;">REKOR 20x20 İÇ DİŞLİ OYNAR BAŞLI</td><td style="border:1px solid #333;">&nbsp;</td>
+            <td style="border:1px solid #333; padding:3px;">MAŞON 32x32 PPRC</td><td style="border:1px solid #333;">&nbsp;</td>
+            <td style="border:1px solid #333; padding:3px;">MAŞON 20x20 KAPLİN</td><td style="border:1px solid #333;">&nbsp;</td>
+        </tr>
+        <tr>
+            <td style="border:1px solid #333; padding:3px;">VANA 20x20 PPRC</td><td style="border:1px solid #333;">&nbsp;</td>
+            <td style="border:1px solid #333; padding:3px;">TE 20x20x20 PPRC</td><td style="border:1px solid #333;">&nbsp;</td>
+            <td style="border:1px solid #333; padding:3px;">REDÜKSİYON 25x20 KAPLİN</td><td style="border:1px solid #333;">&nbsp;</td>
+        </tr>
+        <tr>
+            <td style="border:1px solid #333; padding:3px;">DİRSEK 20x20 PPRC</td><td style="border:1px solid #333;">&nbsp;</td>
+            <td style="border:1px solid #333; padding:3px;">REDÜKSİYON 25x20 PPRC</td><td style="border:1px solid #333;">&nbsp;</td>
+            <td style="border:1px solid #333; padding:3px;">REDÜKSİYON 32x20 KAPLİN</td><td style="border:1px solid #333;">&nbsp;</td>
+        </tr>
+        <tr>
+            <td style="border:1px solid #333; padding:3px;">MAŞON 20x20 PPRC</td><td style="border:1px solid #333;">&nbsp;</td>
+            <td style="border:1px solid #333; padding:3px;">REDÜKSİYON 32x20 PPRC</td><td style="border:1px solid #333;">&nbsp;</td>
+            <td style="border:1px solid #333; padding:3px;">DİRSEK 20x20 KAPLİN</td><td style="border:1px solid #333;">&nbsp;</td>
+        </tr>
+        <tr>
+            <td style="border:1px solid #333; padding:3px;">MAŞON 25x25 PPRC</td><td style="border:1px solid #333;">&nbsp;</td>
+            <td style="border:1px solid #333; padding:3px;">KORUMA KABI</td><td style="border:1px solid #333;">&nbsp;</td>
+            <td style="border:1px solid #333; padding:3px;">&nbsp;</td><td style="border:1px solid #333;">&nbsp;</td>
+        </tr>
+    </table>
+
+    <div style="margin:6px 0;">
+        <strong style="color:#c0392b;">ÖDEME BİLGİLERİ</strong><br>
+        HESAP SAHİBİ : SEVDİYE ÇOBAN<br>
+        HALK BANKASI IBAN: TR95 0001 2009 6680 0009 0053 87
+    </div>
+
+    <div style="margin:6px 0; font-size:11.5px;">
+        {{ montaj_tarihi }} Tarihinde sayacım firma tarafından bilgim dahilinde değiştirildi. Sayacın garanti şartları aşağıda belirtilmiştir.
+    </div>
+
+    <div style="font-size:11px;">
+        <strong>Garanti Şartları</strong><br>
+        1 - Yüklenici sayaçları 10 (On) yıl boyunca garanti kapsamı dışında bedeli karşılığı teknik servis hizmeti sağlayacaktır.<br>
+        2 - Üretici tarafından üretimi yapılan sayaçlar TSE standartlarında olup, garanti süresi 2 (iki) yıl olacaktır.<br>
+        3 - Su gibi etkenlere direkt ve devamlı maruz kaldığında garanti dışı işlem yapılacaktır.<br>
+        4 - Montajı yapılan sayaçlar abone tarafından belirlenmiştir. Montaj yerinde sonradan doğabilecek sorunlar aboneye aittir.
+    </div>
+
+    <div style="display:flex; justify-content:space-between; margin-top:22px; font-size:11.5px; text-align:center;">
+        <div style="flex:1;">Kurum Personeli</div>
+        <div style="flex:1;">Tolga KARAAĞAÇ<br>ELEKTROMED Yetkili Personeli</div>
+        <div style="flex:1;">Abone Veya Vekili</div>
+    </div>
+</div>"""
+
+
+def _montaj_formu_veri(satir):
+    """`_abone_satir_sozlugu()` çıktısından Montaj Formu şablonu için birleştirme
+    (mail-merge) verisi hazırlar. montaj_tarihi burada GG/AA/YYYY biçimine çevrilir
+    (satırdaki değer zaten GG.AA.YYYY biçiminde geliyor)."""
+    return {
+        "adi": satir["adi"] or "",
+        "soyadi": satir["soyadi"] or "",
+        "koy_adi": satir["koy_adi"] or "",
+        "sayac_no": satir["sayac_no"] or "",
+        "telefon": satir["telefon"] or "",
+        "telefon2": satir["telefon2"] or "",
+        "montaj_tarihi": (satir["montaj_tarihi"] or "").replace(".", "/"),
+    }
+
+
+def _montaj_formu_render_tek(sablon_icerik, satir):
+    """Şablonu tek bir abone verisiyle render eder. Hata olursa (bozuk Jinja/HTML)
+    (None, hata_metni) döner; başarılıysa (render_edilmis_html, None) döner."""
+    veri = _montaj_formu_veri(satir)
+    try:
+        return app.jinja_env.from_string(sablon_icerik).render(**veri), None
+    except Exception as e:
+        return None, str(e)
+
+
+def _montaj_formu_sablon_getir(db):
+    cur = db.cursor()
+    cur.execute("SELECT icerik FROM montaj_formu_sablon ORDER BY id LIMIT 1")
+    satir = cur.fetchone()
+    cur.close()
+    return satir["icerik"] if satir else _MONTAJ_FORMU_VARSAYILAN_SABLON
+
+
 def ensure_db():
     schema_yolu = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema.sql")
     conn = psycopg2.connect(DATABASE_URL)
@@ -498,6 +728,15 @@ def ensure_db():
                 (admin_kullanici, generate_password_hash(admin_sifre)),
             )
             conn.commit()
+
+    cur.execute("SELECT COUNT(*) FROM montaj_formu_sablon")
+    if cur.fetchone()[0] == 0:
+        cur.execute(
+            "INSERT INTO montaj_formu_sablon (icerik) VALUES (%s)",
+            (_MONTAJ_FORMU_VARSAYILAN_SABLON,),
+        )
+        conn.commit()
+
     cur.close()
     conn.close()
 
@@ -781,38 +1020,8 @@ def abone_listesi():
     alanlar_secili = request.args.getlist("alan")
     db = get_db()
 
-    ALAN_TANIMLARI = [
-        ("aciklama", "Açıklama", "aciklama", False),
-        ("adi", "Adı", "adi", False),
-        ("alinan_tutar", "Alınan", "alinan_tutar", True),
-        ("baba_adi", "Baba Adı", "baba_adi", False),
-        ("fatura_no", "Fatura No", "fatura_no", False),
-        ("koy", "Köy", "koy_adi", False),
-        ("malzeme_alinan", "Malzeme Alınan", "malzeme_alinan", True),
-        ("malzeme_kalan", "Malzeme Kalan", "(malzeme_tutari - malzeme_alinan)", True),
-        ("malzeme_tutari", "Malzeme Tutarı", "malzeme_tutari", True),
-        ("montaj_tarihi", "Montaj Tarihi", "montaj_tarihi", False),
-        ("muhtara_kalan", "Muhtara Kalan", "(muhtara_odenecek - muhtara_odenen)", True),
-        ("muhtara_odenecek", "Muhtara Ödenecek", "muhtara_odenecek", True),
-        ("muhtara_odenen", "Muhtara Ödenen", "muhtara_odenen", True),
-        ("odeme_gun_sozu", "Ödeme Gün Sözü", "odeme_gun_sozu", False),
-        ("odeme_sekli", "Ödeme Şekli", "odeme_sekli", False),
-        ("odeme_tarihi", "Ödeme Tarihi", "odeme_tarihi", False),
-        ("odemeyi_gonderen", "Ödemeyi Gönderen", "odemeyi_gonderen", False),
-        ("s_no", "S.No", "s_no", True),
-        ("sayac_kalan", "Sayaç Kalan", "(sayac_tutari - alinan_tutar)", True),
-        ("sayac_no", "Sayaç No", "sayac_no", False),
-        ("sayac_tutari", "Sayaç Tutarı", "sayac_tutari", True),
-        ("senet_no", "Senet No", "senet_no", False),
-        ("senet_sahibi_adi", "Senet Sahibi Adı", "senet_sahibi_adi", False),
-        ("senet_sahibi_soyadi", "Senet Sahibi Soyadı", "senet_sahibi_soyadi", False),
-        ("senet_tutari", "Senet Tutarı", "senet_tutari", True),
-        ("soyadi", "Soyadı", "soyadi", False),
-        ("telefon", "Telefon", "telefon", False),
-        ("telefon2", "Telefon 2", "telefon2", False),
-        ("toplam_kalan", "Toplam Kalan", "(sayac_tutari + malzeme_tutari - alinan_tutar - malzeme_alinan)", True),
-    ]
-    ALAN_HARITASI = {k: (kolon, sayisal) for k, _, kolon, sayisal in ALAN_TANIMLARI}
+    ALAN_TANIMLARI = _ABONE_ALAN_TANIMLARI
+    ALAN_HARITASI = _ABONE_ALAN_HARITASI
     alan_listesi = [(k, etiket) for k, etiket, _, _ in ALAN_TANIMLARI]
 
     sql = "SELECT * FROM abone WHERE 1=1"
@@ -883,6 +1092,99 @@ def abone_listesi():
         arama_satir=_izgara_satir(len(alan_listesi)),
         arama_satir_2=_izgara_satir(len(alan_listesi), 2),
         filtreli_kayit=len(satirlar), toplam_kayit=toplam_kayit,
+    )
+
+
+@app.route("/montaj-formu/tasarim", methods=["GET", "POST"])
+@login_required
+def montaj_formu_tasarim():
+    db = get_db()
+    cur = db.cursor()
+
+    if request.method == "POST":
+        yeni_icerik = request.form.get("icerik", "")
+        cur.execute("SELECT id FROM montaj_formu_sablon ORDER BY id LIMIT 1")
+        satir = cur.fetchone()
+        if satir:
+            cur.execute(
+                "UPDATE montaj_formu_sablon SET icerik = %s, guncelleme_tarihi = NOW() WHERE id = %s",
+                (yeni_icerik, satir["id"]),
+            )
+        else:
+            cur.execute("INSERT INTO montaj_formu_sablon (icerik) VALUES (%s)", (yeni_icerik,))
+        db.commit()
+        cur.close()
+        flash("Montaj Formu tasarımı kaydedildi.")
+        return redirect(url_for("montaj_formu_tasarim"))
+
+    icerik = _montaj_formu_sablon_getir(db)
+    cur.close()
+
+    ornek_satir = {
+        "adi": "AHMET", "soyadi": "YILMAZ", "koy_adi": "ÖRNEK KÖYÜ",
+        "sayac_no": "12345678", "telefon": "0555 555 55 55", "telefon2": "",
+        "montaj_tarihi": datetime.now().strftime("%d.%m.%Y"),
+    }
+    onizleme_html, onizleme_hata = _montaj_formu_render_tek(icerik, ornek_satir)
+
+    return render_template(
+        "montaj_formu_tasarim.html",
+        icerik=icerik, onizleme_html=onizleme_html, onizleme_hata=onizleme_hata,
+    )
+
+
+@app.route("/abone/<int:abone_id>/montaj-formu")
+@login_required
+def abone_montaj_formu(abone_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM abone WHERE id = %s", (abone_id,))
+    kayit = cur.fetchone()
+    cur.close()
+    if kayit is None:
+        flash("Abone bulunamadı.")
+        return redirect(url_for("abone_listesi"))
+
+    sablon_icerik = _montaj_formu_sablon_getir(db)
+    satir = _abone_satir_sozlugu(kayit)
+    render_edilmis, hata = _montaj_formu_render_tek(sablon_icerik, satir)
+    if hata:
+        flash(f"Montaj Formu tasarımında hata var, lütfen tasarımı kontrol edin: {hata}")
+        return redirect(url_for("montaj_formu_tasarim"))
+
+    return render_template(
+        "montaj_formu.html",
+        sayfalar=[render_edilmis],
+        baslik=f"{satir['adi'] or ''} {satir['soyadi'] or ''}".strip(),
+        geri_url=url_for("abone_listesi"),
+    )
+
+
+@app.route("/abone/montaj-formu/toplu")
+@login_required
+def abone_montaj_formu_toplu():
+    db = get_db()
+    kayitlar_ham = _abone_filtreli_kayitlari_getir(db)
+    if not kayitlar_ham:
+        flash("Filtreye uyan abone bulunamadı.")
+        return redirect(url_for("abone_listesi"))
+
+    sablon_icerik = _montaj_formu_sablon_getir(db)
+
+    sayfalar = []
+    for kayit in kayitlar_ham:
+        satir = _abone_satir_sozlugu(kayit)
+        render_edilmis, hata = _montaj_formu_render_tek(sablon_icerik, satir)
+        if hata:
+            flash(f"Montaj Formu tasarımında hata var, lütfen tasarımı kontrol edin: {hata}")
+            return redirect(url_for("montaj_formu_tasarim"))
+        sayfalar.append(render_edilmis)
+
+    return render_template(
+        "montaj_formu.html",
+        sayfalar=sayfalar,
+        baslik=f"Toplu ({len(sayfalar)} kayıt)",
+        geri_url=url_for("abone_listesi") + "?" + request.query_string.decode(),
     )
 
 
