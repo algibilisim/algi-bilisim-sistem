@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Montaj Formu - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi no-print">
+    <h2>Montaj Formu{% if baslik %} — {{ baslik }}{% endif %}</h2>
+    <div style="display:flex; gap:8px;">
+        <a class="btn" href="{{ geri_url }}">Geri Dön</a>
+        <button type="button" class="btn btn-yesil" onclick="window.print()">Yazdır</button>
+    </div>
+</div>
+
+<style>
+@media print {
+    @page { size: A4; margin: 10mm; }
+    body { margin: 0; }
+}
+.montaj-formu-sayfa {
+    background: #fff;
+    max-width: 900px;
+    margin: 0 auto 20px;
+    padding: 10px;
+    border: 1px solid #dfe6e1;
+    border-radius: 8px;
+}
+@media print {
+    .montaj-formu-sayfa {
+        border: none;
+        border-radius: 0;
+        max-width: none;
+        margin: 0;
+        page-break-after: always;
+    }
+    .montaj-formu-sayfa:last-child { page-break-after: auto; }
+}
+</style>
+
+{% for sayfa in sayfalar %}
+<div class="montaj-formu-sayfa">
+    {{ sayfa|safe }}
+    {{ sayfa|safe }}
+</div>
+{% endfor %}
+{% endblock %}
