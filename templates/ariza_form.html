@@ -66,11 +66,8 @@
         </div>
 
         <div id="kaynak-cakisma-kutu" class="kaynak-cakisma-kutu tam-genislik" style="display:none;">
-            <h4>Dikkat: Bu seri no farklı kaynaklarda farklı bilgilerle kayıtlı — hangisini kullanmak istiyorsunuz?</h4>
-            <div class="kaynak-secenekleri">
-                <button type="button" id="kaynak-secenek-1" class="kaynak-secenek-buton"></button>
-                <button type="button" id="kaynak-secenek-2" class="kaynak-secenek-buton"></button>
-            </div>
+            <h4>Dikkat: Bu seri no farklı kaynaklarda/kayıtlarda farklı bilgilerle kayıtlı — hangisini kullanmak istiyorsunuz?</h4>
+            <div class="kaynak-secenekleri" id="kaynak-secenek-listesi"></div>
         </div>
         {% endif %}
 
@@ -154,6 +151,8 @@ function _seriAlanlariniTemizle() {
     var cakismaKutu = document.getElementById('kaynak-cakisma-kutu');
     if (cakismaKutu) {
         cakismaKutu.style.display = 'none';
+        var liste = document.getElementById('kaynak-secenek-listesi');
+        if (liste) { liste.innerHTML = ''; }
     }
 }
 
@@ -210,21 +209,18 @@ document.getElementById('seri_no_girisi').addEventListener('blur', function() {
 
                 var cakismaKutu = document.getElementById('kaynak-cakisma-kutu');
                 if (cakismaKutu) {
-                    if (veri.ikinci_kaynak) {
-                        var birinci = {
-                            adi: veri.adi, soyadi: veri.soyadi, telefon: veri.telefon,
-                            telefon2: veri.telefon2, koy_adi: veri.koy_adi,
-                            montaj_tarihi: veri.montaj_tarihi, kaynak: veri.kaynak,
-                        };
-                        var ikinci = veri.ikinci_kaynak;
-                        var secenek1 = document.getElementById('kaynak-secenek-1');
-                        var secenek2 = document.getElementById('kaynak-secenek-2');
-                        secenek1.innerHTML = '<strong>' + _kaynakEtiket(birinci.kaynak) + ':</strong> ' +
-                            (birinci.adi || '') + ' ' + (birinci.soyadi || '') + ' — ' + (birinci.koy_adi || '');
-                        secenek2.innerHTML = '<strong>' + _kaynakEtiket(ikinci.kaynak) + ':</strong> ' +
-                            (ikinci.adi || '') + ' ' + (ikinci.soyadi || '') + ' — ' + (ikinci.koy_adi || '');
-                        secenek1.onclick = function() { _kaynakSecildi(birinci); };
-                        secenek2.onclick = function() { _kaynakSecildi(ikinci); };
+                    var liste = document.getElementById('kaynak-secenek-listesi');
+                    liste.innerHTML = '';
+                    if (veri.secenekler && veri.secenekler.length > 1) {
+                        veri.secenekler.forEach(function(secenek) {
+                            var buton = document.createElement('button');
+                            buton.type = 'button';
+                            buton.className = 'kaynak-secenek-buton';
+                            buton.innerHTML = '<strong>' + _kaynakEtiket(secenek.kaynak) + ':</strong> ' +
+                                (secenek.adi || '') + ' ' + (secenek.soyadi || '') + ' — ' + (secenek.koy_adi || '');
+                            buton.onclick = function() { _kaynakSecildi(secenek); };
+                            liste.appendChild(buton);
+                        });
                         cakismaKutu.style.display = 'block';
                     } else {
                         cakismaKutu.style.display = 'none';
