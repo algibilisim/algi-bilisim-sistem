@@ -96,3 +96,24 @@ CREATE TABLE IF NOT EXISTS ariza_tahsilat (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ariza_tahsilat_ariza ON ariza_tahsilat(ariza_id);
+
+-- Köylerden Excel ile gelen abone listeleri: ana "abone" tablosundan (faturalama/tahsilat)
+-- tamamen ayrı, sadece köylerin kendi kayıt defterini (TEKSAN tarzı roster) tutar.
+-- Arıza Takip'te seri no aramasında ana abone tablosunda bulunamayan seri no'lar için
+-- yedek kaynak olarak da kullanılır.
+CREATE TABLE IF NOT EXISTS koy_abone (
+    id SERIAL PRIMARY KEY,
+    koy_adi TEXT NOT NULL,
+    sira_no TEXT,
+    abonelik_tarihi TEXT,
+    abone_no TEXT,
+    cihaz_no TEXT,
+    adi TEXT,
+    soyadi TEXT,
+    adres TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_koy_abone_koy ON koy_abone(koy_adi);
+CREATE INDEX IF NOT EXISTS idx_koy_abone_cihaz_no ON koy_abone(cihaz_no);

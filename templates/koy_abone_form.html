@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Köy Abone Kaydı Düzenle' if kayit else 'Yeni Köy Abone Kaydı' }} - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<h2>{{ 'Köy Abone Kaydı Düzenle' if kayit else 'Yeni Köy Abone Kaydı' }}</h2>
+
+<form method="post" class="abone-form">
+    <div class="form-grid">
+        <div>
+            <label>Köy Adı *</label>
+            <input type="text" name="koy_adi" value="{{ kayit['koy_adi'] if kayit else '' }}" required>
+        </div>
+        <div>
+            <label>Sıra No</label>
+            <input type="text" name="sira_no" value="{{ kayit['sira_no'] if kayit else '' }}">
+        </div>
+        <div>
+            <label>Abonelik Tarihi</label>
+            <input type="date" name="abonelik_tarihi" value="{{ kayit['abonelik_tarihi'] if kayit else '' }}">
+        </div>
+        <div>
+            <label>Abone No</label>
+            <input type="text" name="abone_no" value="{{ kayit['abone_no'] if kayit else '' }}">
+        </div>
+        <div>
+            <label>Cihaz No</label>
+            <input type="text" name="cihaz_no" value="{{ kayit['cihaz_no'] if kayit else '' }}">
+        </div>
+        <div>
+            <label>Adı</label>
+            <input type="text" name="adi" value="{{ kayit['adi'] if kayit else '' }}">
+        </div>
+        <div>
+            <label>Soyadı</label>
+            <input type="text" name="soyadi" value="{{ kayit['soyadi'] if kayit else '' }}">
+        </div>
+        <div class="tam-genislik">
+            <label>Adres</label>
+            <input type="text" name="adres" value="{{ kayit['adres'] if kayit else '' }}">
+        </div>
+    </div>
+
+    <div class="form-butonlar">
+        <button type="submit" class="btn btn-yesil">Kaydet</button>
+        <a class="btn" href="{{ url_for('koy_abone_listesi') }}">Vazgeç</a>
+    </div>
+</form>
+{% endblock %}

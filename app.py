@@ -1,5 +1,6 @@
 import os
 import io
+import re
 import csv
 import gzip
 import math
@@ -634,10 +635,38 @@ def abone_ara():
         (sayac_no,),
     )
     satirlar = cur.fetchall()
-    cur.close()
-    if not satirlar:
-        return jsonify({"bulundu": False, "digerleri": []})
 
+    if not satirlar:
+        # Ana abone (faturalama) tablosunda bulunamadı; köylerden Excel ile gelen
+        # köy abone listelerinde (cihaz no) ara. Arıza Takip'te seri no'lu kayıtların
+        # bir kısmı sadece bu köy listelerinde bulunabiliyor.
+        cur.execute(
+            "SELECT id, adi, soyadi, koy_adi, abonelik_tarihi FROM koy_abone "
+            "WHERE cihaz_no = %s ORDER BY id",
+            (sayac_no,),
+        )
+        koy_satirlari = cur.fetchall()
+        cur.close()
+        if not koy_satirlari:
+            return jsonify({"bulundu": False, "digerleri": []})
+
+        ilk = koy_satirlari[0]
+        digerleri = [
+            {"id": s["id"], "adi": s["adi"] or "", "soyadi": s["soyadi"] or "", "koy_adi": s["koy_adi"] or ""}
+            for s in koy_satirlari
+        ]
+        return jsonify({
+            "bulundu": True,
+            "adi": ilk["adi"] or "", "soyadi": ilk["soyadi"] or "",
+            "telefon": "", "telefon2": "",
+            "koy_adi": ilk["koy_adi"] or "",
+            "montaj_tarihi": _tarih_iso_hale_getir(ilk["abonelik_tarihi"]),
+            "coklu": len(koy_satirlari) > 1,
+            "digerleri": digerleri,
+            "kaynak": "koy_listesi",
+        })
+
+    cur.close()
     ilk = satirlar[0]
     digerleri = [
         {
@@ -654,6 +683,7 @@ def abone_ara():
         "montaj_tarihi": _tarih_iso_hale_getir(ilk["montaj_tarihi"]),
         "coklu": len(satirlar) > 1,
         "digerleri": digerleri,
+        "kaynak": "abone",
     })
 
 
@@ -835,6 +865,272 @@ def abone_coklu_sayac():
     return render_template(
         "abone_coklu_sayac.html", satirlar=satirlar, grup_sayisi=len(gruplar),
     )
+
+
+# ---------------------------------------------------------------------------
+# Köy Abone Listeleri: köylerden Excel ile gelen abone kayıt defterleri.
+# Ana "abone" tablosundan (faturalama/tahsilat) tamamen ayrı, kendi sayfası olan
+# bir liste. Arıza Takip'te seri no aramasında ana tabloda bulunamayan seri
+# no'lar için yedek kaynak olarak da kullanılır (bkz. abone_ara()).
+# ---------------------------------------------------------------------------
+
+def _koy_abone_satir_sozlugu(k):
+    return {
+        "id": k["id"],
+        "koy_adi": k["koy_adi"] or "",
+        "sira_no": k["sira_no"] or "",
+        "abonelik_tarihi": _gg_aa_yyyy(k["abonelik_tarihi"]),
+        "abone_no": k["abone_no"] or "",
+        "cihaz_no": k["cihaz_no"] or "",
+        "adi": k["adi"] or "",
+        "soyadi": k["soyadi"] or "",
+        "adres": k["adres"] or "",
+    }
+
+
+def _koy_excel_hucre_metin(v):
+    if v is None:
+        return ""
+    if isinstance(v, datetime):
+        return v.strftime("%d.%m.%Y")
+    if isinstance(v, float):
+        if v.is_integer():
+            return str(int(v))
+        return str(v)
+    return str(v).strip()
+
+
+def _koy_excel_satirlarini_ayikla(ham_satirlar):
+    """TEKSAN tarzı köy abone listesi export'undaki ham satırlardan gerçek veri
+    satırlarını ayıklar: tekrar eden başlık satırlarını ve boş ara satırları atlar.
+    Sütun düzeni: SIRA NO(0), ABONELİK TARİHİ(3), ABONE NO(5), CİHAZ NO(9),
+    ADI SOYADI(13, sabit genişlikte -> boşluk bloklarıyla ayrılır), ADRES(15)."""
+    sonuc = []
+    for satir in ham_satirlar:
+        if not satir:
+            continue
+        ilk_metin = _koy_excel_hucre_metin(satir[0] if len(satir) > 0 else None)
+        if not ilk_metin:
+            continue
+        try:
+            int(float(ilk_metin.replace(",", ".")))
+        except ValueError:
+            continue  # başlık satırı ("SIRA NO") ya da veri olmayan satır
+
+        def al(idx):
+            return satir[idx] if idx < len(satir) else None
+
+        abonelik_tarihi_ham = _koy_excel_hucre_metin(al(3))
+        adi_soyadi_ham = _koy_excel_hucre_metin(al(13))
+        parcalar = [p for p in re.split(r"\s{2,}", adi_soyadi_ham) if p]
+        if len(parcalar) >= 2:
+            adi, soyadi = parcalar[0], " ".join(parcalar[1:])
+        elif parcalar:
+            adi, soyadi = parcalar[0], ""
+        else:
+            adi, soyadi = "", ""
+
+        sonuc.append({
+            "sira_no": ilk_metin,
+            "abonelik_tarihi": _tarih_iso_hale_getir(abonelik_tarihi_ham) or abonelik_tarihi_ham,
+            "abone_no": _koy_excel_hucre_metin(al(5)),
+            "cihaz_no": _koy_excel_hucre_metin(al(9)),
+            "adi": adi,
+            "soyadi": soyadi,
+            "adres": _koy_excel_hucre_metin(al(15)),
+        })
+    return sonuc
+
+
+def _koy_excel_ayikla(dosya):
+    """Yüklenen .xls/.xlsx dosyasından ham satırları okuyup köy abone kayıtlarına çevirir."""
+    dosya_adi = (dosya.filename or "").lower()
+    icerik = dosya.read()
+    ham_satirlar = []
+
+    if dosya_adi.endswith(".xls") and not dosya_adi.endswith(".xlsx"):
+        import xlrd
+        kitap = xlrd.open_workbook(file_contents=icerik)
+        sayfa = kitap.sheet_by_index(0)
+        for r in range(sayfa.nrows):
+            satir = []
+            for c in range(sayfa.ncols):
+                hucre = sayfa.cell(r, c)
+                deger = hucre.value
+                if hucre.ctype == xlrd.XL_CELL_DATE:
+                    try:
+                        deger = xlrd.xldate_as_datetime(deger, kitap.datemode).strftime("%d.%m.%Y")
+                    except Exception:
+                        pass
+                satir.append(deger)
+            ham_satirlar.append(satir)
+    else:
+        import openpyxl
+        kitap = openpyxl.load_workbook(io.BytesIO(icerik), data_only=True)
+        sayfa = kitap.worksheets[0]
+        for row in sayfa.iter_rows(values_only=True):
+            ham_satirlar.append(list(row))
+
+    return _koy_excel_satirlarini_ayikla(ham_satirlar)
+
+
+@app.route("/koy-abone-listesi")
+@login_required
+def koy_abone_listesi():
+    q = request.args.get("q", "").strip()
+    koy = request.args.get("koy", "").strip()
+    db = get_db()
+    cur = db.cursor()
+
+    sql = "SELECT * FROM koy_abone WHERE 1=1"
+    params = []
+    if koy:
+        sql += " AND koy_adi = %s"
+        params.append(koy)
+    if q:
+        sql += (" AND (adi ILIKE %s OR soyadi ILIKE %s OR cihaz_no ILIKE %s "
+                "OR abone_no ILIKE %s OR adres ILIKE %s)")
+        params += [f"%{q}%"] * 5
+
+    cur.execute(sql, params)
+    kayitlar_ham = cur.fetchall()
+
+    cur.execute("SELECT DISTINCT koy_adi FROM koy_abone ORDER BY koy_adi")
+    koyler = cur.fetchall()
+
+    cur.execute("SELECT COUNT(*) AS c FROM koy_abone")
+    toplam_kayit = cur.fetchone()["c"]
+    cur.close()
+
+    satirlar = [_koy_abone_satir_sozlugu(k) for k in kayitlar_ham]
+
+    def _siralama_anahtari(s):
+        try:
+            return (s["koy_adi"], 0, int(s["sira_no"]))
+        except (TypeError, ValueError):
+            return (s["koy_adi"], 1, s["sira_no"])
+
+    satirlar.sort(key=_siralama_anahtari)
+
+    return render_template(
+        "koy_abone_listesi.html", satirlar=satirlar, koyler=koyler,
+        q=q, secili_koy=koy,
+        filtreli_kayit=len(satirlar), toplam_kayit=toplam_kayit,
+    )
+
+
+def _koy_abone_kaydet(kayit_id):
+    f = request.form
+    alanlar = dict(
+        koy_adi=f.get("koy_adi", "").strip(),
+        sira_no=f.get("sira_no", "").strip(),
+        abonelik_tarihi=f.get("abonelik_tarihi", "").strip(),
+        abone_no=f.get("abone_no", "").strip(),
+        cihaz_no=f.get("cihaz_no", "").strip(),
+        adi=f.get("adi", "").strip(),
+        soyadi=f.get("soyadi", "").strip(),
+        adres=f.get("adres", "").strip(),
+    )
+    db = get_db()
+    cur = db.cursor()
+    if kayit_id is None:
+        kolonlar = ", ".join(alanlar.keys())
+        yer_tutucular = ", ".join(["%s"] * len(alanlar))
+        cur.execute(f"INSERT INTO koy_abone ({kolonlar}) VALUES ({yer_tutucular})", list(alanlar.values()))
+    else:
+        set_ifadesi = ", ".join([f"{k} = %s" for k in alanlar.keys()])
+        cur.execute(f"UPDATE koy_abone SET {set_ifadesi}, updated_at = NOW() WHERE id = %s", list(alanlar.values()) + [kayit_id])
+    db.commit()
+    cur.close()
+
+
+@app.route("/koy-abone-listesi/yeni", methods=["GET", "POST"])
+@login_required
+def koy_abone_yeni():
+    if request.method == "POST":
+        _koy_abone_kaydet(None)
+        return redirect(url_for("koy_abone_listesi"))
+    return render_template("koy_abone_form.html", kayit=None)
+
+
+@app.route("/koy-abone-listesi/<int:kayit_id>/duzenle", methods=["GET", "POST"])
+@login_required
+def koy_abone_duzenle(kayit_id):
+    db = get_db()
+    if request.method == "POST":
+        _koy_abone_kaydet(kayit_id)
+        return redirect(url_for("koy_abone_listesi"))
+    cur = db.cursor()
+    cur.execute("SELECT * FROM koy_abone WHERE id = %s", (kayit_id,))
+    kayit = cur.fetchone()
+    cur.close()
+    if not kayit:
+        flash("Kayıt bulunamadı.")
+        return redirect(url_for("koy_abone_listesi"))
+    return render_template("koy_abone_form.html", kayit=kayit)
+
+
+@app.route("/koy-abone-listesi/<int:kayit_id>/sil", methods=["POST"])
+@login_required
+def koy_abone_sil(kayit_id):
+    geri = request.args.get("geri", "")
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM koy_abone WHERE id = %s", (kayit_id,))
+    db.commit()
+    cur.close()
+    hedef = url_for("koy_abone_listesi")
+    if geri:
+        hedef += "?" + geri
+    return redirect(hedef)
+
+
+@app.route("/koy-abone-listesi/yukle", methods=["GET", "POST"])
+@login_required
+def koy_abone_yukle():
+    db = get_db()
+    if request.method == "GET":
+        cur = db.cursor()
+        cur.execute("SELECT DISTINCT koy_adi FROM koy_abone ORDER BY koy_adi")
+        koyler = cur.fetchall()
+        cur.close()
+        return render_template("koy_abone_yukle.html", koyler=koyler)
+
+    koy_adi = request.form.get("koy_adi", "").strip()
+    dosya = request.files.get("dosya")
+
+    if not koy_adi:
+        flash("Köy adı boş bırakılamaz.")
+        return redirect(url_for("koy_abone_yukle"))
+    if not dosya or not dosya.filename:
+        flash("Bir Excel dosyası (.xls veya .xlsx) seçmediniz.")
+        return redirect(url_for("koy_abone_yukle"))
+
+    try:
+        yeni_kayitlar = _koy_excel_ayikla(dosya)
+    except Exception as e:
+        flash(f"Dosya okunamadı, format desteklenmiyor olabilir: {e}")
+        return redirect(url_for("koy_abone_yukle"))
+
+    if not yeni_kayitlar:
+        flash("Dosyada okunabilir abone kaydı bulunamadı. Dosya formatını kontrol edin.")
+        return redirect(url_for("koy_abone_yukle"))
+
+    cur = db.cursor()
+    cur.execute("DELETE FROM koy_abone WHERE koy_adi = %s", (koy_adi,))
+    kolonlar = ["koy_adi", "sira_no", "abonelik_tarihi", "abone_no", "cihaz_no", "adi", "soyadi", "adres"]
+    toplu_degerler = [
+        (koy_adi, k["sira_no"], k["abonelik_tarihi"], k["abone_no"], k["cihaz_no"], k["adi"], k["soyadi"], k["adres"])
+        for k in yeni_kayitlar
+    ]
+    kolonlar_sql = ", ".join(kolonlar)
+    yer_tutucular = ", ".join(["%s"] * len(kolonlar))
+    cur.executemany(f"INSERT INTO koy_abone ({kolonlar_sql}) VALUES ({yer_tutucular})", toplu_degerler)
+    db.commit()
+    cur.close()
+
+    flash(f"\"{koy_adi}\" köyü için {len(yeni_kayitlar)} kayıt yüklendi (önceki liste silinip yenisiyle değiştirildi).")
+    return redirect(url_for("koy_abone_listesi", koy=koy_adi))
 
 
 def _sayilastir(deger):

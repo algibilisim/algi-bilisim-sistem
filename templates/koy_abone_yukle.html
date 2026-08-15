@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Köy Abone Listesi Yükle - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi">
+    <h2>Köy Abone Listesi Yükle / Güncelle</h2>
+    <a class="btn" href="{{ url_for('koy_abone_listesi') }}">Listeye Dön</a>
+</div>
+
+<div class="seri-uyari-kutu" style="max-width:640px;">
+    <h4>Dikkat: bu işlem, seçtiğiniz köyün mevcut listesinin tamamının yerine geçer</h4>
+    <p style="margin:0; font-size:12.5px;">
+        Aşağıya köyün güncel Excel dosyasını (.xls veya .xlsx) yüklediğinizde, o köye ait
+        önceki tüm kayıtlar silinir ve dosyadaki yeni liste onun yerine kaydedilir.
+        Başka köylerin listeleri bundan etkilenmez.
+    </p>
+</div>
+
+<form method="post" enctype="multipart/form-data" class="abone-form" style="max-width:520px;">
+    <div class="form-grid">
+        <div class="tam-genislik">
+            <label>Köy Adı *</label>
+            <input type="text" name="koy_adi" list="koy-listesi" placeholder="Örn: KEMALPAŞA" required>
+            <datalist id="koy-listesi">
+                {% for k in koyler %}
+                <option value="{{ k['koy_adi'] }}"></option>
+                {% endfor %}
+            </datalist>
+        </div>
+        <div class="tam-genislik">
+            <label>Excel Dosyası (.xls / .xlsx) *</label>
+            <input type="file" name="dosya" accept=".xls,.xlsx" required>
+        </div>
+    </div>
+    <div class="form-butonlar">
+        <button type="submit" class="btn btn-yesil">Yükle ve Değiştir</button>
+    </div>
+</form>
+
+{% if koyler %}
+<h3 style="margin-top:24px;">Şu anda kayıtlı köyler</h3>
+<p style="font-size:12.5px; color:#666;">
+    {% for k in koyler %}{{ k['koy_adi'] }}{% if not loop.last %}, {% endif %}{% endfor %}
+</p>
+{% endif %}
+{% endblock %}

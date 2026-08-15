@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Köy Abone Listeleri - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi">
+    <h2>Köy Abone Listeleri</h2>
+    <div class="kayit-sayaci">
+        <span>FİLTRELİ KAYIT : {{ filtreli_kayit }}</span>
+        <span>TOPLAM KAYIT : {{ toplam_kayit }}</span>
+    </div>
+    <div style="display:flex; gap:8px;">
+        <a class="btn" href="{{ url_for('koy_abone_yukle') }}">Excel'den Yükle / Güncelle</a>
+        <a class="btn btn-yesil" href="{{ url_for('koy_abone_yeni') }}">+ Yeni Kayıt</a>
+    </div>
+</div>
+
+<p style="color:#666; font-size:12.5px; margin-top:-8px;">
+    Bu liste, köylerin kendi bilgisayarlarındaki Excel dosyalarından gelen abone kayıt defterleridir.
+    Ana Abone Listesi'ndeki (faturalama/tahsilat) kayıtlarla karışmaz, ayrı tutulur.
+</p>
+
+<form class="filtre-form no-print" method="get" style="gap:8px; flex-wrap:wrap;">
+    <input type="text" name="q" value="{{ q }}" placeholder="Adı, soyadı, cihaz no, abone no veya adres ara..." style="flex:2; min-width:220px;">
+    <select name="koy" style="flex:1; min-width:150px;">
+        <option value="">Tüm Köyler</option>
+        {% for k in koyler %}
+        <option value="{{ k['koy_adi'] }}" {% if k['koy_adi']==secili_koy %}selected{% endif %}>{{ k['koy_adi'] }}</option>
+        {% endfor %}
+    </select>
+    <button type="submit" class="btn">Filtrele</button>
+</form>
+
+<form method="get" id="koy-abone-tablo-form">
+<input type="hidden" name="q" value="{{ q }}">
+<input type="hidden" name="koy" value="{{ secili_koy }}">
+<div class="tablo-kaydirici">
+<table>
+    <thead>
+        <tr>
+            <th>Köy</th>
+            <th>Sıra No</th>
+            <th>Abonelik Tarihi</th>
+            <th>Abone No</th>
+            <th>Cihaz No</th>
+            <th>Adı</th>
+            <th>Soyadı</th>
+            <th>Adres</th>
+            <th class="sabit-sutun"></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in satirlar %}
+        <tr>
+            <td>{{ s['koy_adi'] }}</td>
+            <td>{{ s['sira_no'] }}</td>
+            <td>{{ s['abonelik_tarihi'] }}</td>
+            <td>{{ s['abone_no'] }}</td>
+            <td><strong>{{ s['cihaz_no'] }}</strong></td>
+            <td>{{ s['adi'] }}</td>
+            <td>{{ s['soyadi'] }}</td>
+            <td>{{ s['adres'] }}</td>
+            <td class="islem-hucre sabit-sutun">
+                <a href="{{ url_for('koy_abone_duzenle', kayit_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}">Düzenle</a>
+                <button type="submit" class="link-buton"
+                        formaction="{{ url_for('koy_abone_sil', kayit_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}"
+                        formmethod="post"
+                        onclick="return confirm('Bu kaydı silmek istediğinize emin misiniz?');">Sil</button>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9">Kayıt bulunamadı.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+</form>
+{% endblock %}
