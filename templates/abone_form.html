@@ -6,6 +6,7 @@
 
 <form method="post" class="abone-form">
     {% if geri %}<input type="hidden" name="geri" value="{{ geri }}">{% endif %}
+    <div class="form-kaydirici">
     <div class="form-grid">
         <div>
             <label>S.No (otomatik)</label>
@@ -126,6 +127,7 @@
     <div class="form-butonlar">
         <button type="submit" class="btn btn-yesil">Kaydet</button>
         <a class="btn" href="{{ url_for('abone_listesi') }}{% if geri %}?{{ geri }}{% endif %}">Vazgeç</a>
+    </div>
     </div>
 </form>
 {% endblock %}

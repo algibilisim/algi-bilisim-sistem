@@ -11,8 +11,8 @@
 </div>
 
 <form method="get">
-    <div class="no-print onay-kutu-grid">
-        {% for anahtar, etiket in kolon_listesi %}
+    <div class="no-print onay-kutu-grid" style="--satir-sayisi: {{ kolon_satir }}; --satir-sayisi-2: {{ kolon_satir_2 }};">
+        {% for anahtar, etiket in kolon_secim_listesi %}
         <label>
             <input type="checkbox" name="kolon" value="{{ anahtar }}" {% if anahtar in secili_kolonlar %}checked{% endif %}> {{ etiket }}
         </label>

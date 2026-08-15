@@ -5,6 +5,7 @@
 <h2>{{ 'Arıza Düzenle' if kayit else 'Yeni Arıza' }}</h2>
 
 <form method="post" class="abone-form">
+    <div class="form-kaydirici">
     <div class="form-grid">
         <div>
             <label>S.No (otomatik)</label>
@@ -78,7 +79,7 @@
         </div>
 
         <div class="ayirici">Tespit Edilen Arıza</div>
-        <div class="tam-genislik onay-kutu-grid">
+        <div class="tam-genislik onay-kutu-grid" style="--satir-sayisi: {{ tespit_satir }}; --satir-sayisi-2: {{ tespit_satir_2 }};">
             {% for secenek in tespit_secenekleri %}
             <label>
                 <input type="checkbox" name="tespit_edilen_ariza" value="{{ secenek }}" {% if secenek in secili_tespit %}checked{% endif %}>
@@ -92,7 +93,7 @@
         </div>
 
         <div class="ayirici">Yapılan İşlemler</div>
-        <div class="tam-genislik onay-kutu-grid">
+        <div class="tam-genislik onay-kutu-grid" style="--satir-sayisi: {{ islem_satir }}; --satir-sayisi-2: {{ islem_satir_2 }};">
             {% for secenek in islem_secenekleri %}
             <label>
                 <input type="checkbox" name="yapilan_islemler" value="{{ secenek }}" {% if secenek in secili_islem %}checked{% endif %}>
@@ -109,6 +110,7 @@
     <div class="form-butonlar">
         <button type="submit" class="btn btn-yesil">Kaydet</button>
         <a class="btn" href="{{ url_for('ariza_listesi') }}">Vazgeç</a>
+    </div>
     </div>
 </form>
 

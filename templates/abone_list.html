@@ -18,7 +18,7 @@
         </select>
         <button type="submit" class="btn">Filtrele</button>
     </div>
-    <div class="arama-alanlari onay-kutu-grid">
+    <div class="arama-alanlari onay-kutu-grid" style="--satir-sayisi: {{ arama_satir }}; --satir-sayisi-2: {{ arama_satir_2 }};">
         {% for anahtar, etiket in alan_listesi %}
         <label>
             <input type="checkbox" name="alan" value="{{ anahtar }}" {% if anahtar in secili_alanlar %}checked{% endif %}> {{ etiket }}
@@ -31,6 +31,7 @@
     <button type="button" class="btn" onclick="filtreTemizle('arama')">Arama Filtrelerini Temizle</button>
     <button type="button" class="btn" onclick="filtreTemizle('sutun')">Sütun Filtrelerini Temizle</button>
     <button type="button" class="btn" onclick="filtreTemizle('tumu')">Tüm Filtreleri Temizle</button>
+    <a class="btn {{ 'btn-yesil' if coklu_sayac else '' }}" href="{{ url_for('abone_listesi') }}?coklu_sayac=1">Aynı Sayaç No'lu Kayıtları Getir</a>
 </div>
 
 <form method="get" id="kolon-filtre-form">
@@ -91,10 +92,10 @@
                 <td class="islem-hucre sabit-sutun">
                     <a href="{{ url_for('abone_duzenle', abone_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}">Düzenle</a>
                     <a href="{{ url_for('abone_tahsilat', abone_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}">Tahsilat</a>
-                    <form method="post" action="{{ url_for('abone_sil', abone_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}"
-                          onsubmit="return confirm('Bu kaydı silmek istediğinize emin misiniz?');">
-                        <button type="submit" class="link-buton">Sil</button>
-                    </form>
+                    <button type="submit" class="link-buton"
+                            formaction="{{ url_for('abone_sil', abone_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}"
+                            formmethod="post"
+                            onclick="return confirm('Bu kaydı silmek istediğinize emin misiniz?');">Sil</button>
                 </td>
             </tr>
             {% else %}

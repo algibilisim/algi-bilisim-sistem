@@ -2,6 +2,7 @@ import os
 import io
 import csv
 import gzip
+import math
 import base64
 from datetime import datetime
 from functools import wraps
@@ -30,6 +31,13 @@ def tl_format(deger):
         deger = 0.0
     s = f"{deger:,.2f}"
     s = s.replace(",", "X").replace(".", ",").replace("X", ".")
+    return s
+
+
+def _fatura_no_temizle(deger):
+    s = str(deger or "").strip()
+    if s.endswith(".0"):
+        s = s[:-2]
     return s
 
 
@@ -245,6 +253,38 @@ ARIZA_ALAN_TANIMLARI = [
     ("yeni_seri_no", "Yeni Seri No", "yeni_seri_no", False),
 ]
 
+# "kolon" seçim onay kutularının (Tahsilat Çıktısı / Arıza Takip Çıktısı) yukarıdan
+# aşağıya alfabetik sırada gösterilebilmesi için ayrı, alfabetik sıralı listeler.
+# Tablo başlıkları / CSV dışa aktarımı hâlâ DISPLAY_KOLONLARI / ARIZA_DISPLAY_KOLONLARI
+# sırasını kullanır; bu listeler SADECE onay kutusu görünümü içindir.
+_ABONE_ALFABETIK_SIRA = [
+    "aciklama", "adi", "alinan_tutar", "baba_adi", "fatura_no", "koy_adi",
+    "malzeme_alinan", "malzeme_kalan", "malzeme_tutari", "montaj_tarihi",
+    "muhtara_kalan", "muhtara_odenecek", "muhtara_odenen", "odeme_gun_sozu",
+    "odeme_sekli", "odeme_tarihi", "odemeyi_gonderen", "s_no", "sayac_kalan",
+    "sayac_no", "sayac_tutari", "senet_no", "senet_sahibi_adi",
+    "senet_sahibi_soyadi", "senet_tutari", "soyadi", "telefon", "telefon2",
+    "toplam_kalan",
+]
+_DISPLAY_KOLON_HARITASI = dict(DISPLAY_KOLONLARI)
+DISPLAY_KOLONLARI_ALFABETIK = [(k, _DISPLAY_KOLON_HARITASI[k]) for k in _ABONE_ALFABETIK_SIRA]
+
+_ARIZA_ALFABETIK_SIRA = [
+    "adi", "alinan_ucret", "ariza_ucret", "gelis_tarihi", "islem_aciklama",
+    "kalan_ucret", "koy_adi", "ozel_s_no", "s_no", "sayac_kredisi", "seri_no",
+    "soyadi", "takilan_tarih", "telefon", "telefon2", "tespit_aciklama",
+    "tespit_edilen_ariza", "yapilan_islemler", "yeni_seri_no",
+]
+_ARIZA_DISPLAY_KOLON_HARITASI = dict(ARIZA_DISPLAY_KOLONLARI)
+ARIZA_DISPLAY_KOLONLARI_ALFABETIK = [(k, _ARIZA_DISPLAY_KOLON_HARITASI[k]) for k in _ARIZA_ALFABETIK_SIRA]
+
+
+def _izgara_satir(n, sutun=4):
+    """columns x N onay kutusu ızgarasında kaç satır gerektiğini hesaplar."""
+    if n <= 0:
+        return 1
+    return math.ceil(n / sutun)
+
 TESPIT_EDILEN_ARIZA_SECENEKLERI = [
     "Arıza Simgesi", "Data", "Dijital Su Almış", "Ekran Yok",
     "Error 1", "Error 2", "Error 3", "Error 4", "Error 5",
@@ -264,6 +304,11 @@ YAPILAN_ISLEMLER_SECENEKLERI = [
     "Motor Değişti", "Motor Switch Değişti", "Motor Tamir Edildi",
     "Pil Takıldı", "Resetlendi", "Sayım Aparatı Değişti",
 ]
+
+TESPIT_SATIR = _izgara_satir(len(TESPIT_EDILEN_ARIZA_SECENEKLERI))
+TESPIT_SATIR_2 = _izgara_satir(len(TESPIT_EDILEN_ARIZA_SECENEKLERI), 2)
+ISLEM_SATIR = _izgara_satir(len(YAPILAN_ISLEMLER_SECENEKLERI))
+ISLEM_SATIR_2 = _izgara_satir(len(YAPILAN_ISLEMLER_SECENEKLERI), 2)
 
 YEDEKLENECEK_TABLOLAR = ["abone", "tahsilat", "ariza", "ariza_tahsilat", "kullanici"]
 
@@ -378,7 +423,7 @@ def _abone_satir_sozlugu(k):
         "muhtara_odenecek": tl_format(k["muhtara_odenecek"]),
         "muhtara_odenen": tl_format(k["muhtara_odenen"]),
         "muhtara_kalan": tl_format(muhtara_kalan),
-        "fatura_no": k["fatura_no"],
+        "fatura_no": _fatura_no_temizle(k["fatura_no"]),
         "_renk": renk,
     }
 
@@ -451,6 +496,30 @@ def close_db(exception=None):
     db = g.pop("db", None)
     if db is not None:
         db.close()
+
+
+def _filtre_durumu_uygula(route_adi):
+    """Liste sayfalarında uygulanan filtreleri oturumda hatırlar.
+
+    - Sorgu dizesinde 'bos=1' varsa (temizleme butonlarından geldiyse) hatırlanan
+      filtre silinir ve sayfa filtresiz haline yönlendirilir.
+    - Sorgu dizesi doluysa (bir filtre uygulanmışsa) bu durum oturumda saklanır.
+    - Sorgu dizesi tamamen boşsa (menüden düz tıklanmışsa) ve daha önce
+      kaydedilmiş bir filtre varsa, o filtreye yönlendirilir.
+    Bir yönlendirme gerekiyorsa Response, gerekmiyorsa None döner.
+    """
+    anahtar = f"filtre_{route_adi}"
+    if request.args.get("bos") == "1":
+        session.pop(anahtar, None)
+        return redirect(url_for(route_adi))
+    qs = request.query_string.decode()
+    if qs:
+        session[anahtar] = qs
+        return None
+    kayitli = session.get(anahtar)
+    if kayitli:
+        return redirect(url_for(route_adi) + "?" + kayitli)
+    return None
 
 
 def login_required(view):
@@ -570,9 +639,14 @@ def abone_ara():
 @app.route("/abone")
 @login_required
 def abone_listesi():
+    yonlendirme = _filtre_durumu_uygula("abone_listesi")
+    if yonlendirme:
+        return yonlendirme
+
     q = request.args.get("q", "").strip()
     koy = request.args.get("koy", "").strip()
     alanlar_secili = request.args.getlist("alan")
+    coklu_sayac = request.args.get("coklu_sayac") == "1"
     db = get_db()
 
     ALAN_TANIMLARI = [
@@ -641,6 +715,13 @@ def abone_listesi():
     if koy:
         sql += " AND koy_adi = %s"
         params.append(koy)
+    if coklu_sayac:
+        sql += (
+            " AND sayac_no IN ("
+            "SELECT sayac_no FROM abone WHERE sayac_no IS NOT NULL AND sayac_no != '' "
+            "GROUP BY sayac_no HAVING COUNT(*) > 1"
+            ")"
+        )
 
     deger_secili = {}
     for anahtar, _ in DISPLAY_KOLONLARI:
@@ -671,7 +752,10 @@ def abone_listesi():
         "abone_list.html", satirlar=satirlar, koyler=koyler, q=q, secili_koy=koy,
         secili_alanlar=alanlar_secili, alan_listesi=alan_listesi,
         kolon_listesi=DISPLAY_KOLONLARI, deger_secili=deger_secili,
-        deger_secenekleri=deger_secenekleri, sayisal_kolonlar=SAYISAL_KOLONLAR
+        deger_secenekleri=deger_secenekleri, sayisal_kolonlar=SAYISAL_KOLONLAR,
+        coklu_sayac=coklu_sayac,
+        arama_satir=_izgara_satir(len(alan_listesi)),
+        arama_satir_2=_izgara_satir(len(alan_listesi), 2),
     )
 
 
@@ -950,6 +1034,10 @@ KOY_KOLONLARI = [
 @app.route("/tahsilat")
 @login_required
 def tahsilat():
+    yonlendirme = _filtre_durumu_uygula("tahsilat")
+    if yonlendirme:
+        return yonlendirme
+
     db = get_db()
     cur = db.cursor()
     cur.execute(
@@ -1043,6 +1131,10 @@ def _tahsilat_ciktisi_satirlar():
 @app.route("/tahsilat-ciktisi")
 @login_required
 def tahsilat_ciktisi():
+    yonlendirme = _filtre_durumu_uygula("tahsilat_ciktisi")
+    if yonlendirme:
+        return yonlendirme
+
     satirlar, goster_kolonlari = _tahsilat_ciktisi_satirlar()
     kolonlar_secili = request.args.getlist("kolon")
     db = get_db()
@@ -1059,9 +1151,12 @@ def tahsilat_ciktisi():
         "tahsilat_ciktisi.html",
         satirlar=satirlar,
         kolon_listesi=DISPLAY_KOLONLARI, goster_kolonlari=goster_kolonlari,
+        kolon_secim_listesi=DISPLAY_KOLONLARI_ALFABETIK,
         secili_kolonlar=kolonlar_secili,
         deger_secili=deger_secili, deger_secenekleri=deger_secenekleri,
         sayisal_kolonlar=SAYISAL_KOLONLAR,
+        kolon_satir=_izgara_satir(len(DISPLAY_KOLONLARI_ALFABETIK)),
+        kolon_satir_2=_izgara_satir(len(DISPLAY_KOLONLARI_ALFABETIK), 2),
     )
 
 
@@ -1135,6 +1230,8 @@ def ariza_yeni():
         tespit_secenekleri=TESPIT_EDILEN_ARIZA_SECENEKLERI,
         islem_secenekleri=YAPILAN_ISLEMLER_SECENEKLERI,
         secili_tespit=set(), secili_islem=set(),
+        tespit_satir=TESPIT_SATIR, tespit_satir_2=TESPIT_SATIR_2,
+        islem_satir=ISLEM_SATIR, islem_satir_2=ISLEM_SATIR_2,
     )
 
 
@@ -1159,6 +1256,8 @@ def ariza_duzenle(ariza_id):
         tespit_secenekleri=TESPIT_EDILEN_ARIZA_SECENEKLERI,
         islem_secenekleri=YAPILAN_ISLEMLER_SECENEKLERI,
         secili_tespit=secili_tespit, secili_islem=secili_islem,
+        tespit_satir=TESPIT_SATIR, tespit_satir_2=TESPIT_SATIR_2,
+        islem_satir=ISLEM_SATIR, islem_satir_2=ISLEM_SATIR_2,
     )
 
 
@@ -1176,6 +1275,10 @@ def ariza_sil(ariza_id):
 @app.route("/ariza")
 @login_required
 def ariza_listesi():
+    yonlendirme = _filtre_durumu_uygula("ariza_listesi")
+    if yonlendirme:
+        return yonlendirme
+
     db = get_db()
     q = request.args.get("q", "").strip()
     alanlar_secili = request.args.getlist("alan")
@@ -1241,6 +1344,8 @@ def ariza_listesi():
         q=q, secili_alanlar=alanlar_secili, alan_listesi=alan_listesi,
         deger_secili=deger_secili, deger_secenekleri=deger_secenekleri,
         sayisal_kolonlar=ARIZA_SAYISAL_KOLONLAR,
+        arama_satir=_izgara_satir(len(alan_listesi)),
+        arama_satir_2=_izgara_satir(len(alan_listesi), 2),
     )
 
 
@@ -1269,6 +1374,10 @@ def _ariza_ciktisi_satirlar():
 @app.route("/ariza-ciktisi")
 @login_required
 def ariza_ciktisi():
+    yonlendirme = _filtre_durumu_uygula("ariza_ciktisi")
+    if yonlendirme:
+        return yonlendirme
+
     satirlar, goster_kolonlari = _ariza_ciktisi_satirlar()
     kolonlar_secili = request.args.getlist("kolon")
     db = get_db()
@@ -1285,9 +1394,12 @@ def ariza_ciktisi():
         "ariza_ciktisi.html",
         satirlar=satirlar,
         kolon_listesi=ARIZA_DISPLAY_KOLONLARI, goster_kolonlari=goster_kolonlari,
+        kolon_secim_listesi=ARIZA_DISPLAY_KOLONLARI_ALFABETIK,
         secili_kolonlar=kolonlar_secili,
         deger_secili=deger_secili, deger_secenekleri=deger_secenekleri,
         sayisal_kolonlar=ARIZA_SAYISAL_KOLONLAR,
+        kolon_satir=_izgara_satir(len(ARIZA_DISPLAY_KOLONLARI_ALFABETIK)),
+        kolon_satir_2=_izgara_satir(len(ARIZA_DISPLAY_KOLONLARI_ALFABETIK), 2),
     )
 
 

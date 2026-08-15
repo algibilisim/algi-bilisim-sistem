@@ -136,7 +136,7 @@ window.addEventListener('resize', tumFiltreKutulariniKapat);
 function filtreTemizle(tip) {
     var params = new URLSearchParams(window.location.search);
     if (tip === 'tumu') {
-        window.location.search = '';
+        window.location.search = 'bos=1';
         return;
     }
     if (tip === 'arama') {
@@ -149,8 +149,24 @@ function filtreTemizle(tip) {
     } else if (tip === 'kolon') {
         params.delete('kolon');
     }
-    window.location.search = params.toString();
+    var kalan = params.toString();
+    window.location.search = kalan ? kalan : 'bos=1';
 }
+
+// Tablo ve form kaydırma alanlarını, üstteki içerik ne kadar yer kaplarsa kaplasın
+// ekranda kalan boşluğu tam dolduracak şekilde boyutlandırır. Böylece başlıklar/
+// yatay kaydırma çubuğu her zaman ilk bakışta, sayfa kaydırılmadan görünür olur.
+function kaydirmaAlanlariniBoyutlandir() {
+    document.querySelectorAll('.tablo-kaydirici, .form-kaydirici').forEach(function(kutu) {
+        var ustKonum = kutu.getBoundingClientRect().top;
+        var kalanYukseklik = window.innerHeight - ustKonum - 16;
+        if (kalanYukseklik < 220) { kalanYukseklik = 220; }
+        kutu.style.maxHeight = kalanYukseklik + 'px';
+    });
+}
+document.addEventListener('DOMContentLoaded', kaydirmaAlanlariniBoyutlandir);
+window.addEventListener('load', kaydirmaAlanlariniBoyutlandir);
+window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
 </script>
 </body>
 </html>

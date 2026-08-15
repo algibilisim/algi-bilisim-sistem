@@ -12,7 +12,7 @@
         <input type="text" name="q" value="{{ q }}" placeholder="Aranacak kelime..." style="flex:2; min-width:200px;">
         <button type="submit" class="btn">Filtrele</button>
     </div>
-    <div class="arama-alanlari onay-kutu-grid">
+    <div class="arama-alanlari onay-kutu-grid" style="--satir-sayisi: {{ arama_satir }}; --satir-sayisi-2: {{ arama_satir_2 }};">
         {% for anahtar, etiket in alan_listesi %}
         <label>
             <input type="checkbox" name="alan" value="{{ anahtar }}" {% if anahtar in secili_alanlar %}checked{% endif %}> {{ etiket }}
@@ -76,10 +76,10 @@
                 <td class="islem-hucre sabit-sutun">
                     <a href="{{ url_for('ariza_duzenle', ariza_id=s['id']) }}">Düzenle</a>
                     <a href="{{ url_for('ariza_tahsilat', ariza_id=s['id']) }}">Tahsilat</a>
-                    <form method="post" action="{{ url_for('ariza_sil', ariza_id=s['id']) }}"
-                          onsubmit="return confirm('Bu kaydı silmek istediğinize emin misiniz?');">
-                        <button type="submit" class="link-buton">Sil</button>
-                    </form>
+                    <button type="submit" class="link-buton"
+                            formaction="{{ url_for('ariza_sil', ariza_id=s['id']) }}"
+                            formmethod="post"
+                            onclick="return confirm('Bu kaydı silmek istediğinize emin misiniz?');">Sil</button>
                 </td>
             </tr>
             {% else %}
