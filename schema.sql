@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS abone (
 
 ALTER TABLE abone ADD COLUMN IF NOT EXISTS odeme_gun_sozu TEXT;
 ALTER TABLE abone ADD COLUMN IF NOT EXISTS telefon2 TEXT;
+ALTER TABLE abone ADD COLUMN IF NOT EXISTS montaj_personeli TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_abone_koy ON abone(koy_adi);
 CREATE INDEX IF NOT EXISTS idx_abone_sayac_no ON abone(sayac_no);
