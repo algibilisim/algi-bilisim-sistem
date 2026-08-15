@@ -43,6 +43,14 @@
             <input type="text" id="ariza_telefon2" name="telefon2" value="{{ kayit['telefon2'] if kayit else '' }}">
         </div>
 
+        <div id="seri-uyari-kutu" class="seri-uyari-kutu tam-genislik" style="display:none;">
+            <h4>Dikkat: Bu seri no başka abonelerde de kayıtlı</h4>
+            <table>
+                <thead><tr><th>Adı</th><th>Soyadı</th><th>Köy</th></tr></thead>
+                <tbody id="seri-uyari-govde"></tbody>
+            </table>
+        </div>
+
         <div class="ayirici">Ücret Bilgileri</div>
 
         <div>
@@ -70,9 +78,9 @@
         </div>
 
         <div class="ayirici">Tespit Edilen Arıza</div>
-        <div class="tam-genislik" style="display:flex; flex-wrap:wrap; gap:10px 24px;">
+        <div class="tam-genislik onay-kutu-grid">
             {% for secenek in tespit_secenekleri %}
-            <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:normal; color:#333; white-space:nowrap;">
+            <label>
                 <input type="checkbox" name="tespit_edilen_ariza" value="{{ secenek }}" {% if secenek in secili_tespit %}checked{% endif %}>
                 {{ secenek }}
             </label>
@@ -84,9 +92,9 @@
         </div>
 
         <div class="ayirici">Yapılan İşlemler</div>
-        <div class="tam-genislik" style="display:flex; flex-wrap:wrap; gap:10px 24px;">
+        <div class="tam-genislik onay-kutu-grid">
             {% for secenek in islem_secenekleri %}
-            <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:normal; color:#333; white-space:nowrap;">
+            <label>
                 <input type="checkbox" name="yapilan_islemler" value="{{ secenek }}" {% if secenek in secili_islem %}checked{% endif %}>
                 {{ secenek }}
             </label>
@@ -105,9 +113,21 @@
 </form>
 
 <script>
+function _seriAlanlariniTemizle() {
+    document.getElementById('ariza_adi').value = '';
+    document.getElementById('ariza_soyadi').value = '';
+    document.getElementById('ariza_telefon').value = '';
+    document.getElementById('ariza_telefon2').value = '';
+    document.getElementById('seri-uyari-kutu').style.display = 'none';
+    document.getElementById('seri-uyari-govde').innerHTML = '';
+}
+
 document.getElementById('seri_no_girisi').addEventListener('blur', function() {
     var deger = this.value.trim();
-    if (!deger) { return; }
+    if (!deger) {
+        _seriAlanlariniTemizle();
+        return;
+    }
     fetch('/api/abone-ara?sayac_no=' + encodeURIComponent(deger))
         .then(function(r) { return r.json(); })
         .then(function(veri) {
@@ -116,6 +136,22 @@ document.getElementById('seri_no_girisi').addEventListener('blur', function() {
                 document.getElementById('ariza_soyadi').value = veri.soyadi;
                 document.getElementById('ariza_telefon').value = veri.telefon;
                 document.getElementById('ariza_telefon2').value = veri.telefon2;
+
+                var kutu = document.getElementById('seri-uyari-kutu');
+                var govde = document.getElementById('seri-uyari-govde');
+                govde.innerHTML = '';
+                if (veri.coklu && veri.digerleri && veri.digerleri.length > 1) {
+                    veri.digerleri.forEach(function(kayit) {
+                        var satir = document.createElement('tr');
+                        satir.innerHTML = '<td>' + (kayit.adi || '') + '</td><td>' + (kayit.soyadi || '') + '</td><td>' + (kayit.koy_adi || '') + '</td>';
+                        govde.appendChild(satir);
+                    });
+                    kutu.style.display = 'block';
+                } else {
+                    kutu.style.display = 'none';
+                }
+            } else {
+                _seriAlanlariniTemizle();
             }
         });
 });

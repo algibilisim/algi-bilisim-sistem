@@ -8,7 +8,7 @@
 
 <div class="sayfa-basligi">
     <h2>{{ abone['adi'] }} {{ abone['soyadi'] }} - Tahsilat</h2>
-    <a class="btn" href="{{ url_for('abone_listesi') }}">Abone Listesine Dön</a>
+    <a class="btn" href="{{ url_for('abone_listesi') }}{% if geri %}?{{ geri }}{% endif %}">Abone Listesine Dön</a>
 </div>
 
 <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-bottom:20px;">
@@ -36,6 +36,7 @@
 
 <h3>Yeni Tahsilat Ekle</h3>
 <form method="post" class="abone-form">
+    {% if geri %}<input type="hidden" name="geri" value="{{ geri }}">{% endif %}
     <div class="form-grid">
         <div>
             <label>Tür *</label>

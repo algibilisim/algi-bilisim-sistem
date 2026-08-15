@@ -11,15 +11,21 @@
 </div>
 
 <form method="get">
-    <div class="no-print" style="display:grid; grid-template-columns: repeat(4, minmax(170px, 1fr)); gap:6px 20px; margin-bottom:12px;">
+    <div class="no-print onay-kutu-grid">
         {% for anahtar, etiket in kolon_listesi %}
-        <label style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
+        <label>
             <input type="checkbox" name="kolon" value="{{ anahtar }}" {% if anahtar in secili_kolonlar %}checked{% endif %}> {{ etiket }}
         </label>
         {% endfor %}
     </div>
-    <div class="no-print" style="margin-bottom:16px;">
+    <div class="no-print" style="margin:14px 0;">
         <button type="submit" class="btn">Uygula</button>
+    </div>
+
+    <div class="filtre-butonlari no-print">
+        <button type="button" class="btn" onclick="filtreTemizle('kolon')">Alan Seçimini Temizle</button>
+        <button type="button" class="btn" onclick="filtreTemizle('sutun')">Sütun Filtrelerini Temizle</button>
+        <button type="button" class="btn" onclick="filtreTemizle('tumu')">Tüm Filtreleri Temizle</button>
     </div>
 
     <div class="tablo-kaydirici">
@@ -27,7 +33,13 @@
         <thead>
             <tr>
                 {% for anahtar, etiket in kolon_listesi %}
-                {% if anahtar in goster_kolonlari %}<th>{{ etiket }}</th>{% endif %}
+                {% if anahtar in goster_kolonlari %}
+                {% if etiket.startswith('Malzeme ') %}
+                <th class="iki-satir">Malzeme<br>{{ etiket[8:] }}</th>
+                {% else %}
+                <th>{{ etiket }}</th>
+                {% endif %}
+                {% endif %}
                 {% endfor %}
             </tr>
             <tr class="no-print">
@@ -38,15 +50,22 @@
                         {% if deger_secili[anahtar] %}{{ deger_secili[anahtar]|length }} seçili ▾{% else %}Tümü ▾{% endif %}
                     </button>
                     <div id="cfiltre-{{ anahtar }}" class="filtre-kutu">
-                        <label class="tumu-satir"><input type="checkbox" class="tumu-tik"> Tümü</label>
-                        {% for ham, metin in deger_secenekleri[anahtar] %}
-                        <label>
-                            <input type="checkbox" name="deger_{{ anahtar }}" value="{{ ham }}"
-                                   {% if ham in deger_secili[anahtar] %}checked{% endif %}>
-                            {{ metin }}
-                        </label>
-                        {% endfor %}
-                        <button type="submit" class="btn btn-yesil" style="width:100%; margin-top:8px; font-size:12px;">Filtrele</button>
+                        <div class="filtre-arama-kutusu">
+                            <input type="text" class="filtre-arama-input" placeholder="Ara..." autocomplete="off">
+                        </div>
+                        <div class="filtre-liste">
+                            <label class="tumu-satir"><input type="checkbox" class="tumu-tik"> Tümü</label>
+                            {% for ham, metin in deger_secenekleri[anahtar] %}
+                            <label>
+                                <input type="checkbox" name="deger_{{ anahtar }}" value="{{ ham }}"
+                                       {% if ham in deger_secili[anahtar] %}checked{% endif %}>
+                                {{ metin }}
+                            </label>
+                            {% endfor %}
+                        </div>
+                        <div class="filtre-kutu-alt">
+                            <button type="submit" class="btn btn-yesil">Filtrele</button>
+                        </div>
                     </div>
                 </th>
                 {% endif %}

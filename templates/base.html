@@ -35,17 +35,24 @@
     {% block content %}{% endblock %}
 </main>
 <script>
+function tumFiltreKutulariniKapat() {
+    document.querySelectorAll('.filtre-kutu').forEach(function(k) {
+        k.classList.remove('acik');
+        k.style.maxHeight = '';
+    });
+}
+
 document.addEventListener('click', function(e) {
     var tiklananButon = e.target.closest('.filtre-ac-buton');
     var tiklananKutu = e.target.closest('.filtre-kutu');
     if (tiklananButon) {
         var hedefId = tiklananButon.getAttribute('data-hedef');
         var hedefKutu = document.getElementById(hedefId);
-        var acikMi = hedefKutu.style.display === 'block';
-        document.querySelectorAll('.filtre-kutu').forEach(function(k) { k.style.display = 'none'; });
+        var acikMi = hedefKutu.classList.contains('acik');
+        tumFiltreKutulariniKapat();
         if (!acikMi) {
             var dikdortgen = tiklananButon.getBoundingClientRect();
-            var genislik = 220;
+            var genislik = 240;
             var sol = dikdortgen.left;
             if (sol + genislik > window.innerWidth - 10) {
                 sol = window.innerWidth - genislik - 10;
@@ -53,34 +60,97 @@ document.addEventListener('click', function(e) {
             if (sol < 10) { sol = 10; }
             var ust = dikdortgen.bottom + 2;
             var kalanYukseklik = window.innerHeight - ust - 10;
-            if (kalanYukseklik < 150) {
+            var toplamYukseklik = Math.min(320, kalanYukseklik);
+            if (kalanYukseklik < 180) {
+                toplamYukseklik = Math.min(320, dikdortgen.top - 10);
                 hedefKutu.style.top = 'auto';
                 hedefKutu.style.bottom = (window.innerHeight - dikdortgen.top + 2) + 'px';
-                hedefKutu.style.maxHeight = Math.min(240, dikdortgen.top - 10) + 'px';
+                hedefKutu.style.maxHeight = toplamYukseklik + 'px';
             } else {
                 hedefKutu.style.bottom = 'auto';
                 hedefKutu.style.top = ust + 'px';
-                hedefKutu.style.maxHeight = Math.min(240, kalanYukseklik) + 'px';
+                hedefKutu.style.maxHeight = toplamYukseklik + 'px';
             }
             hedefKutu.style.left = sol + 'px';
             hedefKutu.style.width = genislik + 'px';
-            hedefKutu.style.display = 'block';
+            hedefKutu.classList.add('acik');
+            var aramaKutusu = hedefKutu.querySelector('.filtre-arama-kutusu input');
+            if (aramaKutusu) {
+                aramaKutusu.value = '';
+                hedefKutu.querySelectorAll('.filtre-liste label').forEach(function(lbl) {
+                    lbl.classList.remove('filtre-secenek-gizli');
+                });
+                setTimeout(function() { aramaKutusu.focus(); }, 0);
+            }
         }
         e.stopPropagation();
     } else if (!tiklananKutu) {
-        document.querySelectorAll('.filtre-kutu').forEach(function(k) { k.style.display = 'none'; });
+        tumFiltreKutulariniKapat();
     }
 });
+
 document.addEventListener('change', function(e) {
     if (e.target.classList.contains('tumu-tik')) {
         var kutu = e.target.closest('.filtre-kutu');
-        var digerleri = kutu.querySelectorAll('input[type=checkbox]:not(.tumu-tik)');
-        digerleri.forEach(function(cb) { cb.checked = e.target.checked; });
+        var digerleri = kutu.querySelectorAll('.filtre-liste input[type=checkbox]:not(.tumu-tik):not(.filtre-secenek-gizli)');
+        digerleri.forEach(function(cb) {
+            if (!cb.closest('label').classList.contains('filtre-secenek-gizli')) {
+                cb.checked = e.target.checked;
+            }
+        });
     }
 });
-window.addEventListener('resize', function() {
-    document.querySelectorAll('.filtre-kutu').forEach(function(k) { k.style.display = 'none'; });
+
+// Excel benzeri: filtre kutusu açıkken herhangi bir tuşa basınca arama kutusuna odaklan ve süzsün
+document.addEventListener('input', function(e) {
+    if (!e.target.classList.contains('filtre-arama-input')) { return; }
+    var kutu = e.target.closest('.filtre-kutu');
+    var deger = e.target.value.trim().toLocaleLowerCase('tr');
+    kutu.querySelectorAll('.filtre-liste label').forEach(function(lbl) {
+        if (lbl.classList.contains('tumu-satir')) { return; }
+        var metin = lbl.textContent.trim().toLocaleLowerCase('tr');
+        if (!deger || metin.indexOf(deger) !== -1) {
+            lbl.classList.remove('filtre-secenek-gizli');
+        } else {
+            lbl.classList.add('filtre-secenek-gizli');
+        }
+    });
 });
+
+document.addEventListener('keydown', function(e) {
+    var acikKutu = document.querySelector('.filtre-kutu.acik');
+    if (!acikKutu) { return; }
+    if (document.activeElement && document.activeElement.classList.contains('filtre-arama-input')) { return; }
+    if (e.key === 'Escape') { tumFiltreKutulariniKapat(); return; }
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        var aramaKutusu = acikKutu.querySelector('.filtre-arama-input');
+        if (aramaKutusu) {
+            aramaKutusu.focus();
+        }
+    }
+});
+
+window.addEventListener('resize', tumFiltreKutulariniKapat);
+
+// Filtreleri temizleme butonları
+function filtreTemizle(tip) {
+    var params = new URLSearchParams(window.location.search);
+    if (tip === 'tumu') {
+        window.location.search = '';
+        return;
+    }
+    if (tip === 'arama') {
+        params.delete('q');
+        params.delete('alan');
+    } else if (tip === 'sutun') {
+        Array.from(params.keys()).forEach(function(k) {
+            if (k.indexOf('deger_') === 0) { params.delete(k); }
+        });
+    } else if (tip === 'kolon') {
+        params.delete('kolon');
+    }
+    window.location.search = params.toString();
+}
 </script>
 </body>
 </html>

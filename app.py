@@ -5,6 +5,7 @@ import gzip
 import base64
 from datetime import datetime
 from functools import wraps
+from urllib.parse import quote as _url_quote
 
 import psycopg2
 import psycopg2.extras
@@ -112,7 +113,8 @@ def _odeme_sekli_esle(metin):
 DISPLAY_KOLONLARI = [
     ("s_no", "S.No"),
     ("koy_adi", "Köy"),
-    ("ad_soyad", "Adı Soyadı"),
+    ("adi", "Adı"),
+    ("soyadi", "Soyadı"),
     ("sayac_no", "Sayaç No"),
     ("senet_tutari", "Senet Tutarı"),
     ("sayac_tutari", "Sayaç Tutarı"),
@@ -143,7 +145,8 @@ DISPLAY_KOLONLARI = [
 KOLON_BILGI = {
     "s_no": ("s_no", "sayi"),
     "koy_adi": ("koy_adi", "metin"),
-    "ad_soyad": ("(adi || ' ' || soyadi)", "metin"),
+    "adi": ("adi", "metin"),
+    "soyadi": ("soyadi", "metin"),
     "sayac_no": ("sayac_no", "metin"),
     "senet_tutari": ("senet_tutari", "sayi"),
     "sayac_tutari": ("sayac_tutari", "sayi"),
@@ -220,6 +223,28 @@ ARIZA_KOLON_BILGI = {
 
 ARIZA_SAYISAL_KOLONLAR = {k for k, (_, tur) in ARIZA_KOLON_BILGI.items() if tur == "sayi"}
 
+ARIZA_ALAN_TANIMLARI = [
+    ("adi", "Adı", "adi", False),
+    ("alinan_ucret", "Alınan Ücret", "alinan_ucret", True),
+    ("ariza_ucret", "Arıza Ücret", "ariza_ucret", True),
+    ("gelis_tarihi", "Geliş Tarihi", "gelis_tarihi", False),
+    ("islem_aciklama", "İşlem Açıklama", "islem_aciklama", False),
+    ("kalan_ucret", "Kalan Ücret", "(ariza_ucret - alinan_ucret)", True),
+    ("koy_adi", "Köy Adı", "koy_adi", False),
+    ("ozel_s_no", "Özel S.No", "ozel_s_no", False),
+    ("s_no", "S.No", "s_no", True),
+    ("sayac_kredisi", "Sayaç Kredisi", "sayac_kredisi", False),
+    ("seri_no", "Seri No", "seri_no", False),
+    ("soyadi", "Soyadı", "soyadi", False),
+    ("takilan_tarih", "Takılan Tarih", "takilan_tarih", False),
+    ("telefon", "Telefon", "telefon", False),
+    ("telefon2", "Telefon 2", "telefon2", False),
+    ("tespit_aciklama", "Tespit Açıklama", "tespit_aciklama", False),
+    ("tespit_edilen_ariza", "Tespit Edilen Arıza", "tespit_edilen_ariza", False),
+    ("yapilan_islemler", "Yapılan İşlemler", "yapilan_islemler", False),
+    ("yeni_seri_no", "Yeni Seri No", "yeni_seri_no", False),
+]
+
 TESPIT_EDILEN_ARIZA_SECENEKLERI = [
     "Arıza Simgesi", "Data", "Dijital Su Almış", "Ekran Yok",
     "Error 1", "Error 2", "Error 3", "Error 4", "Error 5",
@@ -244,9 +269,28 @@ YEDEKLENECEK_TABLOLAR = ["abone", "tahsilat", "ariza", "ariza_tahsilat", "kullan
 
 
 def _gg_aa_yyyy(t):
-    if t and len(t) >= 10:
+    if not t:
+        return ""
+    t = str(t).strip()
+    if len(t) >= 10 and t[4:5] == "-" and t[7:8] == "-":
+        # ISO: YYYY-MM-DD
         return t[8:10] + "." + t[5:7] + "." + t[0:4]
-    return t or ""
+    if len(t) >= 10 and t[2:3] == "." and t[5:6] == ".":
+        # Zaten GG.AA.YYYY formatında
+        return t[0:10]
+    return t
+
+
+def _iso_tarih_mi(t):
+    t = (t or "").strip()
+    return len(t) == 10 and t[4:5] == "-" and t[7:8] == "-"
+
+
+def _ddmmyyyy_to_iso(t):
+    t = (t or "").strip()
+    if len(t) == 10 and t[2:3] == "." and t[5:6] == ".":
+        return t[6:10] + "-" + t[3:5] + "-" + t[0:2]
+    return None
 
 
 def _kolon_secenekleri(db, anahtar, tablo, bilgi_sozlugu):
@@ -308,7 +352,8 @@ def _abone_satir_sozlugu(k):
         "id": k["id"],
         "s_no": k["s_no"],
         "koy_adi": k["koy_adi"],
-        "ad_soyad": f"{k['adi']} {k['soyadi']}",
+        "adi": k["adi"],
+        "soyadi": k["soyadi"],
         "sayac_no": k["sayac_no"],
         "senet_tutari": tl_format(k["senet_tutari"]),
         "sayac_tutari": tl_format(k["sayac_tutari"]),
@@ -321,8 +366,8 @@ def _abone_satir_sozlugu(k):
         "senet_no": k["senet_no"],
         "senet_sahibi_adi": k["senet_sahibi_adi"],
         "senet_sahibi_soyadi": k["senet_sahibi_soyadi"],
-        "telefon": k["telefon"],
-        "telefon2": k["telefon2"],
+        "telefon": _telefon_formatla(k["telefon"]),
+        "telefon2": _telefon_formatla(k["telefon2"]),
         "baba_adi": k["baba_adi"],
         "montaj_tarihi": _gg_aa_yyyy(k["montaj_tarihi"]),
         "odeme_tarihi": _gg_aa_yyyy(k["odeme_tarihi"]),
@@ -351,8 +396,8 @@ def _ariza_satir_sozlugu(k):
         "seri_no": k["seri_no"],
         "adi": k["adi"],
         "soyadi": k["soyadi"],
-        "telefon": k["telefon"],
-        "telefon2": k["telefon2"],
+        "telefon": _telefon_formatla(k["telefon"]),
+        "telefon2": _telefon_formatla(k["telefon2"]),
         "ariza_ucret": tl_format(k["ariza_ucret"]),
         "alinan_ucret": tl_format(k["alinan_ucret"]),
         "kalan_ucret": tl_format(kalan_ucret),
@@ -496,16 +541,30 @@ def abone_ara():
         return jsonify({"bulundu": False})
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT adi, soyadi, telefon, telefon2 FROM abone WHERE sayac_no = %s LIMIT 1", (sayac_no,))
-    satir = cur.fetchone()
+    cur.execute(
+        "SELECT id, adi, soyadi, telefon, telefon2, koy_adi FROM abone WHERE sayac_no = %s ORDER BY id",
+        (sayac_no,),
+    )
+    satirlar = cur.fetchall()
     cur.close()
-    if satir:
-        return jsonify({
-            "bulundu": True,
-            "adi": satir["adi"], "soyadi": satir["soyadi"],
-            "telefon": satir["telefon"] or "", "telefon2": satir["telefon2"] or "",
-        })
-    return jsonify({"bulundu": False})
+    if not satirlar:
+        return jsonify({"bulundu": False, "digerleri": []})
+
+    ilk = satirlar[0]
+    digerleri = [
+        {
+            "id": s["id"], "adi": s["adi"], "soyadi": s["soyadi"],
+            "koy_adi": s["koy_adi"] or "",
+        }
+        for s in satirlar
+    ]
+    return jsonify({
+        "bulundu": True,
+        "adi": ilk["adi"], "soyadi": ilk["soyadi"],
+        "telefon": ilk["telefon"] or "", "telefon2": ilk["telefon2"] or "",
+        "coklu": len(satirlar) > 1,
+        "digerleri": digerleri,
+    })
 
 
 @app.route("/abone")
@@ -571,10 +630,10 @@ def abone_listesi():
                     kosul_listesi.append(f"ROUND(CAST({kolon} AS NUMERIC), 2) = %s")
                     kosul_params.append(round(q_sayi, 2))
                 elif sayisal:
-                    kosul_listesi.append(f"CAST({kolon} AS TEXT) LIKE %s")
+                    kosul_listesi.append(f"CAST({kolon} AS TEXT) ILIKE %s")
                     kosul_params.append(f"%{q}%")
                 else:
-                    kosul_listesi.append(f"{kolon} LIKE %s")
+                    kosul_listesi.append(f"{kolon} ILIKE %s")
                     kosul_params.append(f"%{q}%")
         if kosul_listesi:
             sql += " AND (" + " OR ".join(kosul_listesi) + ")"
@@ -665,9 +724,13 @@ def abone_yeni():
 @login_required
 def abone_duzenle(abone_id):
     db = get_db()
+    geri = request.args.get("geri", "") or request.form.get("geri", "")
     if request.method == "POST":
         _abone_kaydet(abone_id)
-        return redirect(url_for("abone_listesi"))
+        hedef = url_for("abone_listesi")
+        if geri:
+            hedef += "?" + geri
+        return redirect(hedef)
     cur = db.cursor()
     cur.execute("SELECT * FROM abone WHERE id = %s", (abone_id,))
     kayit = cur.fetchone()
@@ -675,18 +738,22 @@ def abone_duzenle(abone_id):
     if kayit is None:
         flash("Kayıt bulunamadı.")
         return redirect(url_for("abone_listesi"))
-    return render_template("abone_form.html", kayit=kayit)
+    return render_template("abone_form.html", kayit=kayit, geri=geri)
 
 
 @app.route("/abone/<int:abone_id>/sil", methods=["POST"])
 @login_required
 def abone_sil(abone_id):
+    geri = request.args.get("geri", "")
     db = get_db()
     cur = db.cursor()
     cur.execute("DELETE FROM abone WHERE id = %s", (abone_id,))
     db.commit()
     cur.close()
-    return redirect(url_for("abone_listesi"))
+    hedef = url_for("abone_listesi")
+    if geri:
+        hedef += "?" + geri
+    return redirect(hedef)
 
 
 def _abone_kaydet(abone_id):
@@ -769,6 +836,7 @@ def _abone_kaydet(abone_id):
 def abone_tahsilat(abone_id):
     db = get_db()
     cur = db.cursor()
+    geri = request.args.get("geri", "") or request.form.get("geri", "")
 
     if request.method == "POST":
         tur = request.form.get("tur")
@@ -788,7 +856,10 @@ def abone_tahsilat(abone_id):
             db.commit()
 
         cur.close()
-        return redirect(url_for("abone_tahsilat", abone_id=abone_id))
+        hedef = url_for("abone_tahsilat", abone_id=abone_id)
+        if geri:
+            hedef += "?geri=" + _url_quote(geri, safe="")
+        return redirect(hedef)
 
     cur.execute("SELECT * FROM abone WHERE id = %s", (abone_id,))
     abone = cur.fetchone()
@@ -801,7 +872,7 @@ def abone_tahsilat(abone_id):
     tahsilatlar = cur.fetchall()
     cur.close()
 
-    return render_template("abone_tahsilat.html", abone=abone, tahsilatlar=tahsilatlar)
+    return render_template("abone_tahsilat.html", abone=abone, tahsilatlar=tahsilatlar, geri=geri)
 
 
 @app.route("/tahsilat/<int:tahsilat_id>/sil", methods=["POST"])
@@ -938,7 +1009,7 @@ def tahsilat():
         "muhtara_odenen": sum(s["muhtara_odenen"] or 0 for s in satirlar),
         "muhtara_kalan": sum(s["muhtara_kalan"] or 0 for s in satirlar),
     }
-    genel["firma_asil_alacagi"] = genel["kalan_tutar"] - genel["muhtara_odenecek"]
+    genel["firma_asil_alacagi"] = genel["kalan_tutar"] - genel["muhtara_kalan"]
 
     return render_template(
         "tahsilat.html", satirlar=satirlar, genel=genel,
@@ -1106,8 +1177,42 @@ def ariza_sil(ariza_id):
 @login_required
 def ariza_listesi():
     db = get_db()
+    q = request.args.get("q", "").strip()
+    alanlar_secili = request.args.getlist("alan")
+    ARIZA_ALAN_HARITASI = {k: (kolon, sayisal) for k, _, kolon, sayisal in ARIZA_ALAN_TANIMLARI}
+    alan_listesi = [(k, etiket) for k, etiket, _, _ in ARIZA_ALAN_TANIMLARI]
+
     sql = "SELECT * FROM ariza WHERE 1=1"
     params = []
+
+    if q:
+        secili = alanlar_secili if alanlar_secili else [k for k, *_ in ARIZA_ALAN_TANIMLARI]
+
+        q_sayi = None
+        q_temiz = q.replace(",", ".").strip()
+        try:
+            q_sayi = float(q_temiz)
+        except ValueError:
+            q_sayi = None
+
+        kosul_listesi = []
+        kosul_params = []
+        for s in secili:
+            if s in ARIZA_ALAN_HARITASI:
+                kolon, sayisal = ARIZA_ALAN_HARITASI[s]
+                if sayisal and q_sayi is not None:
+                    kosul_listesi.append(f"ROUND(CAST({kolon} AS NUMERIC), 2) = %s")
+                    kosul_params.append(round(q_sayi, 2))
+                elif sayisal:
+                    kosul_listesi.append(f"CAST({kolon} AS TEXT) ILIKE %s")
+                    kosul_params.append(f"%{q}%")
+                else:
+                    kosul_listesi.append(f"{kolon} ILIKE %s")
+                    kosul_params.append(f"%{q}%")
+        if kosul_listesi:
+            sql += " AND (" + " OR ".join(kosul_listesi) + ")"
+            params += kosul_params
+
     deger_secili = {}
     for anahtar, _ in ARIZA_DISPLAY_KOLONLARI:
         secilenler = request.args.getlist(f"deger_{anahtar}")
@@ -1133,6 +1238,7 @@ def ariza_listesi():
     return render_template(
         "ariza_listesi.html", satirlar=satirlar,
         kolon_listesi=ARIZA_DISPLAY_KOLONLARI,
+        q=q, secili_alanlar=alanlar_secili, alan_listesi=alan_listesi,
         deger_secili=deger_secili, deger_secenekleri=deger_secenekleri,
         sayisal_kolonlar=ARIZA_SAYISAL_KOLONLAR,
     )
@@ -1389,6 +1495,62 @@ def toplu_abone_yukle():
     <html><body style="font-family:sans-serif;max-width:640px;margin:40px auto;line-height:1.5">
     <h2 style="color:#0a0">Başarılı</h2>
     <p><b>{eklenen}</b> abone kaydı başarıyla eklendi.</p>
+    <p><a href="/abone">Abone listesine git</a></p>
+    </body></html>
+    """
+
+
+@app.route("/admin/tarih-formati-duzelt")
+@login_required
+def tarih_formati_duzelt():
+    onay = request.args.get("onayla") == "1"
+    db = get_db()
+    cur = db.cursor()
+
+    hedefler = [
+        ("abone", ["montaj_tarihi", "odeme_tarihi", "odeme_gun_sozu"]),
+        ("ariza", ["gelis_tarihi", "takilan_tarih"]),
+    ]
+
+    bulunanlar = []
+    for tablo, kolonlar in hedefler:
+        for kolon in kolonlar:
+            cur.execute(f"SELECT id, {kolon} FROM {tablo} WHERE {kolon} IS NOT NULL AND {kolon} != ''")
+            for satir in cur.fetchall():
+                iso = _ddmmyyyy_to_iso(satir[kolon])
+                if iso:
+                    bulunanlar.append((tablo, kolon, satir["id"], satir[kolon], iso))
+
+    if not onay:
+        cur.close()
+        if not bulunanlar:
+            return """
+            <html><body style="font-family:sans-serif;max-width:640px;margin:40px auto;line-height:1.5">
+            <h2>Tarih Formatı Düzeltme</h2>
+            <p>Düzeltilmesi gereken GG.AA.YYYY formatında kayıt bulunamadı. Tüm tarihler zaten doğru formatta.</p>
+            <p><a href="/abone">Abone listesine git</a></p>
+            </body></html>
+            """
+        return f"""
+        <html><body style="font-family:sans-serif;max-width:640px;margin:40px auto;line-height:1.5">
+        <h2>Tarih Formatı Düzeltme</h2>
+        <p><b>{len(bulunanlar)}</b> tarih alanı, aktarım sırasında GG.AA.YYYY metin formatında kaydedilmiş.
+        Bu işlem bunları veritabanının beklediği YYYY-AA-GG formatına çevirecek. Görünen tarihler
+        (GG.AA.YYYY) değişmeyecek, sadece arka plandaki kayıt biçimi düzelecek.</p>
+        <p><a href="?onayla=1" style="font-size:20px">Evet, {len(bulunanlar)} tarihi düzelt</a></p>
+        </body></html>
+        """
+
+    for tablo, kolon, kayit_id, eski, iso in bulunanlar:
+        cur.execute(f"UPDATE {tablo} SET {kolon} = %s WHERE id = %s", (iso, kayit_id))
+    db.commit()
+    duzeltilen = len(bulunanlar)
+    cur.close()
+
+    return f"""
+    <html><body style="font-family:sans-serif;max-width:640px;margin:40px auto;line-height:1.5">
+    <h2 style="color:#0a0">Başarılı</h2>
+    <p><b>{duzeltilen}</b> tarih alanı düzeltildi.</p>
     <p><a href="/abone">Abone listesine git</a></p>
     </body></html>
     """
