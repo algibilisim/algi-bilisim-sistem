@@ -658,6 +658,46 @@ def _koy_kaynak_paketle(satirlar):
     }
 
 
+def _isim_anahtari(adi, soyadi):
+    return ((adi or "").strip().upper(), (soyadi or "").strip().upper())
+
+
+def _tum_adaylari_olustur(abone_satirlari, koy_satirlari):
+    """Hem 'abone' tablosundaki (mükerrer olabilen) tüm satırları, hem de
+    'koy_abone' tablosundaki tüm satırları tarayıp, isme göre tekilleştirilmiş
+    TÜM farklı kişi adaylarının listesini döndürür. Böylece aynı seri no
+    'abone' tablosunda 2, 'koy_abone' tablosunda 1 farklı isimle kayıtlıysa
+    (toplam 3 farklı kişi), üçü de listelenir — sadece kaynak başına bir
+    temsilci değil."""
+    adaylar = []
+    gorulenler = set()
+    for s in abone_satirlari:
+        anahtar = _isim_anahtari(s["adi"], s["soyadi"])
+        if anahtar in gorulenler:
+            continue
+        gorulenler.add(anahtar)
+        adaylar.append({
+            "kaynak": "abone",
+            "adi": s["adi"] or "", "soyadi": s["soyadi"] or "",
+            "telefon": s["telefon"] or "", "telefon2": s["telefon2"] or "",
+            "koy_adi": s["koy_adi"] or "",
+            "montaj_tarihi": _tarih_iso_hale_getir(s["montaj_tarihi"]),
+        })
+    for s in koy_satirlari:
+        anahtar = _isim_anahtari(s["adi"], s["soyadi"])
+        if anahtar in gorulenler:
+            continue
+        gorulenler.add(anahtar)
+        adaylar.append({
+            "kaynak": "koy_listesi",
+            "adi": s["adi"] or "", "soyadi": s["soyadi"] or "",
+            "telefon": "", "telefon2": "",
+            "koy_adi": s["koy_adi"] or "",
+            "montaj_tarihi": _tarih_iso_hale_getir(s["abonelik_tarihi"]),
+        })
+    return adaylar
+
+
 @app.route("/api/abone-ara")
 @login_required
 def abone_ara():
@@ -674,8 +714,9 @@ def abone_ara():
 
     # Ana abone (faturalama) tablosunun yanı sıra, köylerden Excel ile gelen köy abone
     # listelerinde de (cihaz no üzerinden) HER ZAMAN ara — sadece bulunamayınca değil —
-    # çünkü aynı seri no iki kaynakta da farklı bilgilerle kayıtlı olabilir. Bu durumda
-    # kullanıcıya her iki kaynağı da gösterip seçim yaptırıyoruz (bkz. ikinci_kaynak).
+    # çünkü aynı seri no iki kaynakta da (hatta bir kaynağın kendi içinde mükerrer
+    # satırlarla) farklı bilgilerle kayıtlı olabilir. Bu durumda kullanıcıya TÜM
+    # farklı adayları gösterip seçim yaptırıyoruz (bkz. secenekler / detaylı arama).
     cur.execute(
         "SELECT id, adi, soyadi, koy_adi, abonelik_tarihi FROM koy_abone WHERE cihaz_no = %s ORDER BY id",
         (sayac_no,),
@@ -683,22 +724,17 @@ def abone_ara():
     koy_satirlari = cur.fetchall()
     cur.close()
 
-    abone_paket = _abone_kaynak_paketle(abone_satirlari) if abone_satirlari else None
-    koy_paket = _koy_kaynak_paketle(koy_satirlari) if koy_satirlari else None
-
-    if not abone_paket and not koy_paket:
+    if not abone_satirlari and not koy_satirlari:
         return jsonify({"bulundu": False, "digerleri": []})
 
+    abone_paket = _abone_kaynak_paketle(abone_satirlari) if abone_satirlari else None
+    koy_paket = _koy_kaynak_paketle(koy_satirlari) if koy_satirlari else None
     birincil = abone_paket or koy_paket
-    ikincil = koy_paket if abone_paket else None
 
-    def _isim_anahtari(p):
-        return ((p.get("adi") or "").strip().upper(), (p.get("soyadi") or "").strip().upper())
-
-    farkli = bool(abone_paket and koy_paket and _isim_anahtari(abone_paket) != _isim_anahtari(koy_paket))
+    adaylar = _tum_adaylari_olustur(abone_satirlari, koy_satirlari)
 
     sonuc = dict(birincil)
-    sonuc["ikinci_kaynak"] = ikincil if (farkli and ikincil) else None
+    sonuc["secenekler"] = adaylar if len(adaylar) > 1 else []
     return jsonify(sonuc)
 
 
