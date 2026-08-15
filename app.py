@@ -17,6 +17,14 @@ from flask import (
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 
+try:
+    import mammoth
+except Exception:
+    # mammoth kurulu değilse (ör. requirements.txt henüz güncellenmediyse) uygulamanın
+    # tamamı çökmesin diye — sadece Word'den tasarım yükleme özelliği devre dışı kalır,
+    # geri kalan her şey normal çalışmaya devam eder.
+    mammoth = None
+
 DATABASE_URL = os.environ.get("DATABASE_URL")
 SECRET_KEY = os.environ.get("SECRET_KEY", "gelistirme-icin-degistir")
 
@@ -709,6 +717,16 @@ def _montaj_formu_render_tek(sablon_icerik, satir):
         return None, str(e)
 
 
+# Yeni yüklenen (.html veya .docx) bir Montaj Formu tasarımının kaydedilmeden önce
+# güvenli şekilde render edilip edilemediğini sınamak için kullanılan sabit test verisi.
+_MONTAJ_FORMU_TEST_VERISI = {
+    "adi": "TEST", "soyadi": "TEST", "koy_adi": "TEST", "sayac_no": "0",
+    "telefon": "", "telefon2": "", "montaj_tarihi": "01.01.2026",
+    "sayac_tutari": "0,00", "alinan_tutar": "0,00",
+    "malzeme_tutari": "0,00", "malzeme_alinan": "0,00", "montaj_personeli": "",
+}
+
+
 def _montaj_formu_sablon_getir(db):
     cur = db.cursor()
     cur.execute("SELECT icerik FROM montaj_formu_sablon ORDER BY id LIMIT 1")
@@ -1180,19 +1198,60 @@ def montaj_formu_tasarim_dosya_yukle():
         flash("Dosya okunamadı — lütfen UTF-8 kodlamalı bir .html dosyası yükleyin.")
         return redirect(url_for("montaj_formu_tasarim"))
 
-    _, hata = _montaj_formu_render_tek(yeni_icerik, {
-        "adi": "TEST", "soyadi": "TEST", "koy_adi": "TEST", "sayac_no": "0",
-        "telefon": "", "telefon2": "", "montaj_tarihi": "01.01.2026",
-        "sayac_tutari": "0,00", "alinan_tutar": "0,00",
-        "malzeme_tutari": "0,00", "malzeme_alinan": "0,00", "montaj_personeli": "",
-    })
+    _, hata = _montaj_formu_render_tek(yeni_icerik, _MONTAJ_FORMU_TEST_VERISI)
     if hata:
         flash(f"Yüklenen dosyada bir hata var, tasarım kaydedilmedi: {hata}")
+        return redirect(url_for("montaj_formu_tasarim"))
+    db = get_db()
+    _montaj_formu_sablon_kaydet(db, yeni_icerik)
+    flash("Montaj Formu tasarımı, yüklediğiniz dosyadan güncellendi.")
+    return redirect(url_for("montaj_formu_tasarim"))
+
+
+@app.route("/montaj-formu/tasarim/word-yukle", methods=["POST"])
+@login_required
+def montaj_formu_tasarim_word_yukle():
+    """Montaj Formu tasarımını, kullanıcının Word'de (.docx) hazırladığı bir belgeyi
+    yükleyerek değiştirir. Belge, mammoth kütüphanesiyle HTML'e çevrilir — Word'deki
+    tablo/kalın yazı gibi yapı korunur, ancak renk/piksel düzeyinde birebir görsel
+    eşleşme garanti edilmez. Kullanıcı Word içinde {{ adi }} gibi alan adlarını TEK
+    bir biçimlendirmeyle (araya kalın/italik geçişi koymadan) yazmalıdır; aksi halde
+    dönüşüm sırasında alan adı ikiye bölünüp çalışmayabilir."""
+    if mammoth is None:
+        flash("Word'den tasarım yükleme özelliği şu anda kullanılamıyor (sunucu tarafında "
+              "'mammoth' kütüphanesi kurulu değil). Lütfen bizimle iletişime geçin.")
+        return redirect(url_for("montaj_formu_tasarim"))
+
+    dosya = request.files.get("sablon_word")
+    if dosya is None or not dosya.filename:
+        flash("Lütfen yüklemek için bir Word belgesi (.docx) seçin.")
+        return redirect(url_for("montaj_formu_tasarim"))
+
+    try:
+        sonuc = mammoth.convert_to_html(dosya)
+        yeni_icerik = sonuc.value
+    except Exception as e:
+        flash(f"Word belgesi okunamadı: {e}")
+        return redirect(url_for("montaj_formu_tasarim"))
+
+    if not yeni_icerik.strip():
+        flash("Word belgesinden hiçbir içerik okunamadı — lütfen dosyayı kontrol edin.")
+        return redirect(url_for("montaj_formu_tasarim"))
+
+    _, hata = _montaj_formu_render_tek(yeni_icerik, _MONTAJ_FORMU_TEST_VERISI)
+    if hata:
+        flash(f"Word belgesinden dönüştürülen tasarımda bir hata var, tasarım "
+              f"kaydedilmedi: {hata}")
         return redirect(url_for("montaj_formu_tasarim"))
 
     db = get_db()
     _montaj_formu_sablon_kaydet(db, yeni_icerik)
-    flash("Montaj Formu tasarımı, yüklediğiniz dosyadan güncellendi.")
+    uyari_sayisi = len(getattr(sonuc, "messages", []) or [])
+    if uyari_sayisi:
+        flash(f"Montaj Formu tasarımı, Word belgesinden güncellendi ({uyari_sayisi} "
+              f"küçük dönüşüm notu var — önizlemeyi kontrol edin).")
+    else:
+        flash("Montaj Formu tasarımı, Word belgesinden güncellendi.")
     return redirect(url_for("montaj_formu_tasarim"))
 
 
