@@ -16,16 +16,16 @@
             <input type="text" name="ozel_s_no" value="{{ kayit['ozel_s_no'] if kayit else '' }}">
         </div>
         <div>
+            <label>Seri No</label>
+            <input type="text" id="seri_no_girisi" name="seri_no" value="{{ kayit['seri_no'] if kayit else '' }}" autofocus>
+        </div>
+        <div>
             <label>Köy Adı</label>
-            <input type="text" name="koy_adi" value="{{ kayit['koy_adi'] if kayit else '' }}" autofocus>
+            <input type="text" id="ariza_koy_adi" name="koy_adi" value="{{ kayit['koy_adi'] if kayit else '' }}">
         </div>
         <div>
             <label>Yeni Seri No</label>
             <input type="text" name="yeni_seri_no" value="{{ kayit['yeni_seri_no'] if kayit else '' }}">
-        </div>
-        <div>
-            <label>Seri No</label>
-            <input type="text" id="seri_no_girisi" name="seri_no" value="{{ kayit['seri_no'] if kayit else '' }}">
         </div>
         <div>
             <label>Adı</label>
@@ -42,6 +42,10 @@
         <div>
             <label>Telefon 2</label>
             <input type="text" id="ariza_telefon2" name="telefon2" value="{{ kayit['telefon2'] if kayit else '' }}">
+        </div>
+        <div>
+            <label class="ilk-montaj-etiket">İlk Montaj Tarihi</label>
+            <input type="date" id="ilk_montaj_tarihi" class="ilk-montaj-tarihi" value="{{ ilk_montaj_tarihi }}" readonly tabindex="-1">
         </div>
 
         <div id="seri-uyari-kutu" class="seri-uyari-kutu tam-genislik" style="display:none;">
@@ -120,6 +124,8 @@ function _seriAlanlariniTemizle() {
     document.getElementById('ariza_soyadi').value = '';
     document.getElementById('ariza_telefon').value = '';
     document.getElementById('ariza_telefon2').value = '';
+    document.getElementById('ariza_koy_adi').value = '';
+    document.getElementById('ilk_montaj_tarihi').value = '';
     document.getElementById('seri-uyari-kutu').style.display = 'none';
     document.getElementById('seri-uyari-govde').innerHTML = '';
 }
@@ -138,6 +144,8 @@ document.getElementById('seri_no_girisi').addEventListener('blur', function() {
                 document.getElementById('ariza_soyadi').value = veri.soyadi;
                 document.getElementById('ariza_telefon').value = veri.telefon;
                 document.getElementById('ariza_telefon2').value = veri.telefon2;
+                document.getElementById('ariza_koy_adi').value = veri.koy_adi || '';
+                document.getElementById('ilk_montaj_tarihi').value = veri.montaj_tarihi || '';
 
                 var kutu = document.getElementById('seri-uyari-kutu');
                 var govde = document.getElementById('seri-uyari-govde');

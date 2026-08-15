@@ -305,10 +305,19 @@ YAPILAN_ISLEMLER_SECENEKLERI = [
     "Pil Takıldı", "Resetlendi", "Sayım Aparatı Değişti",
 ]
 
-TESPIT_SATIR = _izgara_satir(len(TESPIT_EDILEN_ARIZA_SECENEKLERI))
+# Form tek sayfaya sığsın diye bu ızgaralar 4 yerine 6 sütun hedefler (daha az satır).
+TESPIT_SATIR = _izgara_satir(len(TESPIT_EDILEN_ARIZA_SECENEKLERI), 6)
 TESPIT_SATIR_2 = _izgara_satir(len(TESPIT_EDILEN_ARIZA_SECENEKLERI), 2)
-ISLEM_SATIR = _izgara_satir(len(YAPILAN_ISLEMLER_SECENEKLERI))
+ISLEM_SATIR = _izgara_satir(len(YAPILAN_ISLEMLER_SECENEKLERI), 6)
 ISLEM_SATIR_2 = _izgara_satir(len(YAPILAN_ISLEMLER_SECENEKLERI), 2)
+
+# Abone Listesi'ndeki "Aynı Sayaç No'lu Kayıtları Getir" penceresinde her farklı
+# sayaç no grubunu ayrı bir renkle göstermek için kullanılan renk paleti.
+GRUP_RENK_PALETI = [
+    "#c0392b", "#1f6fb2", "#8e44ad", "#0e8a6d", "#c2740c",
+    "#2c3e50", "#c2185b", "#00796b", "#8a6d00", "#5b3a29",
+    "#d35400", "#1a7a3c",
+]
 
 YEDEKLENECEK_TABLOLAR = ["abone", "tahsilat", "ariza", "ariza_tahsilat", "kullanici"]
 
@@ -336,6 +345,16 @@ def _ddmmyyyy_to_iso(t):
     if len(t) == 10 and t[2:3] == "." and t[5:6] == ".":
         return t[6:10] + "-" + t[3:5] + "-" + t[0:2]
     return None
+
+
+def _tarih_iso_hale_getir(t):
+    """<input type=date> alanına doğrudan basılabilecek YYYY-AA-GG biçimini döndürür."""
+    t = (t or "").strip()
+    if not t:
+        return ""
+    if _iso_tarih_mi(t):
+        return t
+    return _ddmmyyyy_to_iso(t) or ""
 
 
 def _kolon_secenekleri(db, anahtar, tablo, bilgi_sozlugu):
@@ -611,7 +630,7 @@ def abone_ara():
     db = get_db()
     cur = db.cursor()
     cur.execute(
-        "SELECT id, adi, soyadi, telefon, telefon2, koy_adi FROM abone WHERE sayac_no = %s ORDER BY id",
+        "SELECT id, adi, soyadi, telefon, telefon2, koy_adi, montaj_tarihi FROM abone WHERE sayac_no = %s ORDER BY id",
         (sayac_no,),
     )
     satirlar = cur.fetchall()
@@ -631,6 +650,8 @@ def abone_ara():
         "bulundu": True,
         "adi": ilk["adi"], "soyadi": ilk["soyadi"],
         "telefon": ilk["telefon"] or "", "telefon2": ilk["telefon2"] or "",
+        "koy_adi": ilk["koy_adi"] or "",
+        "montaj_tarihi": _tarih_iso_hale_getir(ilk["montaj_tarihi"]),
         "coklu": len(satirlar) > 1,
         "digerleri": digerleri,
     })
@@ -646,7 +667,6 @@ def abone_listesi():
     q = request.args.get("q", "").strip()
     koy = request.args.get("koy", "").strip()
     alanlar_secili = request.args.getlist("alan")
-    coklu_sayac = request.args.get("coklu_sayac") == "1"
     db = get_db()
 
     ALAN_TANIMLARI = [
@@ -715,13 +735,6 @@ def abone_listesi():
     if koy:
         sql += " AND koy_adi = %s"
         params.append(koy)
-    if coklu_sayac:
-        sql += (
-            " AND sayac_no IN ("
-            "SELECT sayac_no FROM abone WHERE sayac_no IS NOT NULL AND sayac_no != '' "
-            "GROUP BY sayac_no HAVING COUNT(*) > 1"
-            ")"
-        )
 
     deger_secili = {}
     for anahtar, _ in DISPLAY_KOLONLARI:
@@ -753,9 +766,40 @@ def abone_listesi():
         secili_alanlar=alanlar_secili, alan_listesi=alan_listesi,
         kolon_listesi=DISPLAY_KOLONLARI, deger_secili=deger_secili,
         deger_secenekleri=deger_secenekleri, sayisal_kolonlar=SAYISAL_KOLONLAR,
-        coklu_sayac=coklu_sayac,
         arama_satir=_izgara_satir(len(alan_listesi)),
         arama_satir_2=_izgara_satir(len(alan_listesi), 2),
+    )
+
+
+@app.route("/abone/coklu-sayac")
+@login_required
+def abone_coklu_sayac():
+    """Aynı sayaç no'ya birden fazla abonede rastlanan kayıtları, sayaç no'ya göre
+    gruplanmış ve her grup farklı bir renkle işaretlenmiş şekilde ayrı bir sayfada gösterir."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT sayac_no FROM abone WHERE sayac_no IS NOT NULL AND sayac_no != '' "
+        "GROUP BY sayac_no HAVING COUNT(*) > 1 ORDER BY sayac_no"
+    )
+    gruplar = [r["sayac_no"] for r in cur.fetchall()]
+    renk_haritasi = {sn: GRUP_RENK_PALETI[i % len(GRUP_RENK_PALETI)] for i, sn in enumerate(gruplar)}
+
+    kayitlar_ham = []
+    if gruplar:
+        cur.execute(
+            "SELECT * FROM abone WHERE sayac_no = ANY(%s) ORDER BY sayac_no, s_no",
+            (gruplar,),
+        )
+        kayitlar_ham = cur.fetchall()
+    cur.close()
+
+    satirlar = [_abone_satir_sozlugu(k) for k in kayitlar_ham]
+    for s in satirlar:
+        s["_grup_renk"] = renk_haritasi.get(s["sayac_no"], "#333333")
+
+    return render_template(
+        "abone_coklu_sayac.html", satirlar=satirlar, grup_sayisi=len(gruplar),
     )
 
 
@@ -1232,6 +1276,7 @@ def ariza_yeni():
         secili_tespit=set(), secili_islem=set(),
         tespit_satir=TESPIT_SATIR, tespit_satir_2=TESPIT_SATIR_2,
         islem_satir=ISLEM_SATIR, islem_satir_2=ISLEM_SATIR_2,
+        ilk_montaj_tarihi="",
     )
 
 
@@ -1251,6 +1296,19 @@ def ariza_duzenle(ariza_id):
         return redirect(url_for("ariza_listesi"))
     secili_tespit = set((kayit["tespit_edilen_ariza"] or "").split(", ")) if kayit["tespit_edilen_ariza"] else set()
     secili_islem = set((kayit["yapilan_islemler"] or "").split(", ")) if kayit["yapilan_islemler"] else set()
+
+    ilk_montaj_tarihi = ""
+    if kayit["seri_no"]:
+        cur = db.cursor()
+        cur.execute(
+            "SELECT montaj_tarihi FROM abone WHERE sayac_no = %s ORDER BY id LIMIT 1",
+            (kayit["seri_no"],),
+        )
+        abone_satir = cur.fetchone()
+        cur.close()
+        if abone_satir:
+            ilk_montaj_tarihi = _tarih_iso_hale_getir(abone_satir["montaj_tarihi"])
+
     return render_template(
         "ariza_form.html", kayit=kayit,
         tespit_secenekleri=TESPIT_EDILEN_ARIZA_SECENEKLERI,
@@ -1258,6 +1316,7 @@ def ariza_duzenle(ariza_id):
         secili_tespit=secili_tespit, secili_islem=secili_islem,
         tespit_satir=TESPIT_SATIR, tespit_satir_2=TESPIT_SATIR_2,
         islem_satir=ISLEM_SATIR, islem_satir_2=ISLEM_SATIR_2,
+        ilk_montaj_tarihi=ilk_montaj_tarihi,
     )
 
 

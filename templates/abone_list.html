@@ -31,7 +31,7 @@
     <button type="button" class="btn" onclick="filtreTemizle('arama')">Arama Filtrelerini Temizle</button>
     <button type="button" class="btn" onclick="filtreTemizle('sutun')">Sütun Filtrelerini Temizle</button>
     <button type="button" class="btn" onclick="filtreTemizle('tumu')">Tüm Filtreleri Temizle</button>
-    <a class="btn {{ 'btn-yesil' if coklu_sayac else '' }}" href="{{ url_for('abone_listesi') }}?coklu_sayac=1">Aynı Sayaç No'lu Kayıtları Getir</a>
+    <a class="btn" href="{{ url_for('abone_coklu_sayac') }}" target="_blank">Aynı Sayaç No'lu Kayıtları Getir</a>
 </div>
 
 <form method="get" id="kolon-filtre-form">

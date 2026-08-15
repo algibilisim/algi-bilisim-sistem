@@ -35,7 +35,7 @@
         </div>
         <div>
             <label>Sayaç No</label>
-            <input type="text" name="sayac_no" value="{{ kayit['sayac_no'] if kayit else '' }}">
+            <input type="text" id="abone_sayac_no" name="sayac_no" value="{{ kayit['sayac_no'] if kayit else '' }}">
         </div>
         <div>
             <label>Baba Adı</label>
@@ -49,6 +49,17 @@
             <label>Telefon 2</label>
             <input type="text" name="telefon2" value="{{ kayit['telefon2'] if kayit else '' }}">
         </div>
+
+        {% if not kayit %}
+        <div id="sayac-uyari-kutu" class="seri-uyari-kutu tam-genislik" style="display:none;">
+            <h4>Dikkat: Bu sayaç no başka abonelerde de kayıtlı</h4>
+            <table>
+                <thead><tr><th>Adı</th><th>Soyadı</th><th>Köy</th></tr></thead>
+                <tbody id="sayac-uyari-govde"></tbody>
+            </table>
+            <p style="margin:8px 0 0;font-size:12px;color:#a15c00;">İsterseniz kayda yine de devam edebilirsiniz.</p>
+        </div>
+        {% endif %}
 
         <div class="ayirici">Senet / Sayaç Bilgileri</div>
 
@@ -130,4 +141,34 @@
     </div>
     </div>
 </form>
+
+{% if not kayit %}
+<script>
+document.getElementById('abone_sayac_no').addEventListener('blur', function() {
+    var deger = this.value.trim();
+    var kutu = document.getElementById('sayac-uyari-kutu');
+    var govde = document.getElementById('sayac-uyari-govde');
+    if (!deger) {
+        kutu.style.display = 'none';
+        govde.innerHTML = '';
+        return;
+    }
+    fetch('/api/abone-ara?sayac_no=' + encodeURIComponent(deger))
+        .then(function(r) { return r.json(); })
+        .then(function(veri) {
+            govde.innerHTML = '';
+            if (veri.bulundu && veri.digerleri && veri.digerleri.length > 0) {
+                veri.digerleri.forEach(function(kayit) {
+                    var satir = document.createElement('tr');
+                    satir.innerHTML = '<td>' + (kayit.adi || '') + '</td><td>' + (kayit.soyadi || '') + '</td><td>' + (kayit.koy_adi || '') + '</td>';
+                    govde.appendChild(satir);
+                });
+                kutu.style.display = 'block';
+            } else {
+                kutu.style.display = 'none';
+            }
+        });
+});
+</script>
+{% endif %}
 {% endblock %}

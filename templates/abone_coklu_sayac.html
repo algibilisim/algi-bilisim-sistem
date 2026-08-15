@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Aynı Sayaç No'lu Kayıtlar - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi">
+    <h2>Aynı Sayaç No'lu Kayıtlar</h2>
+    <a class="btn" href="{{ url_for('abone_listesi') }}">Abone Listesine Dön</a>
+</div>
+
+{% if grup_sayisi %}
+<p>{{ grup_sayisi }} farklı sayaç numarası birden fazla abonede kayıtlı görünüyor. Aynı renkteki satırlar aynı sayaç numarasına ait kayıtlardır.</p>
+{% else %}
+<p>Aynı sayaç numarasına sahip birden fazla kayıt bulunamadı.</p>
+{% endif %}
+
+<div class="tablo-kaydirici">
+<table>
+    <thead>
+        <tr>
+            <th>S.No</th>
+            <th>Köy</th>
+            <th>Adı</th>
+            <th>Soyadı</th>
+            <th>Sayaç No</th>
+            <th>Senet Tutarı</th>
+            <th>Sayaç Tutarı</th>
+            <th>Alınan</th>
+            <th>Toplam Kalan</th>
+            <th class="sabit-sutun">İşlem</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in satirlar %}
+        <tr style="color: {{ s['_grup_renk'] }};">
+            <td>{{ s['s_no'] }}</td>
+            <td>{{ s['koy_adi'] }}</td>
+            <td>{{ s['adi'] }}</td>
+            <td>{{ s['soyadi'] }}</td>
+            <td><strong>{{ s['sayac_no'] }}</strong></td>
+            <td class="sayi">{{ s['senet_tutari'] }}</td>
+            <td class="sayi">{{ s['sayac_tutari'] }}</td>
+            <td class="sayi">{{ s['alinan_tutar'] }}</td>
+            <td class="sayi"><strong>{{ s['toplam_kalan'] }}</strong></td>
+            <td class="islem-hucre sabit-sutun">
+                <a href="{{ url_for('abone_duzenle', abone_id=s['id']) }}" target="_blank">Düzenle</a>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="10">Kayıt bulunamadı.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% endblock %}
