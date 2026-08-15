@@ -622,6 +622,42 @@ def _csv_olustur(kolon_listesi, goster_kolonlari, satirlar, dosya_adi):
     )
 
 
+def _abone_kaynak_paketle(satirlar):
+    ilk = satirlar[0]
+    digerleri = [
+        {"id": s["id"], "adi": s["adi"] or "", "soyadi": s["soyadi"] or "", "koy_adi": s["koy_adi"] or ""}
+        for s in satirlar
+    ]
+    return {
+        "bulundu": True,
+        "adi": ilk["adi"] or "", "soyadi": ilk["soyadi"] or "",
+        "telefon": ilk["telefon"] or "", "telefon2": ilk["telefon2"] or "",
+        "koy_adi": ilk["koy_adi"] or "",
+        "montaj_tarihi": _tarih_iso_hale_getir(ilk["montaj_tarihi"]),
+        "coklu": len(satirlar) > 1,
+        "digerleri": digerleri,
+        "kaynak": "abone",
+    }
+
+
+def _koy_kaynak_paketle(satirlar):
+    ilk = satirlar[0]
+    digerleri = [
+        {"id": s["id"], "adi": s["adi"] or "", "soyadi": s["soyadi"] or "", "koy_adi": s["koy_adi"] or ""}
+        for s in satirlar
+    ]
+    return {
+        "bulundu": True,
+        "adi": ilk["adi"] or "", "soyadi": ilk["soyadi"] or "",
+        "telefon": "", "telefon2": "",
+        "koy_adi": ilk["koy_adi"] or "",
+        "montaj_tarihi": _tarih_iso_hale_getir(ilk["abonelik_tarihi"]),
+        "coklu": len(satirlar) > 1,
+        "digerleri": digerleri,
+        "kaynak": "koy_listesi",
+    }
+
+
 @app.route("/api/abone-ara")
 @login_required
 def abone_ara():
@@ -634,57 +670,36 @@ def abone_ara():
         "SELECT id, adi, soyadi, telefon, telefon2, koy_adi, montaj_tarihi FROM abone WHERE sayac_no = %s ORDER BY id",
         (sayac_no,),
     )
-    satirlar = cur.fetchall()
+    abone_satirlari = cur.fetchall()
 
-    if not satirlar:
-        # Ana abone (faturalama) tablosunda bulunamadı; köylerden Excel ile gelen
-        # köy abone listelerinde (cihaz no) ara. Arıza Takip'te seri no'lu kayıtların
-        # bir kısmı sadece bu köy listelerinde bulunabiliyor.
-        cur.execute(
-            "SELECT id, adi, soyadi, koy_adi, abonelik_tarihi FROM koy_abone "
-            "WHERE cihaz_no = %s ORDER BY id",
-            (sayac_no,),
-        )
-        koy_satirlari = cur.fetchall()
-        cur.close()
-        if not koy_satirlari:
-            return jsonify({"bulundu": False, "digerleri": []})
-
-        ilk = koy_satirlari[0]
-        digerleri = [
-            {"id": s["id"], "adi": s["adi"] or "", "soyadi": s["soyadi"] or "", "koy_adi": s["koy_adi"] or ""}
-            for s in koy_satirlari
-        ]
-        return jsonify({
-            "bulundu": True,
-            "adi": ilk["adi"] or "", "soyadi": ilk["soyadi"] or "",
-            "telefon": "", "telefon2": "",
-            "koy_adi": ilk["koy_adi"] or "",
-            "montaj_tarihi": _tarih_iso_hale_getir(ilk["abonelik_tarihi"]),
-            "coklu": len(koy_satirlari) > 1,
-            "digerleri": digerleri,
-            "kaynak": "koy_listesi",
-        })
-
+    # Ana abone (faturalama) tablosunun yanı sıra, köylerden Excel ile gelen köy abone
+    # listelerinde de (cihaz no üzerinden) HER ZAMAN ara — sadece bulunamayınca değil —
+    # çünkü aynı seri no iki kaynakta da farklı bilgilerle kayıtlı olabilir. Bu durumda
+    # kullanıcıya her iki kaynağı da gösterip seçim yaptırıyoruz (bkz. ikinci_kaynak).
+    cur.execute(
+        "SELECT id, adi, soyadi, koy_adi, abonelik_tarihi FROM koy_abone WHERE cihaz_no = %s ORDER BY id",
+        (sayac_no,),
+    )
+    koy_satirlari = cur.fetchall()
     cur.close()
-    ilk = satirlar[0]
-    digerleri = [
-        {
-            "id": s["id"], "adi": s["adi"], "soyadi": s["soyadi"],
-            "koy_adi": s["koy_adi"] or "",
-        }
-        for s in satirlar
-    ]
-    return jsonify({
-        "bulundu": True,
-        "adi": ilk["adi"], "soyadi": ilk["soyadi"],
-        "telefon": ilk["telefon"] or "", "telefon2": ilk["telefon2"] or "",
-        "koy_adi": ilk["koy_adi"] or "",
-        "montaj_tarihi": _tarih_iso_hale_getir(ilk["montaj_tarihi"]),
-        "coklu": len(satirlar) > 1,
-        "digerleri": digerleri,
-        "kaynak": "abone",
-    })
+
+    abone_paket = _abone_kaynak_paketle(abone_satirlari) if abone_satirlari else None
+    koy_paket = _koy_kaynak_paketle(koy_satirlari) if koy_satirlari else None
+
+    if not abone_paket and not koy_paket:
+        return jsonify({"bulundu": False, "digerleri": []})
+
+    birincil = abone_paket or koy_paket
+    ikincil = koy_paket if abone_paket else None
+
+    def _isim_anahtari(p):
+        return ((p.get("adi") or "").strip().upper(), (p.get("soyadi") or "").strip().upper())
+
+    farkli = bool(abone_paket and koy_paket and _isim_anahtari(abone_paket) != _isim_anahtari(koy_paket))
+
+    sonuc = dict(birincil)
+    sonuc["ikinci_kaynak"] = ikincil if (farkli and ikincil) else None
+    return jsonify(sonuc)
 
 
 @app.route("/api/ariza-gecmisi")
@@ -900,28 +915,78 @@ def _koy_excel_hucre_metin(v):
     return str(v).strip()
 
 
+# Farklı köylerin TEKSAN dışa aktarımlarında bu başlıkların sütun sırası kayabiliyor
+# (bkz. Kemalpaşa'da Cihaz No J sütunu, Destek'te G sütunu). Bu yüzden sütunları sabit
+# numarayla değil, dosyanın kendi başlık satırındaki yazılarla buluyoruz. Başlık satırı
+# tespit edilemezse (beklenmeyen bir dosya biçimi), Kemalpaşa'nın düzenine geri düşülür.
+_KOY_EXCEL_BASLIK_ETIKETLERI = {
+    "sira_no": ["SIRA NO", "S.NO", "S NO", "SNO"],
+    "abonelik_tarihi": ["ABONELİK TARİHİ", "ABONELIK TARIHI"],
+    "abone_no": ["ABONE NO"],
+    "cihaz_no": ["CİHAZ NO", "CIHAZ NO"],
+    "adi_soyadi": ["ADI SOYADI"],
+    "adres": ["ADRES"],
+}
+
+_KOY_EXCEL_VARSAYILAN_SUTUNLAR = {
+    "sira_no": 0, "abonelik_tarihi": 3, "abone_no": 5,
+    "cihaz_no": 9, "adi_soyadi": 13, "adres": 15,
+}
+
+
+def _koy_excel_baslik_normallestir(v):
+    metin = _koy_excel_hucre_metin(v)
+    return re.sub(r"\s+", " ", metin).strip().upper()
+
+
+def _koy_excel_sutunlarini_bul(ham_satirlar):
+    """Her satırı tarayıp SIRA NO / ADI SOYADI gibi başlıkların hangi sütunda
+    olduğunu bulan satırı arar. Bulunursa sütun numaralarının sözlüğünü, aksi
+    halde None döner."""
+    for satir in ham_satirlar:
+        if not satir:
+            continue
+        bulunanlar = {}
+        for idx, deger in enumerate(satir):
+            metin = _koy_excel_baslik_normallestir(deger)
+            if not metin:
+                continue
+            for alan, olasi_etiketler in _KOY_EXCEL_BASLIK_ETIKETLERI.items():
+                if alan in bulunanlar:
+                    continue
+                if metin in olasi_etiketler:
+                    bulunanlar[alan] = idx
+        if "sira_no" in bulunanlar and "adi_soyadi" in bulunanlar:
+            return bulunanlar
+    return None
+
+
 def _koy_excel_satirlarini_ayikla(ham_satirlar):
     """TEKSAN tarzı köy abone listesi export'undaki ham satırlardan gerçek veri
     satırlarını ayıklar: tekrar eden başlık satırlarını ve boş ara satırları atlar.
-    Sütun düzeni: SIRA NO(0), ABONELİK TARİHİ(3), ABONE NO(5), CİHAZ NO(9),
-    ADI SOYADI(13, sabit genişlikte -> boşluk bloklarıyla ayrılır), ADRES(15)."""
+    Sütunların hangi indekste olduğunu dosyanın kendi başlık satırından bulur."""
+    sutunlar = _koy_excel_sutunlarini_bul(ham_satirlar) or _KOY_EXCEL_VARSAYILAN_SUTUNLAR
+
     sonuc = []
     for satir in ham_satirlar:
         if not satir:
             continue
-        ilk_metin = _koy_excel_hucre_metin(satir[0] if len(satir) > 0 else None)
+        ilk_metin = _koy_excel_hucre_metin(satir[sutunlar["sira_no"]] if sutunlar["sira_no"] < len(satir) else None)
         if not ilk_metin:
             continue
         try:
             int(float(ilk_metin.replace(",", ".")))
         except ValueError:
-            continue  # başlık satırı ("SIRA NO") ya da veri olmayan satır
+            continue  # başlık satırı ("SIRA NO"/"S.NO") ya da veri olmayan satır
 
-        def al(idx):
-            return satir[idx] if idx < len(satir) else None
+        def al(alan):
+            idx = sutunlar.get(alan)
+            if idx is None or idx >= len(satir):
+                return None
+            return satir[idx]
 
-        abonelik_tarihi_ham = _koy_excel_hucre_metin(al(3))
-        adi_soyadi_ham = _koy_excel_hucre_metin(al(13))
+        abonelik_tarihi_ham = _koy_excel_hucre_metin(al("abonelik_tarihi"))
+        adi_soyadi_ham = _koy_excel_hucre_metin(al("adi_soyadi"))
         parcalar = [p for p in re.split(r"\s{2,}", adi_soyadi_ham) if p]
         if len(parcalar) >= 2:
             adi, soyadi = parcalar[0], " ".join(parcalar[1:])
@@ -933,11 +998,11 @@ def _koy_excel_satirlarini_ayikla(ham_satirlar):
         sonuc.append({
             "sira_no": ilk_metin,
             "abonelik_tarihi": _tarih_iso_hale_getir(abonelik_tarihi_ham) or abonelik_tarihi_ham,
-            "abone_no": _koy_excel_hucre_metin(al(5)),
-            "cihaz_no": _koy_excel_hucre_metin(al(9)),
+            "abone_no": _koy_excel_hucre_metin(al("abone_no")),
+            "cihaz_no": _koy_excel_hucre_metin(al("cihaz_no")),
             "adi": adi,
             "soyadi": soyadi,
-            "adres": _koy_excel_hucre_metin(al(15)),
+            "adres": _koy_excel_hucre_metin(al("adres")),
         })
     return sonuc
 
@@ -1000,6 +1065,11 @@ def koy_abone_listesi():
 
     cur.execute("SELECT COUNT(*) AS c FROM koy_abone")
     toplam_kayit = cur.fetchone()["c"]
+
+    secili_koy_toplam = None
+    if koy:
+        cur.execute("SELECT COUNT(*) AS c FROM koy_abone WHERE koy_adi = %s", (koy,))
+        secili_koy_toplam = cur.fetchone()["c"]
     cur.close()
 
     satirlar = [_koy_abone_satir_sozlugu(k) for k in kayitlar_ham]
@@ -1016,7 +1086,23 @@ def koy_abone_listesi():
         "koy_abone_listesi.html", satirlar=satirlar, koyler=koyler,
         q=q, secili_koy=koy,
         filtreli_kayit=len(satirlar), toplam_kayit=toplam_kayit,
+        secili_koy_toplam=secili_koy_toplam,
     )
+
+
+@app.route("/koy-abone-listesi/koy-sil", methods=["POST"])
+@login_required
+def koy_abone_koy_sil():
+    koy_adi = request.form.get("koy_adi", "").strip()
+    if koy_adi:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("DELETE FROM koy_abone WHERE koy_adi = %s", (koy_adi,))
+        silinen = cur.rowcount
+        db.commit()
+        cur.close()
+        flash(f"\"{koy_adi}\" köyüne ait {silinen} kayıt silindi.")
+    return redirect(url_for("koy_abone_listesi"))
 
 
 def _koy_abone_kaydet(kayit_id):

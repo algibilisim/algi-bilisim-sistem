@@ -301,6 +301,30 @@ th.sabit-sutun { background: #eef3ef; z-index: 4; }
 .gecmis-ariza-kutu h4 { margin: 0 0 6px; color: #1a5a96; font-size: 13px; }
 .gecmis-ariza-kutu table { font-size: 11.5px; background: #fff; }
 .gecmis-ariza-kutu th, .gecmis-ariza-kutu td { padding: 4px 6px; }
+.kaynak-cakisma-kutu {
+    background: #fdeaea;
+    border: 1px solid #e8b4b0;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin: 4px 0;
+    grid-column: 1 / -1;
+}
+.kaynak-cakisma-kutu h4 { margin: 0 0 8px; color: #a13a2e; font-size: 13px; }
+.kaynak-secenekleri { display: flex; gap: 10px; flex-wrap: wrap; }
+.kaynak-secenek-buton {
+    flex: 1;
+    min-width: 220px;
+    background: #fff;
+    border: 1.5px solid #e8b4b0;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12.5px;
+    text-align: left;
+    cursor: pointer;
+    color: #1f2a24;
+}
+.kaynak-secenek-buton:hover { background: #fff5f4; border-color: #c0392b; }
+.btn-kirmizi { background: #c0392b; color: #fff; }
 .kayit-sayaci {
     display: flex;
     gap: 20px;
