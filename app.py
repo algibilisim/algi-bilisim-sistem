@@ -140,6 +140,7 @@ DISPLAY_KOLONLARI = [
     ("telefon2", "Telefon 2"),
     ("baba_adi", "Baba Adı"),
     ("montaj_tarihi", "Montaj Tarihi"),
+    ("montaj_personeli", "Montaj Personeli"),
     ("odeme_tarihi", "Ödeme Tarihi"),
     ("odeme_sekli", "Ödeme Şekli"),
     ("odeme_gun_sozu", "Ödeme Gün Sözü"),
@@ -172,6 +173,7 @@ KOLON_BILGI = {
     "telefon2": ("telefon2", "metin"),
     "baba_adi": ("baba_adi", "metin"),
     "montaj_tarihi": ("montaj_tarihi", "tarih"),
+    "montaj_personeli": ("montaj_personeli", "metin"),
     "odeme_tarihi": ("odeme_tarihi", "tarih"),
     "odeme_sekli": ("odeme_sekli", "metin"),
     "odeme_gun_sozu": ("odeme_gun_sozu", "tarih"),
@@ -260,7 +262,8 @@ ARIZA_ALAN_TANIMLARI = [
 # sırasını kullanır; bu listeler SADECE onay kutusu görünümü içindir.
 _ABONE_ALFABETIK_SIRA = [
     "aciklama", "adi", "alinan_tutar", "baba_adi", "fatura_no", "koy_adi",
-    "malzeme_alinan", "malzeme_kalan", "malzeme_tutari", "montaj_tarihi",
+    "malzeme_alinan", "malzeme_kalan", "malzeme_tutari", "montaj_personeli",
+    "montaj_tarihi",
     "muhtara_kalan", "muhtara_odenecek", "muhtara_odenen", "odeme_gun_sozu",
     "odeme_sekli", "odeme_tarihi", "odemeyi_gonderen", "s_no", "sayac_kalan",
     "sayac_no", "sayac_tutari", "senet_no", "senet_sahibi_adi",
@@ -283,6 +286,7 @@ _ABONE_ALAN_TANIMLARI = [
     ("malzeme_alinan", "Malzeme Alınan", "malzeme_alinan", True),
     ("malzeme_kalan", "Malzeme Kalan", "(malzeme_tutari - malzeme_alinan)", True),
     ("malzeme_tutari", "Malzeme Tutarı", "malzeme_tutari", True),
+    ("montaj_personeli", "Montaj Personeli", "montaj_personeli", False),
     ("montaj_tarihi", "Montaj Tarihi", "montaj_tarihi", False),
     ("muhtara_kalan", "Muhtara Kalan", "(muhtara_odenecek - muhtara_odenen)", True),
     ("muhtara_odenecek", "Muhtara Ödenecek", "muhtara_odenecek", True),
@@ -529,6 +533,7 @@ def _abone_satir_sozlugu(k):
         "telefon2": _telefon_formatla(k["telefon2"]),
         "baba_adi": k["baba_adi"],
         "montaj_tarihi": _gg_aa_yyyy(k["montaj_tarihi"]),
+        "montaj_personeli": k["montaj_personeli"],
         "odeme_tarihi": _gg_aa_yyyy(k["odeme_tarihi"]),
         "odeme_sekli": k["odeme_sekli"],
         "odeme_gun_sozu": _gg_aa_yyyy(k["odeme_gun_sozu"]),
@@ -602,15 +607,15 @@ _MONTAJ_FORMU_VARSAYILAN_SABLON = """<div class="montaj-formu-kopya" style="bord
         </tr>
         <tr>
             <td style="border:1px solid #333; padding:5px; font-weight:700; background:#f7f7f7;">Sayaç Ücreti</td>
-            <td style="border:1px solid #333; padding:5px;">&nbsp;</td>
+            <td style="border:1px solid #333; padding:5px;">{{ sayac_ucreti }}</td>
             <td style="border:1px solid #333; padding:5px; font-weight:700; background:#f7f7f7;">Tesisat Ücreti</td>
-            <td style="border:1px solid #333; padding:5px;">&nbsp;</td>
+            <td style="border:1px solid #333; padding:5px;">{{ tesisat_ucreti }}</td>
         </tr>
         <tr>
             <td style="border:1px solid #333; padding:5px; font-weight:700; background:#f7f7f7;">Alınan</td>
-            <td style="border:1px solid #333; padding:5px;">&nbsp;</td>
+            <td style="border:1px solid #333; padding:5px;">{{ sayac_ucreti_alinan }}</td>
             <td style="border:1px solid #333; padding:5px; font-weight:700; background:#f7f7f7;">Alınan</td>
-            <td style="border:1px solid #333; padding:5px;">&nbsp;</td>
+            <td style="border:1px solid #333; padding:5px;">{{ tesisat_ucreti_alinan }}</td>
         </tr>
     </table>
 
@@ -668,8 +673,8 @@ _MONTAJ_FORMU_VARSAYILAN_SABLON = """<div class="montaj-formu-kopya" style="bord
 
     <div style="display:flex; justify-content:space-between; margin-top:22px; font-size:11.5px; text-align:center;">
         <div style="flex:1;">Kurum Personeli</div>
-        <div style="flex:1;">Tolga KARAAĞAÇ<br>ELEKTROMED Yetkili Personeli</div>
-        <div style="flex:1;">Abone Veya Vekili</div>
+        <div style="flex:1;">{{ montaj_personeli }}<br>ELEKTROMED Yetkili Personeli</div>
+        <div style="flex:1;">{{ adi }} {{ soyadi }}<br>Abone Veya Vekili</div>
     </div>
 </div>"""
 
@@ -679,13 +684,18 @@ def _montaj_formu_veri(satir):
     (mail-merge) verisi hazırlar. montaj_tarihi burada GG/AA/YYYY biçimine çevrilir
     (satırdaki değer zaten GG.AA.YYYY biçiminde geliyor)."""
     return {
-        "adi": satir["adi"] or "",
-        "soyadi": satir["soyadi"] or "",
-        "koy_adi": satir["koy_adi"] or "",
-        "sayac_no": satir["sayac_no"] or "",
-        "telefon": satir["telefon"] or "",
-        "telefon2": satir["telefon2"] or "",
-        "montaj_tarihi": (satir["montaj_tarihi"] or "").replace(".", "/"),
+        "adi": satir.get("adi") or "",
+        "soyadi": satir.get("soyadi") or "",
+        "koy_adi": satir.get("koy_adi") or "",
+        "sayac_no": satir.get("sayac_no") or "",
+        "telefon": satir.get("telefon") or "",
+        "telefon2": satir.get("telefon2") or "",
+        "montaj_tarihi": (satir.get("montaj_tarihi") or "").replace(".", "/"),
+        "sayac_ucreti": satir.get("sayac_tutari") or "0,00",
+        "sayac_ucreti_alinan": satir.get("alinan_tutar") or "0,00",
+        "tesisat_ucreti": satir.get("malzeme_tutari") or "0,00",
+        "tesisat_ucreti_alinan": satir.get("malzeme_alinan") or "0,00",
+        "montaj_personeli": satir.get("montaj_personeli") or "",
     }
 
 
@@ -705,6 +715,24 @@ def _montaj_formu_sablon_getir(db):
     satir = cur.fetchone()
     cur.close()
     return satir["icerik"] if satir else _MONTAJ_FORMU_VARSAYILAN_SABLON
+
+
+def _montaj_formu_sablon_kaydet(db, yeni_icerik):
+    """Montaj Formu tasarımını (tek satır tutulan) veritabanına kaydeder — hem
+    tasarım kutusundan Kaydet'e basıldığında, hem Varsayılana Döndür'de, hem de
+    dosyadan tasarım yükleme akışında kullanılan ortak yardımcı fonksiyon."""
+    cur = db.cursor()
+    cur.execute("SELECT id FROM montaj_formu_sablon ORDER BY id LIMIT 1")
+    satir = cur.fetchone()
+    if satir:
+        cur.execute(
+            "UPDATE montaj_formu_sablon SET icerik = %s, guncelleme_tarihi = NOW() WHERE id = %s",
+            (yeni_icerik, satir["id"]),
+        )
+    else:
+        cur.execute("INSERT INTO montaj_formu_sablon (icerik) VALUES (%s)", (yeni_icerik,))
+    db.commit()
+    cur.close()
 
 
 def ensure_db():
@@ -1099,31 +1127,22 @@ def abone_listesi():
 @login_required
 def montaj_formu_tasarim():
     db = get_db()
-    cur = db.cursor()
 
     if request.method == "POST":
         yeni_icerik = request.form.get("icerik", "")
-        cur.execute("SELECT id FROM montaj_formu_sablon ORDER BY id LIMIT 1")
-        satir = cur.fetchone()
-        if satir:
-            cur.execute(
-                "UPDATE montaj_formu_sablon SET icerik = %s, guncelleme_tarihi = NOW() WHERE id = %s",
-                (yeni_icerik, satir["id"]),
-            )
-        else:
-            cur.execute("INSERT INTO montaj_formu_sablon (icerik) VALUES (%s)", (yeni_icerik,))
-        db.commit()
-        cur.close()
+        _montaj_formu_sablon_kaydet(db, yeni_icerik)
         flash("Montaj Formu tasarımı kaydedildi.")
         return redirect(url_for("montaj_formu_tasarim"))
 
     icerik = _montaj_formu_sablon_getir(db)
-    cur.close()
 
     ornek_satir = {
         "adi": "AHMET", "soyadi": "YILMAZ", "koy_adi": "ÖRNEK KÖYÜ",
         "sayac_no": "12345678", "telefon": "0555 555 55 55", "telefon2": "",
         "montaj_tarihi": datetime.now().strftime("%d.%m.%Y"),
+        "sayac_tutari": "1.500,00", "alinan_tutar": "1.500,00",
+        "malzeme_tutari": "750,00", "malzeme_alinan": "750,00",
+        "montaj_personeli": "ÖRNEK PERSONEL",
     }
     onizleme_html, onizleme_hata = _montaj_formu_render_tek(icerik, ornek_satir)
 
@@ -1131,6 +1150,50 @@ def montaj_formu_tasarim():
         "montaj_formu_tasarim.html",
         icerik=icerik, onizleme_html=onizleme_html, onizleme_hata=onizleme_hata,
     )
+
+
+@app.route("/montaj-formu/tasarim/sifirla", methods=["POST"])
+@login_required
+def montaj_formu_tasarim_sifirla():
+    """Montaj Formu tasarımını, koddaki güncel varsayılan tasarıma sıfırlar.
+    Veritabanında daha önce kaydedilmiş (eski/hatalı) tasarım varsa üzerine yazılır."""
+    db = get_db()
+    _montaj_formu_sablon_kaydet(db, _MONTAJ_FORMU_VARSAYILAN_SABLON)
+    flash("Montaj Formu tasarımı, programın güncel varsayılan tasarımına sıfırlandı.")
+    return redirect(url_for("montaj_formu_tasarim"))
+
+
+@app.route("/montaj-formu/tasarim/dosya-yukle", methods=["POST"])
+@login_required
+def montaj_formu_tasarim_dosya_yukle():
+    """Montaj Formu tasarımını, kullanıcının bilgisayarından seçtiği bir .html
+    dosyasını yükleyerek değiştirir — kutuya elle yazma/yapıştırma yapmadan,
+    tek bir dosya seçme + Yükle butonuyla yeni tasarımın devreye girmesini sağlar."""
+    dosya = request.files.get("sablon_dosyasi")
+    if dosya is None or not dosya.filename:
+        flash("Lütfen yüklemek için bir tasarım dosyası (.html) seçin.")
+        return redirect(url_for("montaj_formu_tasarim"))
+
+    try:
+        yeni_icerik = dosya.read().decode("utf-8")
+    except UnicodeDecodeError:
+        flash("Dosya okunamadı — lütfen UTF-8 kodlamalı bir .html dosyası yükleyin.")
+        return redirect(url_for("montaj_formu_tasarim"))
+
+    _, hata = _montaj_formu_render_tek(yeni_icerik, {
+        "adi": "TEST", "soyadi": "TEST", "koy_adi": "TEST", "sayac_no": "0",
+        "telefon": "", "telefon2": "", "montaj_tarihi": "01.01.2026",
+        "sayac_tutari": "0,00", "alinan_tutar": "0,00",
+        "malzeme_tutari": "0,00", "malzeme_alinan": "0,00", "montaj_personeli": "",
+    })
+    if hata:
+        flash(f"Yüklenen dosyada bir hata var, tasarım kaydedilmedi: {hata}")
+        return redirect(url_for("montaj_formu_tasarim"))
+
+    db = get_db()
+    _montaj_formu_sablon_kaydet(db, yeni_icerik)
+    flash("Montaj Formu tasarımı, yüklediğiniz dosyadan güncellendi.")
+    return redirect(url_for("montaj_formu_tasarim"))
 
 
 @app.route("/abone/<int:abone_id>/montaj-formu")
@@ -1686,6 +1749,7 @@ def _abone_kaydet(abone_id):
         telefon2=_telefon_formatla(f.get("telefon2", "")),
         baba_adi=f.get("baba_adi", "").strip(),
         montaj_tarihi=f.get("montaj_tarihi", "").strip(),
+        montaj_personeli=f.get("montaj_personeli", "").strip(),
         odeme_tarihi=f.get("odeme_tarihi", "").strip(),
         odeme_sekli=f.get("odeme_sekli", "").strip(),
         odeme_gun_sozu=f.get("odeme_gun_sozu", "").strip(),
