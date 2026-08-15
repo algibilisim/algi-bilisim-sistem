@@ -9,7 +9,7 @@
 <body>
 {% if session.get('user_id') %}
 <header class="topbar no-print">
-    <div class="brand">ALGI BİLİŞİM</div>
+    <div class="brand"><img src="{{ url_for('static', filename='logo.jpg') }}" alt="ALGI BİLİŞİM"></div>
     <nav>
         <a href="{{ url_for('abone_listesi') }}">Abone Listesi</a>
         <a href="{{ url_for('tahsilat') }}">Köy Satış / Tahsilat Raporu</a>

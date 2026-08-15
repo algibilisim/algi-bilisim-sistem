@@ -1000,7 +1000,10 @@ def abone_tahsilat(abone_id):
     tahsilatlar = cur.fetchall()
     cur.close()
 
-    return render_template("abone_tahsilat.html", abone=abone, tahsilatlar=tahsilatlar, geri=geri)
+    return render_template(
+        "abone_tahsilat.html", abone=abone, tahsilatlar=tahsilatlar, geri=geri,
+        bugun=datetime.now().strftime("%Y-%m-%d"),
+    )
 
 
 @app.route("/tahsilat/<int:tahsilat_id>/sil", methods=["POST"])
@@ -1277,6 +1280,7 @@ def ariza_yeni():
         tespit_satir=TESPIT_SATIR, tespit_satir_2=TESPIT_SATIR_2,
         islem_satir=ISLEM_SATIR, islem_satir_2=ISLEM_SATIR_2,
         ilk_montaj_tarihi="",
+        bugun=datetime.now().strftime("%Y-%m-%d"),
     )
 
 
@@ -1317,6 +1321,7 @@ def ariza_duzenle(ariza_id):
         tespit_satir=TESPIT_SATIR, tespit_satir_2=TESPIT_SATIR_2,
         islem_satir=ISLEM_SATIR, islem_satir_2=ISLEM_SATIR_2,
         ilk_montaj_tarihi=ilk_montaj_tarihi,
+        bugun=datetime.now().strftime("%Y-%m-%d"),
     )
 
 
@@ -1505,7 +1510,10 @@ def ariza_tahsilat(ariza_id):
     tahsilatlar = cur.fetchall()
     cur.close()
 
-    return render_template("ariza_tahsilat.html", kayit=kayit, tahsilatlar=tahsilatlar)
+    return render_template(
+        "ariza_tahsilat.html", kayit=kayit, tahsilatlar=tahsilatlar,
+        bugun=datetime.now().strftime("%Y-%m-%d"),
+    )
 
 
 @app.route("/ariza-tahsilat/<int:tahsilat_id>/sil", methods=["POST"])
