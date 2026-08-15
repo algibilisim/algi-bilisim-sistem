@@ -36,7 +36,7 @@
     <button type="button" class="btn" onclick="filtreTemizle('sutun')">Sütun Filtrelerini Temizle</button>
     <button type="button" class="btn" onclick="filtreTemizle('tumu')">Tüm Filtreleri Temizle</button>
     <a class="btn" href="{{ url_for('abone_coklu_sayac') }}" target="_blank">Aynı Sayaç No'lu Kayıtları Getir</a>
-    <a class="btn btn-yesil" href="{{ url_for('abone_montaj_formu_toplu') }}?{{ request.query_string.decode() }}" target="_blank">Montaj Formu Oluştur (Filtrelenenler — {{ filtreli_kayit }} kayıt)</a>
+    <a class="btn btn-yesil" href="{{ url_for('abone_montaj_formu_toplu') }}?{{ request.query_string.decode() }}">Montaj Formu Oluştur (Filtrelenenler — {{ filtreli_kayit }} kayıt)</a>
     <a class="btn" href="{{ url_for('montaj_formu_tasarim') }}">Montaj Formu Tasarımı</a>
 </div>
 
@@ -98,7 +98,7 @@
                 <td class="islem-hucre sabit-sutun">
                     <a href="{{ url_for('abone_duzenle', abone_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}">Düzenle</a>
                     <a href="{{ url_for('abone_tahsilat', abone_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}">Tahsilat</a>
-                    <a href="{{ url_for('abone_montaj_formu', abone_id=s['id']) }}" target="_blank">Montaj Formu</a>
+                    <a href="{{ url_for('abone_montaj_formu', abone_id=s['id']) }}">M.Form</a>
                     <button type="submit" class="link-buton"
                             formaction="{{ url_for('abone_sil', abone_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}"
                             formmethod="post"

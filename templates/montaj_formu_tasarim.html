@@ -14,20 +14,63 @@
         oluşturulduğunda bu tasarım, o abonenin bilgileriyle doldurulup A4 sayfasının hem üstüne hem
         altına aynı şekilde iki kez basılır — siz sadece tek kopyayı düzenlersiniz.
     </p>
-    <p style="margin:0; font-size:12.5px;">
+    <p style="margin:0 0 6px; font-size:12.5px;">
         Kullanılabilecek alanlar: <code>{{ '{{ adi }}' }}</code>, <code>{{ '{{ soyadi }}' }}</code>,
         <code>{{ '{{ koy_adi }}' }}</code>, <code>{{ '{{ sayac_no }}' }}</code>,
         <code>{{ '{{ telefon }}' }}</code>, <code>{{ '{{ telefon2 }}' }}</code>,
-        <code>{{ '{{ montaj_tarihi }}' }}</code> — bunlar kaydettiğinizde ilgili abonenin
-        Abone Listesi'ndeki gerçek bilgileriyle otomatik değişir.
+        <code>{{ '{{ montaj_tarihi }}' }}</code>, <code>{{ '{{ montaj_personeli }}' }}</code>,
+        <code>{{ '{{ sayac_ucreti }}' }}</code>, <code>{{ '{{ sayac_ucreti_alinan }}' }}</code>,
+        <code>{{ '{{ tesisat_ucreti }}' }}</code>, <code>{{ '{{ tesisat_ucreti_alinan }}' }}</code>
+        — bunlar kaydettiğinizde ilgili abonenin Abone Listesi'ndeki gerçek
+        bilgileriyle otomatik değişir.
+    </p>
+    <p style="margin:0; font-size:12.5px; color:#7a5200;">
+        <strong>Word ile tasarlarken dikkat:</strong> yukarıdaki alan adlarını Word belgenize
+        yazarken (ör. <code>{{ '{{ adi }}' }}</code>) baştan sona AYNI biçimlendirmeyle
+        (aynı yazı tipi/kalınlık) yazın — ortasında kalın/italik gibi bir değişiklik
+        olursa, yüklerken alan adı bölünüp çalışmayabilir.
     </p>
 </div>
 
-<form method="post" class="no-print" style="max-width:900px;">
+<div class="seri-uyari-kutu no-print" style="max-width:900px;">
+    <h4>Word Belgesiyle Tasarım Yükle</h4>
+    <p style="margin:0 0 10px; font-size:12.5px;">
+        Tasarımı kendi bilgisayarınızda Word'de hazırlayıp (yukarıdaki alan adlarını
+        kullanarak) .docx olarak kaydettiyseniz, aşağıdan seçip "Word Belgesini Yükle"
+        butonuna basmanız yeterli. Not: renk/piksel düzeyinde birebir aynı görünüm garanti
+        edilmez — karmaşık tablo düzenlerinde küçük farklılıklar olabilir; önizlemeyi
+        kontrol edip beğenmezseniz Word dosyasını bize gönderip elle inceletebilirsiniz.
+    </p>
+    <form method="post" action="{{ url_for('montaj_formu_tasarim_word_yukle') }}" enctype="multipart/form-data" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <input type="file" name="sablon_word" accept=".docx" required>
+        <button type="submit" class="btn btn-yesil">Word Belgesini Yükle</button>
+    </form>
+</div>
+
+<div class="seri-uyari-kutu no-print" style="max-width:900px;">
+    <h4>Yeni Tasarım Dosyası Yükle (.html)</h4>
+    <p style="margin:0 0 10px; font-size:12.5px;">
+        Size gönderilen yeni bir tasarım (.html) dosyanız varsa, aşağıdan seçip
+        "Dosyayı Yükle" butonuna basmanız yeterli — kutuya elle bir şey yazmanıza
+        gerek yok.
+    </p>
+    <form method="post" action="{{ url_for('montaj_formu_tasarim_dosya_yukle') }}" enctype="multipart/form-data" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <input type="file" name="sablon_dosyasi" accept=".html,.htm" required>
+        <button type="submit" class="btn btn-yesil">Dosyayı Yükle</button>
+    </form>
+</div>
+
+<form method="post" class="no-print" style="max-width:900px; margin-top:16px;">
+    <div class="ayirici">Tasarımı Kutu İçinde Görüntüle / Düzenle (isteğe bağlı)</div>
     <textarea name="icerik" rows="26" style="width:100%; font-family:monospace; font-size:12.5px; padding:10px; border:1px solid #ccc; border-radius:6px;">{{ icerik }}</textarea>
     <div class="form-butonlar">
         <button type="submit" class="btn btn-yesil">Tasarımı Kaydet</button>
     </div>
+</form>
+
+<form method="post" action="{{ url_for('montaj_formu_tasarim_sifirla') }}" class="no-print" style="max-width:900px; margin-top:8px;"
+      onsubmit="return confirm('Montaj Formu tasarımını programın güncel varsayılan tasarımına sıfırlamak istediğinize emin misiniz? Kaydettiğiniz özel tasarım kaybolacaktır.');">
+    <button type="submit" class="btn">Varsayılana Döndür</button>
 </form>
 
 <h3 class="no-print" style="margin-top:24px;">Önizleme (örnek veriyle)</h3>
