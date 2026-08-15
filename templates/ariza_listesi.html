@@ -4,6 +4,24 @@
 
 <div class="sayfa-basligi">
     <h2>Arıza Takip</h2>
+    <div class="ucret-ozet-satiri">
+        <div class="ucret-blok">
+            <span class="ucret-etiket">Toplam Arıza Ücreti</span>
+            <span class="ucret-deger">{{ toplam_ariza_ucreti|tl }} TL</span>
+        </div>
+        <div class="ucret-blok">
+            <span class="ucret-etiket">Tahsil Edilen Ücret</span>
+            <span class="ucret-deger">{{ tahsil_edilen_ucret|tl }} TL</span>
+        </div>
+        <div class="ucret-blok">
+            <span class="ucret-etiket">Kalan Bakiye</span>
+            <span class="ucret-deger {{ 'kirmizi' if kalan_bakiye > 0 else '' }}">{{ kalan_bakiye|tl }} TL</span>
+        </div>
+    </div>
+    <div class="kayit-sayaci">
+        <span>FİLTRELİ KAYIT : {{ filtreli_kayit }}</span>
+        <span>TOPLAM KAYIT : {{ toplam_kayit }}</span>
+    </div>
     <a class="btn btn-yesil" href="{{ url_for('ariza_yeni') }}">+ Yeni Arıza</a>
 </div>
 

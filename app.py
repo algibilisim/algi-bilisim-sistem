@@ -657,6 +657,37 @@ def abone_ara():
     })
 
 
+@app.route("/api/ariza-gecmisi")
+@login_required
+def ariza_gecmisi():
+    """Yeni arıza kaydı açılırken, girilen seri no'ya ait daha önce oluşturulmuş
+    arıza kayıtlarını (varsa) döndürür, böylece kullanıcı önceki kayıtları görebilir."""
+    seri_no = request.args.get("seri_no", "").strip()
+    if not seri_no:
+        return jsonify({"bulundu": False, "kayitlar": []})
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT gelis_tarihi, takilan_tarih, tespit_edilen_ariza, yapilan_islemler, "
+        "ariza_ucret, alinan_ucret FROM ariza WHERE seri_no = %s ORDER BY id DESC",
+        (seri_no,),
+    )
+    satirlar = cur.fetchall()
+    cur.close()
+
+    kayitlar = []
+    for s in satirlar:
+        kalan = (s["ariza_ucret"] or 0) - (s["alinan_ucret"] or 0)
+        kayitlar.append({
+            "gelis_tarihi": _gg_aa_yyyy(s["gelis_tarihi"]),
+            "takilan_tarih": _gg_aa_yyyy(s["takilan_tarih"]),
+            "tespit_edilen_ariza": s["tespit_edilen_ariza"] or "",
+            "yapilan_islemler": s["yapilan_islemler"] or "",
+            "kalan_ucret": tl_format(kalan),
+        })
+    return jsonify({"bulundu": len(kayitlar) > 0, "kayitlar": kayitlar})
+
+
 @app.route("/abone")
 @login_required
 def abone_listesi():
@@ -753,6 +784,8 @@ def abone_listesi():
     kayitlar_ham = cur.fetchall()
     cur.execute("SELECT DISTINCT koy_adi FROM abone ORDER BY koy_adi")
     koyler = cur.fetchall()
+    cur.execute("SELECT COUNT(*) AS c FROM abone")
+    toplam_kayit = cur.fetchone()["c"]
 
     satirlar = [_abone_satir_sozlugu(k) for k in kayitlar_ham]
 
@@ -768,6 +801,7 @@ def abone_listesi():
         deger_secenekleri=deger_secenekleri, sayisal_kolonlar=SAYISAL_KOLONLAR,
         arama_satir=_izgara_satir(len(alan_listesi)),
         arama_satir_2=_izgara_satir(len(alan_listesi), 2),
+        filtreli_kayit=len(satirlar), toplam_kayit=toplam_kayit,
     )
 
 
@@ -1150,6 +1184,7 @@ def tahsilat():
         "tahsilat.html", satirlar=satirlar, genel=genel,
         kolon_listesi=KOY_KOLONLARI, deger_secili=deger_secili,
         deger_secenekleri=deger_secenekleri,
+        filtreli_kayit=len(satirlar), toplam_kayit=len(satirlar_tum),
     )
 
 
@@ -1194,6 +1229,11 @@ def tahsilat_ciktisi():
     for anahtar in goster_kolonlari:
         deger_secenekleri[anahtar] = _kolon_secenekleri(db, anahtar, "abone", KOLON_BILGI)
 
+    cur = db.cursor()
+    cur.execute("SELECT COUNT(*) AS c FROM abone")
+    toplam_kayit = cur.fetchone()["c"]
+    cur.close()
+
     return render_template(
         "tahsilat_ciktisi.html",
         satirlar=satirlar,
@@ -1204,6 +1244,7 @@ def tahsilat_ciktisi():
         sayisal_kolonlar=SAYISAL_KOLONLAR,
         kolon_satir=_izgara_satir(len(DISPLAY_KOLONLARI_ALFABETIK)),
         kolon_satir_2=_izgara_satir(len(DISPLAY_KOLONLARI_ALFABETIK), 2),
+        filtreli_kayit=len(satirlar), toplam_kayit=toplam_kayit,
     )
 
 
@@ -1394,9 +1435,15 @@ def ariza_listesi():
     cur = db.cursor()
     cur.execute(sql, params)
     kayitlar_ham = cur.fetchall()
+    cur.execute("SELECT COUNT(*) AS c FROM ariza")
+    toplam_kayit = cur.fetchone()["c"]
     cur.close()
 
     satirlar = [_ariza_satir_sozlugu(k) for k in kayitlar_ham]
+
+    toplam_ariza_ucreti = sum(float(k["ariza_ucret"] or 0) for k in kayitlar_ham)
+    tahsil_edilen_ucret = sum(float(k["alinan_ucret"] or 0) for k in kayitlar_ham)
+    kalan_bakiye = toplam_ariza_ucreti - tahsil_edilen_ucret
 
     deger_secenekleri = {}
     for anahtar, _ in ARIZA_DISPLAY_KOLONLARI:
@@ -1410,6 +1457,10 @@ def ariza_listesi():
         sayisal_kolonlar=ARIZA_SAYISAL_KOLONLAR,
         arama_satir=_izgara_satir(len(alan_listesi)),
         arama_satir_2=_izgara_satir(len(alan_listesi), 2),
+        filtreli_kayit=len(satirlar), toplam_kayit=toplam_kayit,
+        toplam_ariza_ucreti=toplam_ariza_ucreti,
+        tahsil_edilen_ucret=tahsil_edilen_ucret,
+        kalan_bakiye=kalan_bakiye,
     )
 
 
@@ -1454,6 +1505,11 @@ def ariza_ciktisi():
     for anahtar in goster_kolonlari:
         deger_secenekleri[anahtar] = _kolon_secenekleri(db, anahtar, "ariza", ARIZA_KOLON_BILGI)
 
+    cur = db.cursor()
+    cur.execute("SELECT COUNT(*) AS c FROM ariza")
+    toplam_kayit = cur.fetchone()["c"]
+    cur.close()
+
     return render_template(
         "ariza_ciktisi.html",
         satirlar=satirlar,
@@ -1464,6 +1520,7 @@ def ariza_ciktisi():
         sayisal_kolonlar=ARIZA_SAYISAL_KOLONLAR,
         kolon_satir=_izgara_satir(len(ARIZA_DISPLAY_KOLONLARI_ALFABETIK)),
         kolon_satir_2=_izgara_satir(len(ARIZA_DISPLAY_KOLONLARI_ALFABETIK), 2),
+        filtreli_kayit=len(satirlar), toplam_kayit=toplam_kayit,
     )
 
 

@@ -1,7 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Köy Satış / Tahsilat Raporu - ALGI BİLİŞİM{% endblock %}
 {% block content %}
-<h2>Köy Satış / Tahsilat Raporu</h2>
+<div class="sayfa-basligi">
+    <h2>Köy Satış / Tahsilat Raporu</h2>
+    <div class="kayit-sayaci">
+        <span>FİLTRELİ KAYIT : {{ filtreli_kayit }}</span>
+        <span>TOPLAM KAYIT : {{ toplam_kayit }}</span>
+    </div>
+</div>
 
 <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:10px; margin-bottom:20px;">
     <div style="background:#fff; border-radius:8px; padding:14px; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,0.1);">

@@ -4,6 +4,10 @@
 
 <div class="sayfa-basligi">
     <h2>Abone Listesi</h2>
+    <div class="kayit-sayaci">
+        <span>FİLTRELİ KAYIT : {{ filtreli_kayit }}</span>
+        <span>TOPLAM KAYIT : {{ toplam_kayit }}</span>
+    </div>
     <a class="btn btn-yesil" href="{{ url_for('abone_yeni') }}">+ Yeni Abone</a>
 </div>
 

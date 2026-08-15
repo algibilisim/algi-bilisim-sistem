@@ -290,6 +290,47 @@ th.sabit-sutun { background: #eef3ef; z-index: 4; }
 .seri-uyari-kutu h4 { margin: 0 0 6px; color: #a15c00; font-size: 13px; }
 .seri-uyari-kutu table { font-size: 11.5px; background: #fff; }
 .seri-uyari-kutu th, .seri-uyari-kutu td { padding: 4px 6px; }
+.gecmis-ariza-kutu {
+    background: #eaf2fb;
+    border: 1px solid #a9c9e8;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin: 4px 0;
+    grid-column: 1 / -1;
+}
+.gecmis-ariza-kutu h4 { margin: 0 0 6px; color: #1a5a96; font-size: 13px; }
+.gecmis-ariza-kutu table { font-size: 11.5px; background: #fff; }
+.gecmis-ariza-kutu th, .gecmis-ariza-kutu td { padding: 4px 6px; }
+.kayit-sayaci {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    font-weight: 700;
+    color: #c0392b;
+    font-size: 13px;
+    white-space: nowrap;
+}
+.ucret-ozet-satiri {
+    display: flex;
+    gap: 22px;
+    flex-wrap: wrap;
+}
+.ucret-ozet-satiri .ucret-blok { text-align: left; }
+.ucret-ozet-satiri .ucret-etiket {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+.ucret-ozet-satiri .ucret-deger {
+    display: block;
+    font-size: 15px;
+    font-weight: 800;
+    color: #1e5631;
+}
+.ucret-ozet-satiri .ucret-deger.kirmizi { color: #c0392b; }
 @media print {
     .no-print { display: none !important; }
     body { background: #fff; }

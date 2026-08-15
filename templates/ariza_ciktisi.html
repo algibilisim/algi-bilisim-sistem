@@ -4,6 +4,10 @@
 
 <div class="sayfa-basligi no-print">
     <h2>Arıza Takip Çıktısı</h2>
+    <div class="kayit-sayaci">
+        <span>FİLTRELİ KAYIT : {{ filtreli_kayit }}</span>
+        <span>TOPLAM KAYIT : {{ toplam_kayit }}</span>
+    </div>
     <div style="display:flex; gap:8px;">
         <a class="btn" href="{{ url_for('ariza_ciktisi_excel') }}?{{ request.query_string.decode() }}">Excel'e Aktar</a>
         <button type="button" class="btn btn-yesil" onclick="window.print()">Yazdır</button>

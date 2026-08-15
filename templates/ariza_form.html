@@ -56,6 +56,16 @@
             </table>
         </div>
 
+        {% if not kayit %}
+        <div id="gecmis-ariza-kutu" class="gecmis-ariza-kutu tam-genislik" style="display:none;">
+            <h4>Bu seri no için daha önce açılmış arıza kayıtları</h4>
+            <table>
+                <thead><tr><th>Geliş Tarihi</th><th>Takılan Tarih</th><th>Tespit Edilen Arıza</th><th>Yapılan İşlemler</th><th>Kalan Ücret</th></tr></thead>
+                <tbody id="gecmis-ariza-govde"></tbody>
+            </table>
+        </div>
+        {% endif %}
+
         <div class="ayirici">Ücret Bilgileri</div>
 
         <div>
@@ -128,6 +138,11 @@ function _seriAlanlariniTemizle() {
     document.getElementById('ilk_montaj_tarihi').value = '';
     document.getElementById('seri-uyari-kutu').style.display = 'none';
     document.getElementById('seri-uyari-govde').innerHTML = '';
+    var gecmisKutu = document.getElementById('gecmis-ariza-kutu');
+    if (gecmisKutu) {
+        gecmisKutu.style.display = 'none';
+        document.getElementById('gecmis-ariza-govde').innerHTML = '';
+    }
 }
 
 document.getElementById('seri_no_girisi').addEventListener('blur', function() {
@@ -164,6 +179,31 @@ document.getElementById('seri_no_girisi').addEventListener('blur', function() {
                 _seriAlanlariniTemizle();
             }
         });
+
+    var gecmisKutu = document.getElementById('gecmis-ariza-kutu');
+    if (gecmisKutu) {
+        fetch('/api/ariza-gecmisi?seri_no=' + encodeURIComponent(deger))
+            .then(function(r) { return r.json(); })
+            .then(function(veri) {
+                var govde = document.getElementById('gecmis-ariza-govde');
+                govde.innerHTML = '';
+                if (veri.bulundu && veri.kayitlar && veri.kayitlar.length) {
+                    veri.kayitlar.forEach(function(k) {
+                        var satir = document.createElement('tr');
+                        satir.innerHTML =
+                            '<td>' + (k.gelis_tarihi || '') + '</td>' +
+                            '<td>' + (k.takilan_tarih || '') + '</td>' +
+                            '<td>' + (k.tespit_edilen_ariza || '') + '</td>' +
+                            '<td>' + (k.yapilan_islemler || '') + '</td>' +
+                            '<td>' + (k.kalan_ucret || '') + '</td>';
+                        govde.appendChild(satir);
+                    });
+                    gecmisKutu.style.display = 'block';
+                } else {
+                    gecmisKutu.style.display = 'none';
+                }
+            });
+    }
 });
 </script>
 {% endblock %}
