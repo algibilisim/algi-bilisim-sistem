@@ -17,7 +17,7 @@
         </div>
         <div>
             <label>Seri No</label>
-            <input type="text" id="seri_no_girisi" name="seri_no" value="{{ kayit['seri_no'] if kayit else '' }}" autofocus>
+            <input type="text" id="seri_no_girisi" name="seri_no" value="{{ kayit['seri_no'] if kayit else '' }}" {% if not kayit %}autofocus{% endif %}>
         </div>
         <div>
             <label>Köy Adı</label>
@@ -145,6 +145,11 @@ function _seriAlanlariniTemizle() {
     }
 }
 
+{% if not kayit %}
+// Bu otomatik doldurma/uyarı davranışı SADECE Yeni Arıza kaydı açarken çalışır.
+// Arıza Düzenle ekranında çalışmaz; aksi halde seri no Abone Listesi'nde
+// bulunamadığında, kayıttan zaten doğru gelen adı/soyadı/telefon/köy bilgileri
+// yanlışlıkla silinirdi.
 document.getElementById('seri_no_girisi').addEventListener('blur', function() {
     var deger = this.value.trim();
     if (!deger) {
@@ -205,5 +210,6 @@ document.getElementById('seri_no_girisi').addEventListener('blur', function() {
             });
     }
 });
+{% endif %}
 </script>
 {% endblock %}
