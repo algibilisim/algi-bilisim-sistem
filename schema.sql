@@ -117,3 +117,12 @@ CREATE TABLE IF NOT EXISTS koy_abone (
 
 CREATE INDEX IF NOT EXISTS idx_koy_abone_koy ON koy_abone(koy_adi);
 CREATE INDEX IF NOT EXISTS idx_koy_abone_cihaz_no ON koy_abone(cihaz_no);
+
+-- Montaj Formu'nun program içinden sonradan tasarlanabilir (düzenlenebilir) HTML
+-- şablonu. Her zaman tek bir satır tutulur; app.py içindeki ensure_db() ilk
+-- çalıştırmada varsayılan tasarımı otomatik ekler.
+CREATE TABLE IF NOT EXISTS montaj_formu_sablon (
+    id SERIAL PRIMARY KEY,
+    icerik TEXT NOT NULL,
+    guncelleme_tarihi TIMESTAMP DEFAULT NOW()
+);
