@@ -34,13 +34,15 @@
         padding: 0;
         /* Word'den yüklenen tasarımlar ekrandaki normal yazı boyutuyla geldiğinde
            iki kopya bir A4 sayfasına sığmayabiliyor — yazdırırken (sadece
-           yazdırırken; ekranda önizleme normal boyutta kalır) biraz küçültüyoruz.
-           NOT: tarayıcının yazdırma penceresinde "Üstbilgiler ve Altbilgiler"
-           açıksa (tarih/URL/sayfa no.), bu da yukarıdaki kenar boşluğunun
-           üzerine binip kullanılabilir alanı daraltabilir — bu ayarı kapatmak
-           da öneriliyor. Buradaki 10px, o ayar açık kalsa bile pay bıraksın
-           diye kasten biraz daha küçük tutuluyor. */
+           yazdırırken; ekranda önizleme normal boyutta kalır) küçültüyoruz.
+           font-size TEK BAŞINA yeterli olmuyordu çünkü hücre iç boşlukları/
+           kenarlıklar gibi bazı ölçüler piksel cinsinden SABİT (yazı boyutuyla
+           birlikte küçülmüyor) — bu yüzden TÜM tasarımı (yazı + boşluk + kenarlık
+           + görsel) aynı oranda küçülten "zoom" kullanılıyor; bu, farklı
+           bilgisayar/yazıcı sürücülerindeki küçük ölçü farklarına karşı da (font
+           satır yüksekliği vb.) çok daha güvenli bir pay bırakıyor. */
         font-size: 10px;
+        zoom: 0.85;
         page-break-after: always;
     }
     .montaj-formu-sayfa:last-child { page-break-after: auto; }
