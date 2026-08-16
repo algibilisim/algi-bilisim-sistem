@@ -34,8 +34,13 @@
         padding: 0;
         /* Word'den yüklenen tasarımlar ekrandaki normal yazı boyutuyla geldiğinde
            iki kopya bir A4 sayfasına sığmayabiliyor — yazdırırken (sadece
-           yazdırırken; ekranda önizleme normal boyutta kalır) biraz küçültüyoruz. */
-        font-size: 11px;
+           yazdırırken; ekranda önizleme normal boyutta kalır) biraz küçültüyoruz.
+           NOT: tarayıcının yazdırma penceresinde "Üstbilgiler ve Altbilgiler"
+           açıksa (tarih/URL/sayfa no.), bu da yukarıdaki kenar boşluğunun
+           üzerine binip kullanılabilir alanı daraltabilir — bu ayarı kapatmak
+           da öneriliyor. Buradaki 10px, o ayar açık kalsa bile pay bıraksın
+           diye kasten biraz daha küçük tutuluyor. */
+        font-size: 10px;
         page-break-after: always;
     }
     .montaj-formu-sayfa:last-child { page-break-after: auto; }
