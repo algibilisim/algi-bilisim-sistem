@@ -749,6 +749,19 @@ def _word_tasarimini_onar(html):
         hucre_icinde = p.find_parent(["td", "th"]) is not None
         p["style"] = "margin:0;" if hucre_icinde else "margin:0 0 2px 0;"
 
+    # 4) Resim genişliği: Word'de bir resmi (ör. üstteki logo/TEKSAN şeridi) sayfa
+    # genişliğine yayacak şekilde boyutlandırmış olsanız bile, mammoth bu boyut
+    # bilgisini (Word'ün "bu resmi şu genişlikte göster" verisini) HTML'e aktarmaz —
+    # resim, dosyanın kendi ham piksel boyutunda (genelde OLMASI GEREKENDEN dar)
+    # çıkar ve sayfanın sol tarafında küçük/sıkışık görünür. Bunu, TEK BAŞINA bir
+    # paragrafı kaplayan (yanında başka metin olmayan) resimleri sayfa genişliğine
+    # yayarak (width:100%) telafi ediyoruz — bu genelde üst logo/başlık şeridi gibi
+    # tam genişlikte tasarlanmış resimler için doğru varsayım.
+    for p in soup.find_all("p"):
+        icerik_cocuklari = [c for c in p.contents if not (isinstance(c, str) and not c.strip())]
+        if len(icerik_cocuklari) == 1 and getattr(icerik_cocuklari[0], "name", None) == "img":
+            icerik_cocuklari[0]["style"] = "width:100%; height:auto; display:block;"
+
     if "<table" not in html:
         return str(soup)
 
@@ -828,7 +841,12 @@ def _word_tasarimini_onar(html):
             tablo.insert(0, colgroup)
 
         for hucre in tablo.find_all(["td", "th"]):
-            stil = "border:1px solid #333; padding:2px 4px; overflow-wrap:break-word;"
+            # white-space:normal AÇIKÇA belirtiliyor — sitenin genel stil dosyasında
+            # tüm <table> öğeleri için "white-space: nowrap" tanımlı (başka sayfalardaki
+            # listeler için); bu, miras yoluyla buradaki hücrelere de bulaşıp satırların
+            # hiç kaydırılmamasına (dolayısıyla tablonun yana taşmasına) yol açabilirdi.
+            stil = ("border:1px solid #333; padding:2px 4px; overflow-wrap:break-word; "
+                    "white-space:normal;")
             if hucre.get("colspan"):
                 # tüm satırı kaplayan tek hücre — başlık çubuğu (ör. "GARANTİ BELGESİ...")
                 stil += " background:#eee; text-align:center;"
@@ -890,28 +908,71 @@ _MONTAJ_FORMU_TEST_VERISI = {
 }
 
 
-def _montaj_formu_sablon_getir(db):
+def _montaj_formu_sablonlar_listele(db):
+    """Kayıtlı TÜM Montaj Formu tasarımlarının (id, ad) listesini döner — hem
+    Tasarım sayfasındaki seçici sekmeler, hem de M.Form penceresindeki "hangi
+    tasarımla açmak istersin" listesi için kullanılır."""
     cur = db.cursor()
-    cur.execute("SELECT icerik FROM montaj_formu_sablon ORDER BY id LIMIT 1")
+    cur.execute("SELECT id, ad FROM montaj_formu_sablon ORDER BY id")
+    satirlar = cur.fetchall()
+    cur.close()
+    return satirlar
+
+
+def _montaj_formu_sablon_getir(db, sablon_id=None):
+    """Belirli bir tasarımı (sablon_id verilmişse) ya da hiç verilmemişse kayıtlı
+    İLK tasarımı döner. Hiç tasarım yoksa (ör. veritabanı henüz kurulmadıysa)
+    koddaki sabit varsayılan tasarım kullanılır."""
+    cur = db.cursor()
+    if sablon_id:
+        cur.execute("SELECT id, ad, icerik FROM montaj_formu_sablon WHERE id = %s", (sablon_id,))
+    else:
+        cur.execute("SELECT id, ad, icerik FROM montaj_formu_sablon ORDER BY id LIMIT 1")
     satir = cur.fetchone()
     cur.close()
-    return satir["icerik"] if satir else _MONTAJ_FORMU_VARSAYILAN_SABLON
-
-
-def _montaj_formu_sablon_kaydet(db, yeni_icerik):
-    """Montaj Formu tasarımını (tek satır tutulan) veritabanına kaydeder — hem
-    tasarım kutusundan Kaydet'e basıldığında, hem Varsayılana Döndür'de, hem de
-    dosyadan tasarım yükleme akışında kullanılan ortak yardımcı fonksiyon."""
-    cur = db.cursor()
-    cur.execute("SELECT id FROM montaj_formu_sablon ORDER BY id LIMIT 1")
-    satir = cur.fetchone()
     if satir:
-        cur.execute(
-            "UPDATE montaj_formu_sablon SET icerik = %s, guncelleme_tarihi = NOW() WHERE id = %s",
-            (yeni_icerik, satir["id"]),
-        )
-    else:
-        cur.execute("INSERT INTO montaj_formu_sablon (icerik) VALUES (%s)", (yeni_icerik,))
+        return satir
+    return {"id": None, "ad": "Varsayılan", "icerik": _MONTAJ_FORMU_VARSAYILAN_SABLON}
+
+
+def _montaj_formu_sablon_kaydet(db, sablon_id, yeni_icerik):
+    """Var olan (id'si bilinen) bir Montaj Formu tasarımının içeriğini günceller —
+    tasarım kutusundan Kaydet'e basıldığında, Varsayılana Döndür'de, ve dosyadan/
+    Word'den tasarım yükleme akışlarında kullanılan ortak yardımcı fonksiyon."""
+    cur = db.cursor()
+    cur.execute(
+        "UPDATE montaj_formu_sablon SET icerik = %s, guncelleme_tarihi = NOW() WHERE id = %s",
+        (yeni_icerik, sablon_id),
+    )
+    db.commit()
+    cur.close()
+
+
+def _montaj_formu_sablon_olustur(db, ad, icerik):
+    """Yeni, isimli bir Montaj Formu tasarımı oluşturur ve yeni kaydın id'sini döner."""
+    cur = db.cursor()
+    cur.execute(
+        "INSERT INTO montaj_formu_sablon (ad, icerik) VALUES (%s, %s) RETURNING id",
+        (ad or "Yeni Tasarım", icerik),
+    )
+    yeni_id = cur.fetchone()["id"]
+    db.commit()
+    cur.close()
+    return yeni_id
+
+
+def _montaj_formu_sablon_yeniden_adlandir(db, sablon_id, yeni_ad):
+    cur = db.cursor()
+    cur.execute("UPDATE montaj_formu_sablon SET ad = %s WHERE id = %s", (yeni_ad, sablon_id))
+    db.commit()
+    cur.close()
+
+
+def _montaj_formu_sablon_sil(db, sablon_id):
+    """Bir tasarımı siler. En az bir tasarım her zaman kalmalı — bunun kontrolü
+    (tek tasarım kaldıysa silmeyi engelleme) çağıran route'ta yapılıyor."""
+    cur = db.cursor()
+    cur.execute("DELETE FROM montaj_formu_sablon WHERE id = %s", (sablon_id,))
     db.commit()
     cur.close()
 
@@ -1317,18 +1378,34 @@ def abone_listesi():
     )
 
 
+def _montaj_formu_secili_id(db, istenen_id):
+    """İstenen sablon_id gerçekten var mı diye kontrol eder; yoksa (ör. silinmiş
+    ya da hiç verilmemişse) kayıtlı ilk tasarımın id'sine döner."""
+    sablonlar = _montaj_formu_sablonlar_listele(db)
+    if not sablonlar:
+        return None
+    if istenen_id:
+        for s in sablonlar:
+            if s["id"] == istenen_id:
+                return istenen_id
+    return sablonlar[0]["id"]
+
+
 @app.route("/montaj-formu/tasarim", methods=["GET", "POST"])
 @login_required
 def montaj_formu_tasarim():
     db = get_db()
 
     if request.method == "POST":
+        sablon_id = request.form.get("sablon_id", type=int)
         yeni_icerik = request.form.get("icerik", "")
-        _montaj_formu_sablon_kaydet(db, yeni_icerik)
+        _montaj_formu_sablon_kaydet(db, sablon_id, yeni_icerik)
         flash("Montaj Formu tasarımı kaydedildi.")
-        return redirect(url_for("montaj_formu_tasarim"))
+        return redirect(url_for("montaj_formu_tasarim", sablon_id=sablon_id))
 
-    icerik = _montaj_formu_sablon_getir(db)
+    secili_id = _montaj_formu_secili_id(db, request.args.get("sablon_id", type=int))
+    sablon = _montaj_formu_sablon_getir(db, secili_id)
+    sablonlar = _montaj_formu_sablonlar_listele(db)
 
     ornek_satir = {
         "adi": "AHMET", "soyadi": "YILMAZ", "koy_adi": "ÖRNEK KÖYÜ",
@@ -1338,23 +1415,75 @@ def montaj_formu_tasarim():
         "malzeme_tutari": "750,00", "malzeme_alinan": "750,00",
         "montaj_personeli": "ÖRNEK PERSONEL",
     }
-    onizleme_html, onizleme_hata = _montaj_formu_render_tek(icerik, ornek_satir)
+    onizleme_html, onizleme_hata = _montaj_formu_render_tek(sablon["icerik"], ornek_satir)
 
     return render_template(
         "montaj_formu_tasarim.html",
-        icerik=icerik, onizleme_html=onizleme_html, onizleme_hata=onizleme_hata,
+        sablon=sablon, sablonlar=sablonlar,
+        icerik=sablon["icerik"], onizleme_html=onizleme_html, onizleme_hata=onizleme_hata,
     )
+
+
+@app.route("/montaj-formu/tasarim/yeni", methods=["POST"])
+@login_required
+def montaj_formu_tasarim_yeni():
+    """Boş/varsayılan içerikle yeni, isimli bir Montaj Formu tasarımı oluşturur —
+    ör. birden fazla köy/firma için farklı görünümde form hazırlamak isteyenler için."""
+    db = get_db()
+    ad = (request.form.get("ad") or "").strip() or "Yeni Tasarım"
+    yeni_id = _montaj_formu_sablon_olustur(db, ad, _MONTAJ_FORMU_VARSAYILAN_SABLON)
+    flash(f'"{ad}" adında yeni bir Montaj Formu tasarımı oluşturuldu.')
+    return redirect(url_for("montaj_formu_tasarim", sablon_id=yeni_id))
+
+
+@app.route("/montaj-formu/tasarim/yeniden-adlandir", methods=["POST"])
+@login_required
+def montaj_formu_tasarim_yeniden_adlandir():
+    db = get_db()
+    sablon_id = request.form.get("sablon_id", type=int)
+    yeni_ad = (request.form.get("ad") or "").strip()
+    if sablon_id and yeni_ad:
+        _montaj_formu_sablon_yeniden_adlandir(db, sablon_id, yeni_ad)
+        flash("Tasarımın adı güncellendi.")
+    return redirect(url_for("montaj_formu_tasarim", sablon_id=sablon_id))
+
+
+@app.route("/montaj-formu/tasarim/sil", methods=["POST"])
+@login_required
+def montaj_formu_tasarim_sil():
+    """Bir tasarımı siler. Kayıtlı TEK tasarım buysa (en az bir tasarım her zaman
+    kalmalı, aksi halde Montaj Formu hiç oluşturulamaz) silme işlemi reddedilir."""
+    db = get_db()
+    sablon_id = request.form.get("sablon_id", type=int)
+    sablonlar = _montaj_formu_sablonlar_listele(db)
+    if len(sablonlar) <= 1:
+        flash("Son kalan Montaj Formu tasarımı silinemez — en az bir tasarım kayıtlı olmalı.")
+        return redirect(url_for("montaj_formu_tasarim", sablon_id=sablon_id))
+    if sablon_id:
+        _montaj_formu_sablon_sil(db, sablon_id)
+        flash("Tasarım silindi.")
+    return redirect(url_for("montaj_formu_tasarim"))
+
+
+@app.route("/montaj-formu/sablonlar.json")
+@login_required
+def montaj_formu_sablonlar_json():
+    """M.Form penceresinde 'hangi tasarımla açmak istiyorsun' listesini doldurmak
+    için kullanılan küçük JSON uç noktası."""
+    db = get_db()
+    sablonlar = _montaj_formu_sablonlar_listele(db)
+    return jsonify([{"id": s["id"], "ad": s["ad"]} for s in sablonlar])
 
 
 @app.route("/montaj-formu/tasarim/sifirla", methods=["POST"])
 @login_required
 def montaj_formu_tasarim_sifirla():
-    """Montaj Formu tasarımını, koddaki güncel varsayılan tasarıma sıfırlar.
-    Veritabanında daha önce kaydedilmiş (eski/hatalı) tasarım varsa üzerine yazılır."""
+    """Seçili Montaj Formu tasarımını, koddaki güncel varsayılan tasarıma sıfırlar."""
     db = get_db()
-    _montaj_formu_sablon_kaydet(db, _MONTAJ_FORMU_VARSAYILAN_SABLON)
+    sablon_id = request.form.get("sablon_id", type=int)
+    _montaj_formu_sablon_kaydet(db, sablon_id, _MONTAJ_FORMU_VARSAYILAN_SABLON)
     flash("Montaj Formu tasarımı, programın güncel varsayılan tasarımına sıfırlandı.")
-    return redirect(url_for("montaj_formu_tasarim"))
+    return redirect(url_for("montaj_formu_tasarim", sablon_id=sablon_id))
 
 
 @app.route("/montaj-formu/tasarim/dosya-yukle", methods=["POST"])
@@ -1363,25 +1492,26 @@ def montaj_formu_tasarim_dosya_yukle():
     """Montaj Formu tasarımını, kullanıcının bilgisayarından seçtiği bir .html
     dosyasını yükleyerek değiştirir — kutuya elle yazma/yapıştırma yapmadan,
     tek bir dosya seçme + Yükle butonuyla yeni tasarımın devreye girmesini sağlar."""
+    sablon_id = request.form.get("sablon_id", type=int)
     dosya = request.files.get("sablon_dosyasi")
     if dosya is None or not dosya.filename:
         flash("Lütfen yüklemek için bir tasarım dosyası (.html) seçin.")
-        return redirect(url_for("montaj_formu_tasarim"))
+        return redirect(url_for("montaj_formu_tasarim", sablon_id=sablon_id))
 
     try:
         yeni_icerik = dosya.read().decode("utf-8")
     except UnicodeDecodeError:
         flash("Dosya okunamadı — lütfen UTF-8 kodlamalı bir .html dosyası yükleyin.")
-        return redirect(url_for("montaj_formu_tasarim"))
+        return redirect(url_for("montaj_formu_tasarim", sablon_id=sablon_id))
 
     _, hata = _montaj_formu_render_tek(yeni_icerik, _MONTAJ_FORMU_TEST_VERISI)
     if hata:
         flash(f"Yüklenen dosyada bir hata var, tasarım kaydedilmedi: {hata}")
-        return redirect(url_for("montaj_formu_tasarim"))
+        return redirect(url_for("montaj_formu_tasarim", sablon_id=sablon_id))
     db = get_db()
-    _montaj_formu_sablon_kaydet(db, yeni_icerik)
+    _montaj_formu_sablon_kaydet(db, sablon_id, yeni_icerik)
     flash("Montaj Formu tasarımı, yüklediğiniz dosyadan güncellendi.")
-    return redirect(url_for("montaj_formu_tasarim"))
+    return redirect(url_for("montaj_formu_tasarim", sablon_id=sablon_id))
 
 
 @app.route("/montaj-formu/tasarim/word-yukle", methods=["POST"])
@@ -1398,42 +1528,43 @@ def montaj_formu_tasarim_word_yukle():
     biçimlendirmeyi HTML'e taşımaz ve her metni fazladan boşluklu bir <p> içine
     sarar — bu yüzden dönüşümden hemen sonra _word_tasarimini_onar() ile bunlar
     otomatik olarak onarılıyor (bkz. o fonksiyonun docstring'i)."""
+    sablon_id = request.form.get("sablon_id", type=int)
     if mammoth is None:
         flash("Word'den tasarım yükleme özelliği şu anda kullanılamıyor (sunucu tarafında "
               "'mammoth' kütüphanesi kurulu değil). Lütfen bizimle iletişime geçin.")
-        return redirect(url_for("montaj_formu_tasarim"))
+        return redirect(url_for("montaj_formu_tasarim", sablon_id=sablon_id))
 
     dosya = request.files.get("sablon_word")
     if dosya is None or not dosya.filename:
         flash("Lütfen yüklemek için bir Word belgesi (.docx) seçin.")
-        return redirect(url_for("montaj_formu_tasarim"))
+        return redirect(url_for("montaj_formu_tasarim", sablon_id=sablon_id))
 
     try:
         sonuc = mammoth.convert_to_html(dosya)
         yeni_icerik = _word_tasarimini_onar(sonuc.value)
     except Exception as e:
         flash(f"Word belgesi okunamadı: {e}")
-        return redirect(url_for("montaj_formu_tasarim"))
+        return redirect(url_for("montaj_formu_tasarim", sablon_id=sablon_id))
 
     if not yeni_icerik.strip():
         flash("Word belgesinden hiçbir içerik okunamadı — lütfen dosyayı kontrol edin.")
-        return redirect(url_for("montaj_formu_tasarim"))
+        return redirect(url_for("montaj_formu_tasarim", sablon_id=sablon_id))
 
     _, hata = _montaj_formu_render_tek(yeni_icerik, _MONTAJ_FORMU_TEST_VERISI)
     if hata:
         flash(f"Word belgesinden dönüştürülen tasarımda bir hata var, tasarım "
               f"kaydedilmedi: {hata}")
-        return redirect(url_for("montaj_formu_tasarim"))
+        return redirect(url_for("montaj_formu_tasarim", sablon_id=sablon_id))
 
     db = get_db()
-    _montaj_formu_sablon_kaydet(db, yeni_icerik)
+    _montaj_formu_sablon_kaydet(db, sablon_id, yeni_icerik)
     uyari_sayisi = len(getattr(sonuc, "messages", []) or [])
     if uyari_sayisi:
         flash(f"Montaj Formu tasarımı, Word belgesinden güncellendi ({uyari_sayisi} "
               f"küçük dönüşüm notu var — önizlemeyi kontrol edin).")
     else:
         flash("Montaj Formu tasarımı, Word belgesinden güncellendi.")
-    return redirect(url_for("montaj_formu_tasarim"))
+    return redirect(url_for("montaj_formu_tasarim", sablon_id=sablon_id))
 
 
 @app.route("/abone/<int:abone_id>/montaj-formu")
@@ -1448,12 +1579,13 @@ def abone_montaj_formu(abone_id):
         flash("Abone bulunamadı.")
         return redirect(url_for("abone_listesi"))
 
-    sablon_icerik = _montaj_formu_sablon_getir(db)
+    sablon_id = _montaj_formu_secili_id(db, request.args.get("sablon_id", type=int))
+    sablon = _montaj_formu_sablon_getir(db, sablon_id)
     satir = _abone_satir_sozlugu(kayit)
-    render_edilmis, hata = _montaj_formu_render_tek(sablon_icerik, satir)
+    render_edilmis, hata = _montaj_formu_render_tek(sablon["icerik"], satir)
     if hata:
         flash(f"Montaj Formu tasarımında hata var, lütfen tasarımı kontrol edin: {hata}")
-        return redirect(url_for("montaj_formu_tasarim"))
+        return redirect(url_for("montaj_formu_tasarim", sablon_id=sablon["id"]))
 
     return render_template(
         "montaj_formu.html",
@@ -1461,6 +1593,31 @@ def abone_montaj_formu(abone_id):
         baslik=f"{satir['adi'] or ''} {satir['soyadi'] or ''}".strip(),
         geri_url=url_for("abone_listesi"),
     )
+
+
+@app.route("/abone/<int:abone_id>/montaj-formu/onizle/<int:sablon_id>")
+@login_required
+def abone_montaj_formu_onizle(abone_id, sablon_id):
+    """M.Form penceresinde, formu tam açmadan ÖNCE hangi tasarım olduğunu
+    görebilmek için kullanılan küçük önizleme. Gerçek abone verisiyle, TEK
+    kopya, yazdırma çerçevesi (Geri Dön/Yazdır butonları, iki kopya vb.)
+    OLMADAN, pencere içindeki bir <iframe>'e gömülmek üzere bağımsız/tam bir
+    HTML sayfası döner."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM abone WHERE id = %s", (abone_id,))
+    kayit = cur.fetchone()
+    cur.close()
+    if kayit is None:
+        return "<p>Abone bulunamadı.</p>", 404
+
+    sablon = _montaj_formu_sablon_getir(db, sablon_id)
+    satir = _abone_satir_sozlugu(kayit)
+    render_edilmis, hata = _montaj_formu_render_tek(sablon["icerik"], satir)
+    if hata:
+        return f"<p>Bu tasarımda bir hata var: {hata}</p>"
+
+    return render_template("montaj_formu_onizle_parca.html", icerik=render_edilmis)
 
 
 @app.route("/abone/montaj-formu/toplu")
@@ -1472,15 +1629,16 @@ def abone_montaj_formu_toplu():
         flash("Filtreye uyan abone bulunamadı.")
         return redirect(url_for("abone_listesi"))
 
-    sablon_icerik = _montaj_formu_sablon_getir(db)
+    sablon_id = _montaj_formu_secili_id(db, request.args.get("sablon_id", type=int))
+    sablon = _montaj_formu_sablon_getir(db, sablon_id)
 
     sayfalar = []
     for kayit in kayitlar_ham:
         satir = _abone_satir_sozlugu(kayit)
-        render_edilmis, hata = _montaj_formu_render_tek(sablon_icerik, satir)
+        render_edilmis, hata = _montaj_formu_render_tek(sablon["icerik"], satir)
         if hata:
             flash(f"Montaj Formu tasarımında hata var, lütfen tasarımı kontrol edin: {hata}")
-            return redirect(url_for("montaj_formu_tasarim"))
+            return redirect(url_for("montaj_formu_tasarim", sablon_id=sablon["id"]))
         sayfalar.append(render_edilmis)
 
     return render_template(

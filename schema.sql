@@ -120,13 +120,17 @@ CREATE INDEX IF NOT EXISTS idx_koy_abone_koy ON koy_abone(koy_adi);
 CREATE INDEX IF NOT EXISTS idx_koy_abone_cihaz_no ON koy_abone(cihaz_no);
 
 -- Montaj Formu'nun program içinden sonradan tasarlanabilir (düzenlenebilir) HTML
--- şablonu. Her zaman tek bir satır tutulur; app.py içindeki ensure_db() ilk
--- çalıştırmada varsayılan tasarımı otomatik ekler.
+-- şablonu. BİRDEN FAZLA isimli tasarım kaydedilebilir (ör. farklı firma/köy için
+-- farklı görünüm) — "ad" hangi tasarım olduğunu gösterir. app.py içindeki
+-- ensure_db() ilk çalıştırmada, hiç tasarım yoksa varsayılan tasarımı otomatik
+-- ekler. "ad" sütunu sonradan eklendi; ADD COLUMN IF NOT EXISTS ile daha önce
+-- kurulmuş veritabanlarında da (üzerine yazmadan) otomatik tamamlanır.
 CREATE TABLE IF NOT EXISTS montaj_formu_sablon (
     id SERIAL PRIMARY KEY,
     icerik TEXT NOT NULL,
     guncelleme_tarihi TIMESTAMP DEFAULT NOW()
 );
+ALTER TABLE montaj_formu_sablon ADD COLUMN IF NOT EXISTS ad TEXT NOT NULL DEFAULT 'Varsayılan';
 
 -- Arıza formundaki onay kutusu listelerinin (ör. "Tespit Edilen Arıza",
 -- "Yapılan İşlemler") program içinden -kod yazmadan- yönetilebilmesi için.
