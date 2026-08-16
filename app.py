@@ -747,7 +747,7 @@ def _word_tasarimini_onar(html):
 
     for p in soup.find_all("p"):
         hucre_icinde = p.find_parent(["td", "th"]) is not None
-        p["style"] = "margin:0;" if hucre_icinde else "margin:0 0 4px 0;"
+        p["style"] = "margin:0;" if hucre_icinde else "margin:0 0 2px 0;"
 
     if "<table" not in html:
         return str(soup)
@@ -756,23 +756,32 @@ def _word_tasarimini_onar(html):
         satirlar = tablo.find_all("tr")
         if len(satirlar) < 2:
             # Muhtemelen sayfa düzeni amaçlı tek satırlık tablo (ör. "köy adı solda,
-            # tarih sağda" gibi metinleri hizalamak için kullanılmış) — kenarlık/gölge
-            # eklenmiyor, ama mammoth hücre genişliklerini de attığı için tablo
-            # daraltılmış görünmesin diye en azından tam genişlik veriliyor; 2 hücreli
-            # satırlarda son hücre sağa, 3 hücreli satırlarda hepsi ortaya yaslanıyor
-            # (Word'deki "sola/sağa dayalı" ya da "imza satırı" düzenini korumak için).
+            # tarih sağda" gibi metinleri hizalamak için, ya da logo/adres başlığı,
+            # ya da "Kurum Personeli / Montaj Personeli / Abone Veya Vekili" imza
+            # satırı için kullanılmış) — kenarlık/gölge eklenmiyor, ama mammoth hücre
+            # genişliklerini de attığı için tablo daraltılmış görünmesin diye en
+            # azından tam genişlik veriliyor.
+            #
+            # Hizalama SADECE hücreler resim İÇERMİYORSA zorlanıyor: resim içeren
+            # satırlar genelde logo/başlık düzeni içindir ve hücrelerin içindeki
+            # metin/resim zaten Word'de kendi konumuna (sola/sağa) yaslanmış olarak
+            # gelir — hepsini ortaya zorlamak (ör. TEKSAN adres bloğunu) yerinden
+            # oynatıp sayfanın ortasına kaydırıyordu. Resim yoksa (imza satırı gibi
+            # salt metin içeren 3 hücreli satırlarda) hücreler ortaya yaslanıyor.
             tek_satir = satirlar[0] if satirlar else None
             if tek_satir is not None:
                 tablo["style"] = "width:100%; border-collapse:collapse;"
                 hucreler = tek_satir.find_all(["td", "th"], recursive=False)
-                if len(hucreler) == 2:
-                    hucreler[-1]["style"] = "text-align:right;"
-                elif len(hucreler) == 3:
-                    for h in hucreler:
-                        h["style"] = "text-align:center;"
+                resimli = tek_satir.find("img") is not None
+                if not resimli:
+                    if len(hucreler) == 2:
+                        hucreler[-1]["style"] = "text-align:right;"
+                    elif len(hucreler) == 3:
+                        for h in hucreler:
+                            h["style"] = "text-align:center;"
             continue
 
-        tablo["style"] = "width:100%; border-collapse:collapse; table-layout:fixed; margin-bottom:6px;"
+        tablo["style"] = "width:100%; border-collapse:collapse; table-layout:fixed; margin-bottom:3px;"
 
         # Sütun genişliklerini içerik uzunluğuna GÖRE ORANTILI hesaplayıp <colgroup>
         # ile veriyoruz — hepsine eşit genişlik vermek (ör. 6 eşit sütun), "MALZEME"
@@ -819,7 +828,7 @@ def _word_tasarimini_onar(html):
             tablo.insert(0, colgroup)
 
         for hucre in tablo.find_all(["td", "th"]):
-            stil = "border:1px solid #333; padding:5px; overflow-wrap:break-word;"
+            stil = "border:1px solid #333; padding:2px 4px; overflow-wrap:break-word;"
             if hucre.get("colspan"):
                 # tüm satırı kaplayan tek hücre — başlık çubuğu (ör. "GARANTİ BELGESİ...")
                 stil += " background:#eee; text-align:center;"
