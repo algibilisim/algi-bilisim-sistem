@@ -12,7 +12,9 @@
 
 <style>
 @media print {
-    @page { size: A4; margin: 10mm; }
+    /* Sol kenar boşluğu diğerlerinden daha geniş: dosyayı klasöre takarken
+       delgeçle (zımba/dosya deliği) delindiğinde yazılara zarar vermesin diye. */
+    @page { size: A4; margin: 10mm 10mm 10mm 20mm; }
     body { margin: 0; }
 }
 .montaj-formu-sayfa {
@@ -29,6 +31,11 @@
         border-radius: 0;
         max-width: none;
         margin: 0;
+        padding: 0;
+        /* Word'den yüklenen tasarımlar ekrandaki normal yazı boyutuyla geldiğinde
+           iki kopya bir A4 sayfasına sığmayabiliyor — yazdırırken (sadece
+           yazdırırken; ekranda önizleme normal boyutta kalır) biraz küçültüyoruz. */
+        font-size: 11px;
         page-break-after: always;
     }
     .montaj-formu-sayfa:last-child { page-break-after: auto; }
