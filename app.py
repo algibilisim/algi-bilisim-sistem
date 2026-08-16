@@ -25,6 +25,12 @@ except Exception:
     # geri kalan her şey normal çalışmaya devam eder.
     mammoth = None
 
+try:
+    from bs4 import BeautifulSoup
+except Exception:
+    # aynı mantık: kurulu değilse sadece kenarlık onarma adımı atlanır, uygulama çökmez.
+    BeautifulSoup = None
+
 DATABASE_URL = os.environ.get("DATABASE_URL")
 SECRET_KEY = os.environ.get("SECRET_KEY", "gelistirme-icin-degistir")
 
@@ -707,6 +713,67 @@ _MONTAJ_FORMU_VARSAYILAN_SABLON = """<div class="montaj-formu-kopya" style="bord
 </div>"""
 
 
+def _word_tablolarini_kenarliklandir(html):
+    """Word'den (.docx) mammoth ile HTML'e çevrilen bir tasarımda, Word'deki tablo
+    kenarlıkları/gölgeleri (direkt/manuel biçimlendirme oldukları için) mammoth
+    tarafından KORUNMAZ — dönüşüm sonrası tablolar kenarlıksız, düz metin gibi
+    görünür. Bu fonksiyon, dönüşümden hemen sonra çalışıp bu tablolara makul bir
+    varsayılan görünüm (kenarlık, hücre boşluğu, başlık satırı gölgesi) ekler.
+
+    Sezgisel kural: sadece BİRDEN FAZLA satırlı tabloları "gerçek veri tablosu"
+    sayıp kenarlık ekliyoruz — Word'de sayfa düzeni için kullanılan (ör. "köy adı /
+    tarih" gibi solda-sağda iki metni hizalamak amaçlı) tek satırlık tablolar
+    kenarlıksız/görünmez bırakılıyor, çünkü bunlar genelde görünür bir tablo değil,
+    sadece hizalama amaçlıdır. bs4 kurulu değilse dönüşen HTML'e dokunulmadan
+    olduğu gibi döner (kenarlık onarımı sessizce atlanır, uygulama çökmez)."""
+    if BeautifulSoup is None or not html or "<table" not in html:
+        return html
+
+    soup = BeautifulSoup(html, "html.parser")
+    for tablo in soup.find_all("table"):
+        satirlar = tablo.find_all("tr")
+        if len(satirlar) < 2:
+            # Muhtemelen sayfa düzeni amaçlı tek satırlık tablo (ör. "köy adı solda,
+            # tarih sağda" gibi metinleri hizalamak için kullanılmış) — kenarlık/gölge
+            # eklenmiyor, ama mammoth hücre genişliklerini de attığı için tablo
+            # daraltılmış görünmesin diye en azından tam genişlik veriliyor; 2 hücreli
+            # satırlarda son hücre sağa, 3 hücreli satırlarda hepsi ortaya yaslanıyor
+            # (Word'deki "sola/sağa dayalı" ya da "imza satırı" düzenini korumak için).
+            tek_satir = satirlar[0] if satirlar else None
+            if tek_satir is not None:
+                tablo["style"] = "width:100%; border-collapse:collapse;"
+                hucreler = tek_satir.find_all(["td", "th"], recursive=False)
+                if len(hucreler) == 2:
+                    hucreler[-1]["style"] = "text-align:right;"
+                elif len(hucreler) == 3:
+                    for h in hucreler:
+                        h["style"] = "text-align:center;"
+            continue
+
+        tablo["style"] = "width:100%; border-collapse:collapse; margin-bottom:6px;"
+        for hucre in tablo.find_all(["td", "th"]):
+            stil = "border:1px solid #333; padding:5px;"
+            if hucre.get("colspan"):
+                # tüm satırı kaplayan tek hücre — başlık çubuğu (ör. "GARANTİ BELGESİ...")
+                stil += " background:#eee; text-align:center;"
+            else:
+                icerik_cocuklari = [c for c in hucre.contents if not (isinstance(c, str) and not c.strip())]
+                tek_strong = (
+                    len(icerik_cocuklari) == 1
+                    and getattr(icerik_cocuklari[0], "name", None) == "strong"
+                ) or (
+                    len(icerik_cocuklari) == 1
+                    and getattr(icerik_cocuklari[0], "name", None) == "p"
+                    and len(icerik_cocuklari[0].contents) == 1
+                    and getattr(icerik_cocuklari[0].contents[0], "name", None) == "strong"
+                )
+                if tek_strong:
+                    # hücrenin tamamı tek bir kalın etiket — alan adı (ör. "Sayaç No") gibi görünüyor
+                    stil += " background:#f7f7f7;"
+            hucre["style"] = stil
+    return str(soup)
+
+
 def _montaj_formu_veri(satir):
     """`_abone_satir_sozlugu()` çıktısından Montaj Formu şablonu için birleştirme
     (mail-merge) verisi hazırlar. montaj_tarihi burada GG/AA/YYYY biçimine çevrilir
@@ -1249,7 +1316,12 @@ def montaj_formu_tasarim_word_yukle():
     tablo/kalın yazı gibi yapı korunur, ancak renk/piksel düzeyinde birebir görsel
     eşleşme garanti edilmez. Kullanıcı Word içinde {{ adi }} gibi alan adlarını TEK
     bir biçimlendirmeyle (araya kalın/italik geçişi koymadan) yazmalıdır; aksi halde
-    dönüşüm sırasında alan adı ikiye bölünüp çalışmayabilir."""
+    dönüşüm sırasında alan adı ikiye bölünüp çalışmayabilir.
+
+    Not: mammoth, Word'deki tablo kenarlığı/gölge gibi DİREKT biçimlendirmeyi
+    (Word'ün kendi tercihiyle) HTML'e taşımaz — bu yüzden dönüşümden hemen sonra
+    _word_tablolarini_kenarliklandir() ile birden fazla satırlı tablolara
+    otomatik olarak makul bir kenarlık/başlık gölgesi ekleniyor."""
     if mammoth is None:
         flash("Word'den tasarım yükleme özelliği şu anda kullanılamıyor (sunucu tarafında "
               "'mammoth' kütüphanesi kurulu değil). Lütfen bizimle iletişime geçin.")
@@ -1262,7 +1334,7 @@ def montaj_formu_tasarim_word_yukle():
 
     try:
         sonuc = mammoth.convert_to_html(dosya)
-        yeni_icerik = sonuc.value
+        yeni_icerik = _word_tablolarini_kenarliklandir(sonuc.value)
     except Exception as e:
         flash(f"Word belgesi okunamadı: {e}")
         return redirect(url_for("montaj_formu_tasarim"))
