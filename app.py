@@ -1102,6 +1102,57 @@ def logout():
     return redirect(url_for("login"))
 
 
+@app.route("/hesap-ayarlari", methods=["GET", "POST"])
+@login_required
+def hesap_ayarlari():
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM kullanici WHERE id = %s", (session["user_id"],))
+    kullanici = cur.fetchone()
+
+    if request.method == "POST":
+        mevcut_sifre = request.form.get("mevcut_sifre", "")
+        yeni_kullanici_adi = request.form.get("yeni_kullanici_adi", "").strip()
+        yeni_sifre = request.form.get("yeni_sifre", "")
+        yeni_sifre_tekrar = request.form.get("yeni_sifre_tekrar", "")
+
+        if not kullanici or not check_password_hash(kullanici["sifre_hash"], mevcut_sifre):
+            flash("Mevcut şifre yanlış, değişiklik yapılmadı.")
+        elif not yeni_kullanici_adi:
+            flash("Kullanıcı adı boş olamaz.")
+        elif yeni_sifre and yeni_sifre != yeni_sifre_tekrar:
+            flash("Yeni şifre ile tekrarı birbirini tutmuyor.")
+        elif yeni_sifre and len(yeni_sifre) < 4:
+            flash("Yeni şifre en az 4 karakter olmalı.")
+        else:
+            cur.execute(
+                "SELECT id FROM kullanici WHERE kullanici_adi = %s AND id != %s",
+                (yeni_kullanici_adi, kullanici["id"]),
+            )
+            cakisma = cur.fetchone()
+            if cakisma:
+                flash("Bu kullanıcı adı zaten başka bir hesapta kullanılıyor.")
+            else:
+                if yeni_sifre:
+                    cur.execute(
+                        "UPDATE kullanici SET kullanici_adi = %s, sifre_hash = %s WHERE id = %s",
+                        (yeni_kullanici_adi, generate_password_hash(yeni_sifre), kullanici["id"]),
+                    )
+                else:
+                    cur.execute(
+                        "UPDATE kullanici SET kullanici_adi = %s WHERE id = %s",
+                        (yeni_kullanici_adi, kullanici["id"]),
+                    )
+                db.commit()
+                session["kullanici_adi"] = yeni_kullanici_adi
+                cur.close()
+                flash("Hesap bilgileriniz güncellendi.")
+                return redirect(url_for("hesap_ayarlari"))
+
+    cur.close()
+    return render_template("hesap_ayarlari.html", kullanici=kullanici)
+
+
 @app.route("/")
 @login_required
 def index():
