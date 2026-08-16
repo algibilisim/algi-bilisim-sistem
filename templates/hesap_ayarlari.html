@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Hesap Ayarları - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi no-print">
+    <h2>Hesap Ayarları</h2>
+    <a class="btn" href="{{ url_for('abone_listesi') }}">Abone Listesi'ne Dön</a>
+</div>
+
+<div class="seri-uyari-kutu no-print" style="max-width:520px;">
+    <p style="margin:0 0 10px; font-size:12.5px;">
+        Buradan kullanıcı adınızı ve/veya şifrenizi değiştirebilirsiniz. Değişiklik
+        yapmak için önce <strong>mevcut şifrenizi</strong> girmeniz gerekir. Şifrenizi
+        değiştirmek istemiyorsanız "Yeni Şifre" alanlarını boş bırakıp sadece
+        kullanıcı adını güncelleyebilirsiniz.
+    </p>
+
+    <form method="post" style="display:flex; flex-direction:column; gap:10px;">
+        <label>
+            Kullanıcı Adı
+            <input type="text" name="yeni_kullanici_adi" value="{{ kullanici.kullanici_adi if kullanici else '' }}" required
+                   style="width:100%; padding:6px 8px; border:1px solid #ccc; border-radius:6px; margin-top:3px;">
+        </label>
+        <label>
+            Yeni Şifre <span style="color:#888; font-weight:normal;">(değiştirmek istemiyorsanız boş bırakın)</span>
+            <input type="password" name="yeni_sifre" autocomplete="new-password"
+                   style="width:100%; padding:6px 8px; border:1px solid #ccc; border-radius:6px; margin-top:3px;">
+        </label>
+        <label>
+            Yeni Şifre (Tekrar)
+            <input type="password" name="yeni_sifre_tekrar" autocomplete="new-password"
+                   style="width:100%; padding:6px 8px; border:1px solid #ccc; border-radius:6px; margin-top:3px;">
+        </label>
+        <label>
+            Mevcut Şifre <span style="color:#a13a2e; font-weight:normal;">(zorunlu — kimliğinizi doğrulamak için)</span>
+            <input type="password" name="mevcut_sifre" required autocomplete="current-password"
+                   style="width:100%; padding:6px 8px; border:1px solid #ccc; border-radius:6px; margin-top:3px;">
+        </label>
+        <div class="form-butonlar">
+            <button type="submit" class="btn btn-yesil">Kaydet</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

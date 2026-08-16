@@ -20,7 +20,7 @@
         <a href="{{ url_for('yedek_al') }}">Yedek Al</a>
     </nav>
     <div class="user-area">
-        <span>{{ session.get('kullanici_adi') }}</span>
+        <a href="{{ url_for('hesap_ayarlari') }}" title="Kullanıcı adını veya şifreni değiştir">{{ session.get('kullanici_adi') }}</a>
         <a href="{{ url_for('logout') }}">Çıkış</a>
     </div>
 </header>
