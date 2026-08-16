@@ -40,11 +40,21 @@
     }
     .montaj-formu-sayfa:last-child { page-break-after: auto; }
 }
+/* İki kopya arasındaki kesim çizgisi: kağıdı buradan ikiye kestiğinizde, her
+   iki kopya kendi kenarına göre TAM aynı hizada kalsın diye çizginin üstünde
+   ve altında EŞİT boşluk bırakılıyor (kopyalar zaten birebir aynı içerik/CSS
+   olduğu için eşit boyda basılıyor — çizgi tam ortalarında kalıyor). */
+.kesim-cizgisi {
+    height: 0;
+    margin: 6px 0;
+    border-top: 1px dashed #999;
+}
 </style>
 
 {% for sayfa in sayfalar %}
 <div class="montaj-formu-sayfa">
     {{ sayfa|safe }}
+    <div class="kesim-cizgisi" aria-hidden="true"></div>
     {{ sayfa|safe }}
 </div>
 {% endfor %}

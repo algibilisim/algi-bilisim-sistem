@@ -98,7 +98,7 @@
                 <td class="islem-hucre sabit-sutun">
                     <a href="{{ url_for('abone_duzenle', abone_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}">Düzenle</a>
                     <a href="{{ url_for('abone_tahsilat', abone_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}">Tahsilat</a>
-                    <a href="{{ url_for('abone_montaj_formu', abone_id=s['id']) }}">M.Form</a>
+                    <a href="#" class="mform-ac" data-abone-id="{{ s['id'] }}">M.Form</a>
                     <button type="submit" class="link-buton"
                             formaction="{{ url_for('abone_sil', abone_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}"
                             formmethod="post"
@@ -112,4 +112,116 @@
     </table>
     </div>
 </form>
+
+<style>
+#mform-modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    z-index: 1000; align-items: center; justify-content: center;
+}
+#mform-modal-overlay.acik { display: flex; }
+#mform-modal-kutu {
+    background: #fff; border-radius: 10px; width: min(900px, 94vw); max-height: 90vh;
+    display: flex; flex-direction: column; overflow: hidden;
+}
+#mform-modal-baslik {
+    padding: 14px 18px; border-bottom: 1px solid #e2e6e3; display: flex;
+    justify-content: space-between; align-items: center;
+}
+#mform-modal-baslik h3 { margin: 0; font-size: 16px; }
+#mform-sablon-listesi { padding: 12px 18px; display: flex; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid #e2e6e3; }
+#mform-onizleme-alan { flex: 1; padding: 12px 18px; overflow: auto; background: #f2f4f5; }
+#mform-onizleme-iframe { width: 100%; height: 55vh; border: 1px solid #dfe6e1; border-radius: 6px; background: #fff; }
+#mform-modal-alt { padding: 12px 18px; border-top: 1px solid #e2e6e3; display: flex; justify-content: flex-end; gap: 8px; }
+.mform-sablon-buton.secili { background: #2e7d46; color: #fff; }
+</style>
+
+<div id="mform-modal-overlay">
+    <div id="mform-modal-kutu">
+        <div id="mform-modal-baslik">
+            <h3>Montaj Formu — Hangi tasarımla açmak istersiniz?</h3>
+            <button type="button" class="btn" id="mform-kapat-buton">Kapat</button>
+        </div>
+        <div id="mform-sablon-listesi"><p style="margin:0; font-size:12.5px; color:#666;">Yükleniyor...</p></div>
+        <div id="mform-onizleme-alan">
+            <p id="mform-onizleme-ipucu" style="margin:0 0 8px; font-size:12.5px; color:#666;">
+                Yukarıdan bir tasarım seçin — bu abonenin gerçek bilgileriyle nasıl görüneceğini burada, formu asıl açmadan önce görebilirsiniz.
+            </p>
+            <iframe id="mform-onizleme-iframe" src="about:blank"></iframe>
+        </div>
+        <div id="mform-modal-alt">
+            <button type="button" class="btn btn-yesil" id="mform-ac-buton" disabled>Bu Tasarımla Aç</button>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var mformAboneId = null;
+    var mformSeciliSablonId = null;
+
+    function modalKapat() {
+        document.getElementById('mform-modal-overlay').classList.remove('acik');
+        document.getElementById('mform-onizleme-iframe').src = 'about:blank';
+    }
+
+    document.addEventListener('click', function(e) {
+        var acButon = e.target.closest('.mform-ac');
+        if (acButon) {
+            e.preventDefault();
+            mformAboneId = acButon.getAttribute('data-abone-id');
+            mformSeciliSablonId = null;
+            document.getElementById('mform-ac-buton').disabled = true;
+            document.getElementById('mform-onizleme-iframe').src = 'about:blank';
+            var liste = document.getElementById('mform-sablon-listesi');
+            liste.innerHTML = '<p style="margin:0; font-size:12.5px; color:#666;">Yükleniyor...</p>';
+            document.getElementById('mform-modal-overlay').classList.add('acik');
+            fetch('/montaj-formu/sablonlar.json')
+                .then(function(r) { return r.json(); })
+                .then(function(sablonlar) {
+                    liste.innerHTML = '';
+                    sablonlar.forEach(function(s, index) {
+                        var b = document.createElement('button');
+                        b.type = 'button';
+                        b.className = 'btn mform-sablon-buton';
+                        b.textContent = s.ad;
+                        b.addEventListener('click', function() {
+                            liste.querySelectorAll('.mform-sablon-buton').forEach(function(x) {
+                                x.classList.remove('secili');
+                            });
+                            b.classList.add('secili');
+                            mformSeciliSablonId = s.id;
+                            document.getElementById('mform-onizleme-iframe').src =
+                                '/abone/' + mformAboneId + '/montaj-formu/onizle/' + s.id;
+                            document.getElementById('mform-ac-buton').disabled = false;
+                        });
+                        liste.appendChild(b);
+                        if (index === 0) { b.click(); }
+                    });
+                    if (sablonlar.length === 0) {
+                        liste.innerHTML = '<p style="margin:0; font-size:12.5px; color:#a13a2e;">Hiç kayıtlı Montaj Formu tasarımı yok.</p>';
+                    }
+                })
+                .catch(function() {
+                    liste.innerHTML = '<p style="margin:0; font-size:12.5px; color:#a13a2e;">Tasarımlar yüklenemedi, lütfen tekrar deneyin.</p>';
+                });
+            return;
+        }
+
+        if (e.target.id === 'mform-kapat-buton' || e.target.id === 'mform-modal-overlay') {
+            modalKapat();
+            return;
+        }
+
+        if (e.target.id === 'mform-ac-buton' && !e.target.disabled && mformSeciliSablonId) {
+            window.location = '/abone/' + mformAboneId + '/montaj-formu?sablon_id=' + mformSeciliSablonId;
+        }
+    });
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && document.getElementById('mform-modal-overlay').classList.contains('acik')) {
+            modalKapat();
+        }
+    });
+})();
+</script>
 {% endblock %}

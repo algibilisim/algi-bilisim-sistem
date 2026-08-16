@@ -8,6 +8,38 @@
 </div>
 
 <div class="seri-uyari-kutu no-print" style="max-width:900px;">
+    <h4>Kayıtlı Tasarımlar</h4>
+    <p style="margin:0 0 10px; font-size:12.5px;">
+        Birden fazla tasarım kaydedebilirsiniz (ör. farklı bir firma/köy için farklı
+        görünüm). Şu an <strong>{{ sablon.ad }}</strong> adlı tasarımı düzenliyorsunuz —
+        aşağıdaki tüm işlemler (Word/dosya yükleme, kutuda düzenleme, sıfırlama) SADECE
+        bu tasarımı etkiler.
+    </p>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+        {% for s in sablonlar %}
+        <a class="btn {{ 'btn-yesil' if s.id == sablon.id else '' }}"
+           href="{{ url_for('montaj_formu_tasarim', sablon_id=s.id) }}">{{ s.ad }}</a>
+        {% endfor %}
+    </div>
+    <form method="post" action="{{ url_for('montaj_formu_tasarim_yeni') }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+        <input type="text" name="ad" placeholder="Yeni tasarımın adı (ör. TEKSAN)" required style="padding:5px 7px; border:1px solid #ccc; border-radius:6px; min-width:220px;">
+        <button type="submit" class="btn btn-yesil">+ Yeni Tasarım Ekle</button>
+    </form>
+    <form method="post" action="{{ url_for('montaj_formu_tasarim_yeniden_adlandir') }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+        <input type="hidden" name="sablon_id" value="{{ sablon.id }}">
+        <input type="text" name="ad" placeholder="Bu tasarımın yeni adı" value="{{ sablon.ad }}" required style="padding:5px 7px; border:1px solid #ccc; border-radius:6px; min-width:220px;">
+        <button type="submit" class="btn">Adını Değiştir</button>
+    </form>
+    {% if sablonlar|length > 1 %}
+    <form method="post" action="{{ url_for('montaj_formu_tasarim_sil') }}"
+          onsubmit="return confirm('\'' + {{ sablon.ad|tojson }} + '\' adlı tasarımı silmek istediğinize emin misiniz? Bu işlem geri alınamaz.');">
+        <input type="hidden" name="sablon_id" value="{{ sablon.id }}">
+        <button type="submit" class="btn btn-kirmizi">Bu Tasarımı Sil</button>
+    </form>
+    {% endif %}
+</div>
+
+<div class="seri-uyari-kutu no-print" style="max-width:900px;">
     <h4>Nasıl çalışır?</h4>
     <p style="margin:0 0 6px; font-size:12.5px;">
         Aşağıdaki kutu, Montaj Formu'nun TEK bir kopyasının HTML tasarımıdır. Bir abone için form
@@ -42,6 +74,7 @@
         kontrol edip beğenmezseniz Word dosyasını bize gönderip elle inceletebilirsiniz.
     </p>
     <form method="post" action="{{ url_for('montaj_formu_tasarim_word_yukle') }}" enctype="multipart/form-data" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <input type="hidden" name="sablon_id" value="{{ sablon.id }}">
         <input type="file" name="sablon_word" accept=".docx" required>
         <button type="submit" class="btn btn-yesil">Word Belgesini Yükle</button>
     </form>
@@ -55,12 +88,14 @@
         gerek yok.
     </p>
     <form method="post" action="{{ url_for('montaj_formu_tasarim_dosya_yukle') }}" enctype="multipart/form-data" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <input type="hidden" name="sablon_id" value="{{ sablon.id }}">
         <input type="file" name="sablon_dosyasi" accept=".html,.htm" required>
         <button type="submit" class="btn btn-yesil">Dosyayı Yükle</button>
     </form>
 </div>
 
-<form method="post" class="no-print" style="max-width:900px; margin-top:16px;">
+<form method="post" action="{{ url_for('montaj_formu_tasarim') }}" class="no-print" style="max-width:900px; margin-top:16px;">
+    <input type="hidden" name="sablon_id" value="{{ sablon.id }}">
     <div class="ayirici">Tasarımı Kutu İçinde Görüntüle / Düzenle (isteğe bağlı)</div>
     <textarea name="icerik" rows="26" style="width:100%; font-family:monospace; font-size:12.5px; padding:10px; border:1px solid #ccc; border-radius:6px;">{{ icerik }}</textarea>
     <div class="form-butonlar">
@@ -69,7 +104,8 @@
 </form>
 
 <form method="post" action="{{ url_for('montaj_formu_tasarim_sifirla') }}" class="no-print" style="max-width:900px; margin-top:8px;"
-      onsubmit="return confirm('Montaj Formu tasarımını programın güncel varsayılan tasarımına sıfırlamak istediğinize emin misiniz? Kaydettiğiniz özel tasarım kaybolacaktır.');">
+      onsubmit="return confirm('\'' + {{ sablon.ad|tojson }} + '\' tasarımını programın güncel varsayılan tasarımına sıfırlamak istediğinize emin misiniz? Kaydettiğiniz özel tasarım kaybolacaktır.');">
+    <input type="hidden" name="sablon_id" value="{{ sablon.id }}">
     <button type="submit" class="btn">Varsayılana Döndür</button>
 </form>
 
