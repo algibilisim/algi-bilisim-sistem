@@ -127,3 +127,20 @@ CREATE TABLE IF NOT EXISTS montaj_formu_sablon (
     icerik TEXT NOT NULL,
     guncelleme_tarihi TIMESTAMP DEFAULT NOW()
 );
+
+-- Arıza formundaki onay kutusu listelerinin (ör. "Tespit Edilen Arıza",
+-- "Yapılan İşlemler") program içinden -kod yazmadan- yönetilebilmesi için.
+-- "grup" hangi listeye ait olduğunu belirtir (app.py'deki FORM_SECENEK_GRUPLARI
+-- ile eşleşir), "sira" listedeki gösterim sırasıdır. app.py içindeki ensure_db()
+-- ilk çalıştırmada, bir grup için hiç satır yoksa varsayılan seçenekleri otomatik
+-- ekler; bu yapı ileride başka formlara benzer yönetilebilir listeler eklemek
+-- için de (yeni bir "grup" tanımlayıp aynı tabloyu kullanarak) kullanılabilir.
+CREATE TABLE IF NOT EXISTS form_secenegi (
+    id SERIAL PRIMARY KEY,
+    grup TEXT NOT NULL,
+    deger TEXT NOT NULL,
+    sira INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_form_secenegi_grup ON form_secenegi(grup, sira);
