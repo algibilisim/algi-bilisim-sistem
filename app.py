@@ -713,23 +713,45 @@ _MONTAJ_FORMU_VARSAYILAN_SABLON = """<div class="montaj-formu-kopya" style="bord
 </div>"""
 
 
-def _word_tablolarini_kenarliklandir(html):
-    """Word'den (.docx) mammoth ile HTML'e çevrilen bir tasarımda, Word'deki tablo
-    kenarlıkları/gölgeleri (direkt/manuel biçimlendirme oldukları için) mammoth
-    tarafından KORUNMAZ — dönüşüm sonrası tablolar kenarlıksız, düz metin gibi
-    görünür. Bu fonksiyon, dönüşümden hemen sonra çalışıp bu tablolara makul bir
-    varsayılan görünüm (kenarlık, hücre boşluğu, başlık satırı gölgesi) ekler.
+def _word_tasarimini_onar(html):
+    """Word'den (.docx) mammoth ile HTML'e çevrilen bir tasarımda, mammoth'un
+    KASITLI olarak atladığı/eklemediği bazı şeyleri onarır — çünkü mammoth "sadece
+    içerik" felsefesiyle çalışır, sayfa üzerindeki GÖRSEL sonucu önemsemez:
 
-    Sezgisel kural: sadece BİRDEN FAZLA satırlı tabloları "gerçek veri tablosu"
-    sayıp kenarlık ekliyoruz — Word'de sayfa düzeni için kullanılan (ör. "köy adı /
-    tarih" gibi solda-sağda iki metni hizalamak amaçlı) tek satırlık tablolar
-    kenarlıksız/görünmez bırakılıyor, çünkü bunlar genelde görünür bir tablo değil,
-    sadece hizalama amaçlıdır. bs4 kurulu değilse dönüşen HTML'e dokunulmadan
-    olduğu gibi döner (kenarlık onarımı sessizce atlanır, uygulama çökmez)."""
-    if BeautifulSoup is None or not html or "<table" not in html:
+    1) Tablo kenarlığı/gölge: Word'deki tablo kenarlıkları direkt biçimlendirme
+       sayıldığı için hiç aktarılmaz — dönüşüm sonrası tablolar kenarlıksız çıkar.
+       Sadece BİRDEN FAZLA satırlı tabloları "gerçek veri tablosu" sayıp kenarlık
+       ekliyoruz; Word'de sayfa düzeni için kullanılan (ör. "köy adı solda, tarih
+       sağda" gibi metinleri hizalamak amaçlı) tek satırlık tablolar kenarlıksız
+       bırakılıyor.
+    2) Sütun genişliği: aynı sebeple Word'deki sütun genişlikleri de aktarılmaz.
+       Burada her sütuna, içindeki en uzun metne göre ORANTILI bir genişlik
+       veriliyor (<colgroup> ile) — eşit genişlik vermek "MALZEME" gibi uzun
+       metinlerin dar bir sütuna sığmayıp alt satıra taşmasına ve tablonun
+       gereksiz uzamasına yol açtığı için tercih edilmedi.
+    3) Paragraf boşluğu: mammoth her metin bloğunu (tablo hücresi içindekiler dahil)
+       bir <p> etiketine sarar; tarayıcının bu etikete uyguladığı varsayılan üst/alt
+       boşluk (margin), özellikle çok hücreli tablolarda ve alt alta birçok satırda
+       toplanınca tasarımı ÇOK şişirir (ör. Montaj Formu iki kopya halinde tek A4
+       sayfasına sığacak şekilde tasarlanmışken, bu boşluklar yüzünden tek kopya
+       bile sayfaya sığmayabilir). Bu yüzden hücre içindeki <p>'lerin boşluğu tümüyle
+       sıfırlanıyor, hücre dışındakilerin ise küçük, sabit bir alt boşlukla
+       sınırlandırılıyor.
+
+    bs4 kurulu değilse HTML'e dokunulmadan olduğu gibi döner (onarım sessizce
+    atlanır, uygulama çökmez)."""
+    if BeautifulSoup is None or not html:
         return html
 
     soup = BeautifulSoup(html, "html.parser")
+
+    for p in soup.find_all("p"):
+        hucre_icinde = p.find_parent(["td", "th"]) is not None
+        p["style"] = "margin:0;" if hucre_icinde else "margin:0 0 4px 0;"
+
+    if "<table" not in html:
+        return str(soup)
+
     for tablo in soup.find_all("table"):
         satirlar = tablo.find_all("tr")
         if len(satirlar) < 2:
@@ -750,9 +772,54 @@ def _word_tablolarini_kenarliklandir(html):
                         h["style"] = "text-align:center;"
             continue
 
-        tablo["style"] = "width:100%; border-collapse:collapse; margin-bottom:6px;"
+        tablo["style"] = "width:100%; border-collapse:collapse; table-layout:fixed; margin-bottom:6px;"
+
+        # Sütun genişliklerini içerik uzunluğuna GÖRE ORANTILI hesaplayıp <colgroup>
+        # ile veriyoruz — hepsine eşit genişlik vermek (ör. 6 eşit sütun), "MALZEME"
+        # gibi uzun metinlerin dar bir sütuna sığmayıp alt satıra taşmasına ve
+        # tablonun boyunun gereksiz şişmesine yol açıyordu. colspan İÇERMEYEN
+        # satırlardan (başlık çubuğu hariç, gerçek veri satırlarından) her sütunun
+        # en uzun metnini bulup ona göre pay veriyoruz; çok kısa sütunlar (ör.
+        # "ADET") aşırı daralmasın diye bir taban genişlik (%8) uygulanıyor.
+        kolon_sayisi = 0
+        kolon_uzunluklari = []
+        for satir in satirlar:
+            hucreler = satir.find_all(["td", "th"], recursive=False)
+            if not hucreler or any(h.get("colspan") for h in hucreler):
+                continue
+            if kolon_sayisi == 0:
+                kolon_sayisi = len(hucreler)
+                kolon_uzunluklari = [0] * kolon_sayisi
+            if len(hucreler) != kolon_sayisi:
+                continue  # tutarsız satır — sütun hizası bozulmasın diye atla
+            for i, h in enumerate(hucreler):
+                uzunluk = len(h.get_text(strip=True))
+                if uzunluk > kolon_uzunluklari[i]:
+                    kolon_uzunluklari[i] = uzunluk
+
+        if kolon_sayisi:
+            mevcut_colgroup = tablo.find("colgroup")
+            if mevcut_colgroup:
+                mevcut_colgroup.decompose()
+            TABAN_YUZDE = 8
+            toplam_uzunluk = sum(kolon_uzunluklari) or kolon_sayisi
+            kalan_yuzde = 100 - TABAN_YUZDE * kolon_sayisi
+            colgroup = soup.new_tag("colgroup")
+            genislikler = []
+            for uzunluk in kolon_uzunluklari:
+                pay = TABAN_YUZDE + (kalan_yuzde * uzunluk / toplam_uzunluk if kalan_yuzde > 0 else 0)
+                genislikler.append(pay)
+            # yuvarlama farkını son sütuna ekleyip toplamın tam %100 olmasını sağla
+            fark = 100 - sum(genislikler)
+            genislikler[-1] += fark
+            for genislik in genislikler:
+                col = soup.new_tag("col")
+                col["style"] = f"width:{round(genislik, 4)}%;"
+                colgroup.append(col)
+            tablo.insert(0, colgroup)
+
         for hucre in tablo.find_all(["td", "th"]):
-            stil = "border:1px solid #333; padding:5px;"
+            stil = "border:1px solid #333; padding:5px; overflow-wrap:break-word;"
             if hucre.get("colspan"):
                 # tüm satırı kaplayan tek hücre — başlık çubuğu (ör. "GARANTİ BELGESİ...")
                 stil += " background:#eee; text-align:center;"
@@ -1318,10 +1385,10 @@ def montaj_formu_tasarim_word_yukle():
     bir biçimlendirmeyle (araya kalın/italik geçişi koymadan) yazmalıdır; aksi halde
     dönüşüm sırasında alan adı ikiye bölünüp çalışmayabilir.
 
-    Not: mammoth, Word'deki tablo kenarlığı/gölge gibi DİREKT biçimlendirmeyi
-    (Word'ün kendi tercihiyle) HTML'e taşımaz — bu yüzden dönüşümden hemen sonra
-    _word_tablolarini_kenarliklandir() ile birden fazla satırlı tablolara
-    otomatik olarak makul bir kenarlık/başlık gölgesi ekleniyor."""
+    Not: mammoth, Word'deki tablo kenarlığı/gölge/sütun genişliği gibi DİREKT
+    biçimlendirmeyi HTML'e taşımaz ve her metni fazladan boşluklu bir <p> içine
+    sarar — bu yüzden dönüşümden hemen sonra _word_tasarimini_onar() ile bunlar
+    otomatik olarak onarılıyor (bkz. o fonksiyonun docstring'i)."""
     if mammoth is None:
         flash("Word'den tasarım yükleme özelliği şu anda kullanılamıyor (sunucu tarafında "
               "'mammoth' kütüphanesi kurulu değil). Lütfen bizimle iletişime geçin.")
@@ -1334,7 +1401,7 @@ def montaj_formu_tasarim_word_yukle():
 
     try:
         sonuc = mammoth.convert_to_html(dosya)
-        yeni_icerik = _word_tablolarini_kenarliklandir(sonuc.value)
+        yeni_icerik = _word_tasarimini_onar(sonuc.value)
     except Exception as e:
         flash(f"Word belgesi okunamadı: {e}")
         return redirect(url_for("montaj_formu_tasarim"))
