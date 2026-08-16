@@ -392,7 +392,18 @@ def _izgara_satir(n, sutun=4):
         return 1
     return math.ceil(n / sutun)
 
-TESPIT_EDILEN_ARIZA_SECENEKLERI = [
+# Arıza formundaki onay kutusu listeleri artık koddan değil, "form_secenegi"
+# tablosundan (bkz. schema.sql) okunuyor — bu sayede Ayarlar > Onay Kutusu
+# Ayarları ekranından, koda dokunmadan yeni seçenek eklenip çıkarılabiliyor.
+# Aşağıdaki iki liste sadece veritabanı ilk kurulurken (tablo boşken) o grup
+# için otomatik eklenecek VARSAYILAN seçenekleri tutar; program çalışırken
+# artık bu listeler değil, veritabanındaki güncel liste kullanılır.
+FORM_SECENEK_GRUPLARI = {
+    "tespit_edilen_ariza": "Tespit Edilen Arıza",
+    "yapilan_islemler": "Yapılan İşlemler",
+}
+
+_TESPIT_EDILEN_ARIZA_VARSAYILAN = [
     "Arıza Simgesi", "Data", "Dijital Su Almış", "Ekran Yok",
     "Error 1", "Error 2", "Error 3", "Error 4", "Error 5",
     "Harcama Uyuşmuyor", "Harcama Yapmıyor",
@@ -402,7 +413,7 @@ TESPIT_EDILEN_ARIZA_SECENEKLERI = [
     "Pil Bitik", "Pil Zayıf", "Sıkıntı Yok",
 ]
 
-YAPILAN_ISLEMLER_SECENEKLERI = [
+_YAPILAN_ISLEMLER_VARSAYILAN = [
     "Formatlandı",
     "Kart Değişti", "Kart Ekran Değişti", "Kart Okuyucu Değişti", "Kart Temizlendi",
     "Kondansatör Devreye Alındı", "Kondansatör Takıldı",
@@ -412,11 +423,20 @@ YAPILAN_ISLEMLER_SECENEKLERI = [
     "Pil Takıldı", "Resetlendi", "Sayım Aparatı Değişti",
 ]
 
-# Form tek sayfaya sığsın diye bu ızgaralar 4 yerine 6 sütun hedefler (daha az satır).
-TESPIT_SATIR = _izgara_satir(len(TESPIT_EDILEN_ARIZA_SECENEKLERI), 6)
-TESPIT_SATIR_2 = _izgara_satir(len(TESPIT_EDILEN_ARIZA_SECENEKLERI), 2)
-ISLEM_SATIR = _izgara_satir(len(YAPILAN_ISLEMLER_SECENEKLERI), 6)
-ISLEM_SATIR_2 = _izgara_satir(len(YAPILAN_ISLEMLER_SECENEKLERI), 2)
+FORM_SECENEK_VARSAYILANLARI = {
+    "tespit_edilen_ariza": _TESPIT_EDILEN_ARIZA_VARSAYILAN,
+    "yapilan_islemler": _YAPILAN_ISLEMLER_VARSAYILAN,
+}
+
+
+def _form_secenekleri_getir(db, grup):
+    """Bir seçenek grubunun (ör. 'tespit_edilen_ariza') güncel listesini,
+    kayıtlı gösterim sırasına göre veritabanından okur."""
+    cur = db.cursor()
+    cur.execute("SELECT deger FROM form_secenegi WHERE grup = %s ORDER BY sira, id", (grup,))
+    satirlar = cur.fetchall()
+    cur.close()
+    return [s["deger"] for s in satirlar]
 
 # Abone Listesi'ndeki "Aynı Sayaç No'lu Kayıtları Getir" penceresinde her farklı
 # sayaç no grubunu ayrı bir renkle göstermek için kullanılan renk paleti.
@@ -782,6 +802,19 @@ def ensure_db():
             (_MONTAJ_FORMU_VARSAYILAN_SABLON,),
         )
         conn.commit()
+
+    # Arıza formu onay kutusu listeleri: bir grup için tabloda hiç satır yoksa
+    # (ör. ilk kurulum, ya da biri "hepsini sil" yapmışsa) o grubun varsayılan
+    # seçenekleri otomatik eklenir — böylece form hiçbir zaman bomboş kalmaz.
+    for grup, varsayilan_liste in FORM_SECENEK_VARSAYILANLARI.items():
+        cur.execute("SELECT COUNT(*) FROM form_secenegi WHERE grup = %s", (grup,))
+        if cur.fetchone()[0] == 0:
+            for sira, deger in enumerate(varsayilan_liste):
+                cur.execute(
+                    "INSERT INTO form_secenegi (grup, deger, sira) VALUES (%s, %s, %s)",
+                    (grup, deger, sira),
+                )
+            conn.commit()
 
     cur.close()
     conn.close()
@@ -2099,6 +2132,23 @@ def tahsilat_ciktisi_excel():
     return _csv_olustur(DISPLAY_KOLONLARI, goster_kolonlari, satirlar, f"tahsilat_ciktisi_{tarih}.csv")
 
 
+def _ariza_secenek_baglami(db):
+    """Arıza formundaki iki onay kutusu listesini (güncel veritabanı sırasıyla)
+    ve ızgara satır sayılarını, render_template'e doğrudan **ile geçirilecek
+    şekilde hazırlar."""
+    tespit = _form_secenekleri_getir(db, "tespit_edilen_ariza")
+    islem = _form_secenekleri_getir(db, "yapilan_islemler")
+    return dict(
+        tespit_secenekleri=tespit,
+        islem_secenekleri=islem,
+        # Form tek sayfaya sığsın diye bu ızgaralar 4 yerine 6 sütun hedefler (daha az satır).
+        tespit_satir=_izgara_satir(len(tespit), 6),
+        tespit_satir_2=_izgara_satir(len(tespit), 2),
+        islem_satir=_izgara_satir(len(islem), 6),
+        islem_satir_2=_izgara_satir(len(islem), 2),
+    )
+
+
 def _ariza_sonraki_s_no(db):
     cur = db.cursor()
     cur.execute("SELECT MAX(s_no) AS m FROM ariza")
@@ -2148,6 +2198,123 @@ def _ariza_kaydet(ariza_id):
     cur.close()
 
 
+@app.route("/admin/secenek-yonetimi")
+@login_required
+def secenek_yonetimi():
+    db = get_db()
+    cur = db.cursor()
+    gruplar = {}
+    for anahtar, baslik in FORM_SECENEK_GRUPLARI.items():
+        cur.execute(
+            "SELECT id, deger, sira FROM form_secenegi WHERE grup = %s ORDER BY sira, id",
+            (anahtar,),
+        )
+        gruplar[anahtar] = {"baslik": baslik, "secenekler": cur.fetchall()}
+    cur.close()
+    return render_template(
+        "secenek_yonetimi.html",
+        gruplar=gruplar, grup_sirasi=list(FORM_SECENEK_GRUPLARI.keys()),
+    )
+
+
+@app.route("/admin/secenek-yonetimi/ekle", methods=["POST"])
+@login_required
+def secenek_yonetimi_ekle():
+    grup = request.form.get("grup", "")
+    deger = request.form.get("deger", "").strip()
+    if grup not in FORM_SECENEK_GRUPLARI:
+        flash("Geçersiz seçenek grubu.")
+        return redirect(url_for("secenek_yonetimi"))
+    if not deger:
+        flash("Boş seçenek eklenemez.")
+        return redirect(url_for("secenek_yonetimi"))
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT id FROM form_secenegi WHERE grup = %s AND LOWER(deger) = LOWER(%s)",
+        (grup, deger),
+    )
+    if cur.fetchone():
+        flash(f'"{deger}" zaten bu listede var.')
+        cur.close()
+        return redirect(url_for("secenek_yonetimi"))
+
+    cur.execute("SELECT COALESCE(MAX(sira), -1) AS m FROM form_secenegi WHERE grup = %s", (grup,))
+    sonraki_sira = cur.fetchone()["m"] + 1
+    cur.execute(
+        "INSERT INTO form_secenegi (grup, deger, sira) VALUES (%s, %s, %s)",
+        (grup, deger, sonraki_sira),
+    )
+    db.commit()
+    cur.close()
+    flash(f'"{deger}" eklendi.')
+    return redirect(url_for("secenek_yonetimi"))
+
+
+@app.route("/admin/secenek-yonetimi/duzenle/<int:secenek_id>", methods=["POST"])
+@login_required
+def secenek_yonetimi_duzenle(secenek_id):
+    yeni_deger = request.form.get("deger", "").strip()
+    if not yeni_deger:
+        flash("Boş değer kaydedilemez.")
+        return redirect(url_for("secenek_yonetimi"))
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("UPDATE form_secenegi SET deger = %s WHERE id = %s", (yeni_deger, secenek_id))
+    db.commit()
+    cur.close()
+    flash("Seçenek güncellendi. (Daha önce kaydedilmiş arıza kayıtlarındaki eski metin değişmeden kalır.)")
+    return redirect(url_for("secenek_yonetimi"))
+
+
+@app.route("/admin/secenek-yonetimi/sil/<int:secenek_id>", methods=["POST"])
+@login_required
+def secenek_yonetimi_sil(secenek_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM form_secenegi WHERE id = %s", (secenek_id,))
+    db.commit()
+    cur.close()
+    flash("Seçenek silindi.")
+    return redirect(url_for("secenek_yonetimi"))
+
+
+@app.route("/admin/secenek-yonetimi/tasi/<int:secenek_id>/<yon>", methods=["POST"])
+@login_required
+def secenek_yonetimi_tasi(secenek_id, yon):
+    if yon not in ("yukari", "asagi"):
+        return redirect(url_for("secenek_yonetimi"))
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT id, grup, sira FROM form_secenegi WHERE id = %s", (secenek_id,))
+    mevcut = cur.fetchone()
+    if not mevcut:
+        cur.close()
+        return redirect(url_for("secenek_yonetimi"))
+
+    if yon == "yukari":
+        cur.execute(
+            "SELECT id, sira FROM form_secenegi WHERE grup = %s AND sira < %s "
+            "ORDER BY sira DESC, id DESC LIMIT 1",
+            (mevcut["grup"], mevcut["sira"]),
+        )
+    else:
+        cur.execute(
+            "SELECT id, sira FROM form_secenegi WHERE grup = %s AND sira > %s "
+            "ORDER BY sira ASC, id ASC LIMIT 1",
+            (mevcut["grup"], mevcut["sira"]),
+        )
+    komsu = cur.fetchone()
+    if komsu:
+        cur.execute("UPDATE form_secenegi SET sira = %s WHERE id = %s", (komsu["sira"], mevcut["id"]))
+        cur.execute("UPDATE form_secenegi SET sira = %s WHERE id = %s", (mevcut["sira"], komsu["id"]))
+        db.commit()
+    cur.close()
+    return redirect(url_for("secenek_yonetimi"))
+
+
 @app.route("/ariza/yeni", methods=["GET", "POST"])
 @login_required
 def ariza_yeni():
@@ -2158,11 +2325,8 @@ def ariza_yeni():
     return render_template(
         "ariza_form.html", kayit=None,
         sonraki_s_no=_ariza_sonraki_s_no(db),
-        tespit_secenekleri=TESPIT_EDILEN_ARIZA_SECENEKLERI,
-        islem_secenekleri=YAPILAN_ISLEMLER_SECENEKLERI,
+        **_ariza_secenek_baglami(db),
         secili_tespit=set(), secili_islem=set(),
-        tespit_satir=TESPIT_SATIR, tespit_satir_2=TESPIT_SATIR_2,
-        islem_satir=ISLEM_SATIR, islem_satir_2=ISLEM_SATIR_2,
         ilk_montaj_tarihi="",
         bugun=datetime.now().strftime("%Y-%m-%d"),
     )
@@ -2199,11 +2363,8 @@ def ariza_duzenle(ariza_id):
 
     return render_template(
         "ariza_form.html", kayit=kayit,
-        tespit_secenekleri=TESPIT_EDILEN_ARIZA_SECENEKLERI,
-        islem_secenekleri=YAPILAN_ISLEMLER_SECENEKLERI,
+        **_ariza_secenek_baglami(db),
         secili_tespit=secili_tespit, secili_islem=secili_islem,
-        tespit_satir=TESPIT_SATIR, tespit_satir_2=TESPIT_SATIR_2,
-        islem_satir=ISLEM_SATIR, islem_satir_2=ISLEM_SATIR_2,
         ilk_montaj_tarihi=ilk_montaj_tarihi,
         bugun=datetime.now().strftime("%Y-%m-%d"),
     )
