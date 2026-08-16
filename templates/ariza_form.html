@@ -2,7 +2,11 @@
 {% block title %}{{ 'Arıza Düzenle' if kayit else 'Yeni Arıza' }} - ALGI BİLİŞİM{% endblock %}
 {% block content %}
 
-<h2>{{ 'Arıza Düzenle' if kayit else 'Yeni Arıza' }}</h2>
+
+<div class="sayfa-basligi no-print">
+    <h2>{{ 'Arıza Düzenle' if kayit else 'Yeni Arıza' }}</h2>
+    <a class="btn" href="{{ url_for('secenek_yonetimi') }}">Onay Kutusu Ayarları</a>
+</div>
 
 <form method="post" class="abone-form">
     <div class="form-kaydirici">
