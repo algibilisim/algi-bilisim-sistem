@@ -47,6 +47,35 @@ body {
     gap: 10px;
     margin-bottom: 14px;
 }
+.odeme-hatirlatma-kutusu {
+    background: #fff3f2;
+    border: 1px solid #e04c3f;
+    border-left: 6px solid #e04c3f;
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+}
+.odeme-hatirlatma-baslik {
+    font-weight: bold;
+    color: #a8261a;
+    margin-bottom: 6px;
+}
+.odeme-hatirlatma-liste {
+    margin: 0;
+    padding-left: 18px;
+}
+.odeme-hatirlatma-liste li {
+    margin-bottom: 4px;
+    color: #333;
+}
+.odeme-hatirlatma-liste a {
+    color: #a8261a;
+    font-weight: bold;
+    text-decoration: none;
+}
+.odeme-hatirlatma-liste a:hover {
+    text-decoration: underline;
+}
 h1, h2 { color: #1e5631; margin: 0 0 10px; }
 .btn {
     display: inline-block;
