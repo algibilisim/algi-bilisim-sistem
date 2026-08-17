@@ -112,6 +112,24 @@ CREATE TABLE IF NOT EXISTS ariza_fotograf (
 
 CREATE INDEX IF NOT EXISTS idx_ariza_fotograf_ariza ON ariza_fotograf(ariza_id);
 
+-- Abone kaydına ait fotoğraf/videolar (ör. sayaç, tesisat fotoğrafı) — aynı
+-- ariza_fotograf gibi doğrudan veritabanında (BYTEA) saklanır.
+CREATE TABLE IF NOT EXISTS abone_fotograf (
+    id SERIAL PRIMARY KEY,
+    abone_id INTEGER NOT NULL REFERENCES abone(id) ON DELETE CASCADE,
+    dosya_adi TEXT,
+    content_type TEXT,
+    icerik BYTEA NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_abone_fotograf_abone ON abone_fotograf(abone_id);
+
+-- Abonenin konumu (enlem/boylam) — "Konum Al" ile telefonun GPS'inden
+-- alınır, "Konuma Git" ile harita uygulamasında navigasyon başlatılır.
+ALTER TABLE abone ADD COLUMN IF NOT EXISTS konum_enlem DOUBLE PRECISION;
+ALTER TABLE abone ADD COLUMN IF NOT EXISTS konum_boylam DOUBLE PRECISION;
+
 -- Köylerden Excel ile gelen abone listeleri: ana "abone" tablosundan (faturalama/tahsilat)
 -- tamamen ayrı, sadece köylerin kendi kayıt defterini (TEKSAN tarzı roster) tutar.
 -- Arıza Takip'te seri no aramasında ana abone tablosunda bulunamayan seri no'lar için

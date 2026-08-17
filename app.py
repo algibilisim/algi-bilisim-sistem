@@ -2081,6 +2081,18 @@ def _sayilastir(deger):
         return 0.0
 
 
+def _konum_sayilastir(deger):
+    """Konum (enlem/boylam) alanları için: boşsa/hatalıysa None döner —
+    _sayilastir'den farklı olarak 0.0'a düşürmüyoruz, çünkü konum
+    alınmamışsa veritabanında boş (NULL) kalması gerekiyor, 0,0 koordinatı
+    (gerçekte Afrika açıklarında bir nokta) yanlış anlaşılmasın diye."""
+    try:
+        deger = str(deger).strip()
+        return float(deger) if deger else None
+    except (ValueError, TypeError):
+        return None
+
+
 def _sonraki_s_no(db):
     cur = db.cursor()
     cur.execute("SELECT MAX(s_no) AS m FROM abone")
@@ -2109,13 +2121,16 @@ def _sonraki_senet_no(db):
 @login_required
 def abone_yeni():
     if request.method == "POST":
-        _abone_kaydet(None)
+        yeni_id = _abone_kaydet(None)
+        db = get_db()
+        _abone_fotograflarini_kaydet(db, yeni_id, request.files.getlist("fotograflar"))
         return redirect(url_for("abone_listesi"))
     db = get_db()
     return render_template(
         "abone_form.html", kayit=None,
         sonraki_s_no=_sonraki_s_no(db),
         sonraki_senet_no=_sonraki_senet_no(db),
+        fotograflar=[],
     )
 
 
@@ -2126,6 +2141,7 @@ def abone_duzenle(abone_id):
     geri = request.args.get("geri", "") or request.form.get("geri", "")
     if request.method == "POST":
         _abone_kaydet(abone_id)
+        _abone_fotograflarini_kaydet(db, abone_id, request.files.getlist("fotograflar"))
         hedef = url_for("abone_listesi")
         if geri:
             hedef += "?" + geri
@@ -2137,7 +2153,14 @@ def abone_duzenle(abone_id):
     if kayit is None:
         flash("Kayıt bulunamadı.")
         return redirect(url_for("abone_listesi"))
-    return render_template("abone_form.html", kayit=kayit, geri=geri)
+    cur = db.cursor()
+    cur.execute(
+        "SELECT id, dosya_adi, content_type FROM abone_fotograf WHERE abone_id = %s ORDER BY id",
+        (abone_id,),
+    )
+    fotograflar = cur.fetchall()
+    cur.close()
+    return render_template("abone_form.html", kayit=kayit, geri=geri, fotograflar=fotograflar)
 
 
 @app.route("/abone/<int:abone_id>/sil", methods=["POST"])
@@ -2153,6 +2176,35 @@ def abone_sil(abone_id):
     if geri:
         hedef += "?" + geri
     return redirect(hedef)
+
+
+@app.route("/abone-fotograf/<int:foto_id>")
+@login_required
+def abone_fotograf_goster(foto_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT content_type, icerik FROM abone_fotograf WHERE id = %s", (foto_id,))
+    foto = cur.fetchone()
+    cur.close()
+    if foto is None:
+        return "Fotoğraf bulunamadı.", 404
+    return Response(bytes(foto["icerik"]), mimetype=foto["content_type"] or "application/octet-stream")
+
+
+@app.route("/abone-fotograf/<int:foto_id>/sil", methods=["POST"])
+@login_required
+def abone_fotograf_sil(foto_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT abone_id FROM abone_fotograf WHERE id = %s", (foto_id,))
+    foto = cur.fetchone()
+    if foto:
+        cur.execute("DELETE FROM abone_fotograf WHERE id = %s", (foto_id,))
+        db.commit()
+    cur.close()
+    if foto:
+        return redirect(url_for("abone_duzenle", abone_id=foto["abone_id"]))
+    return redirect(url_for("abone_listesi"))
 
 
 def _abone_kaydet(abone_id):
@@ -2212,15 +2264,18 @@ def _abone_kaydet(abone_id):
         muhtara_odenecek=_sayilastir(f.get("muhtara_odenecek")),
         muhtara_odenen=_sayilastir(f.get("muhtara_odenen")),
         fatura_no=f.get("fatura_no", "").strip(),
+        konum_enlem=_konum_sayilastir(f.get("konum_enlem")),
+        konum_boylam=_konum_sayilastir(f.get("konum_boylam")),
     )
 
     if abone_id is None:
         kolonlar = ", ".join(alanlar.keys())
         yer_tutucular = ", ".join(["%s"] * len(alanlar))
         cur.execute(
-            f"INSERT INTO abone ({kolonlar}) VALUES ({yer_tutucular})",
+            f"INSERT INTO abone ({kolonlar}) VALUES ({yer_tutucular}) RETURNING id",
             list(alanlar.values()),
         )
+        abone_id = cur.fetchone()["id"]
     else:
         set_ifadesi = ", ".join([f"{k} = %s" for k in alanlar.keys()])
         cur.execute(
@@ -2229,6 +2284,7 @@ def _abone_kaydet(abone_id):
         )
     db.commit()
     cur.close()
+    return abone_id
 
 
 @app.route("/abone/<int:abone_id>/tahsilat", methods=["GET", "POST"])
@@ -2574,7 +2630,11 @@ def _ariza_kaydet(ariza_id):
 _FOTOGRAF_MAKS_BOYUT = 60 * 1024 * 1024  # 60 MB (tek dosya)
 
 
-def _ariza_fotograflarini_kaydet(db, ariza_id, dosyalar):
+def _medya_kaydet(db, tablo, sahip_kolonu, sahip_id, dosyalar):
+    """Arıza ve abone kayıtlarındaki fotoğraf/video yükleme kutuları aynı mantığı
+    paylaşıyor — bu yüzden ortak bir yerde tutuluyor. `tablo` ve `sahip_kolonu`
+    her zaman kod içinde sabit (kullanıcıdan gelmiyor), bu yüzden f-string ile
+    kullanılmaları güvenli."""
     cur = db.cursor()
     for dosya in dosyalar:
         if not dosya or not dosya.filename:
@@ -2590,11 +2650,19 @@ def _ariza_fotograflarini_kaydet(db, ariza_id, dosyalar):
             flash(f'"{dosya.filename}" bir resim/video dosyası gibi görünmüyor, yüklenmedi.')
             continue
         cur.execute(
-            "INSERT INTO ariza_fotograf (ariza_id, dosya_adi, content_type, icerik) VALUES (%s, %s, %s, %s)",
-            (ariza_id, dosya.filename, tur, psycopg2.Binary(icerik)),
+            f"INSERT INTO {tablo} ({sahip_kolonu}, dosya_adi, content_type, icerik) VALUES (%s, %s, %s, %s)",
+            (sahip_id, dosya.filename, tur, psycopg2.Binary(icerik)),
         )
     db.commit()
     cur.close()
+
+
+def _ariza_fotograflarini_kaydet(db, ariza_id, dosyalar):
+    _medya_kaydet(db, "ariza_fotograf", "ariza_id", ariza_id, dosyalar)
+
+
+def _abone_fotograflarini_kaydet(db, abone_id, dosyalar):
+    _medya_kaydet(db, "abone_fotograf", "abone_id", abone_id, dosyalar)
 
 
 @app.route("/admin/secenek-yonetimi")
