@@ -101,6 +101,25 @@
             <input type="text" name="sayac_kredisi" value="{{ kayit['sayac_kredisi'] if kayit else '' }}">
         </div>
 
+        <div class="ayirici">Konum</div>
+        <div class="tam-genislik">
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <button type="button" class="btn" id="konum-al-buton">📍 Konum Al</button>
+                <a class="btn btn-yesil" id="konuma-git-buton" href="#" target="_blank" rel="noopener"
+                   style="display:{{ 'inline-block' if kayit and kayit['konum_enlem'] is not none else 'none' }};">🧭 Konuma Git</a>
+                <span id="konum-bilgisi" style="font-size:12.5px; color:#666;">
+                    {% if kayit and kayit['konum_enlem'] is not none %}Kayıtlı konum: {{ kayit['konum_enlem'] }}, {{ kayit['konum_boylam'] }}{% endif %}
+                </span>
+            </div>
+            <input type="hidden" name="konum_enlem" id="konum_enlem" value="{{ kayit['konum_enlem'] if kayit and kayit['konum_enlem'] is not none else '' }}">
+            <input type="hidden" name="konum_boylam" id="konum_boylam" value="{{ kayit['konum_boylam'] if kayit and kayit['konum_boylam'] is not none else '' }}">
+            <p style="margin:6px 0 0; font-size:12px; color:#888;">
+                "Konum Al" arızanın olduğu yerdeyken basınca GPS konumunu kaydeder.
+                "Konuma Git" ise telefonunuzun harita uygulamasını açıp o adrese
+                navigasyon başlatır.
+            </p>
+        </div>
+
         <div class="ayirici">Sayaç Fotoğrafları / Videoları</div>
         <div class="tam-genislik">
             {% if fotograflar %}
@@ -208,6 +227,47 @@
             girdi.addEventListener('change', _bilgiGuncelle);
         }
     });
+})();
+
+(function() {
+    var konumAlButon = document.getElementById('konum-al-buton');
+    var konumaGitButon = document.getElementById('konuma-git-buton');
+    var enlemInput = document.getElementById('konum_enlem');
+    var boylamInput = document.getElementById('konum_boylam');
+    var konumBilgisi = document.getElementById('konum-bilgisi');
+
+    function _konumaGitLinkiGuncelle(enlem, boylam) {
+        konumaGitButon.href = 'https://www.google.com/maps/dir/?api=1&destination=' + enlem + ',' + boylam;
+        konumaGitButon.style.display = 'inline-block';
+    }
+
+    if (enlemInput.value && boylamInput.value) {
+        _konumaGitLinkiGuncelle(enlemInput.value, boylamInput.value);
+    }
+
+    if (konumAlButon) {
+        konumAlButon.addEventListener('click', function() {
+            if (!navigator.geolocation) {
+                konumBilgisi.textContent = 'Bu tarayıcı konum almayı desteklemiyor.';
+                return;
+            }
+            konumBilgisi.textContent = 'Konum alınıyor...';
+            navigator.geolocation.getCurrentPosition(function(konum) {
+                var enlem = konum.coords.latitude;
+                var boylam = konum.coords.longitude;
+                enlemInput.value = enlem;
+                boylamInput.value = boylam;
+                konumBilgisi.textContent = 'Konum alındı: ' + enlem.toFixed(6) + ', ' + boylam.toFixed(6) + ' (Kaydet\'e basınca kaydedilecek)';
+                _konumaGitLinkiGuncelle(enlem, boylam);
+            }, function(hata) {
+                if (hata.code === hata.PERMISSION_DENIED) {
+                    konumBilgisi.textContent = 'Konum izni verilmedi — tarayıcı ayarlarından konum iznini açmanız gerekiyor.';
+                } else {
+                    konumBilgisi.textContent = 'Konum alınamadı, lütfen tekrar deneyin.';
+                }
+            }, { enableHighAccuracy: true, timeout: 15000 });
+        });
+    }
 })();
 
 function _seriAlanlariniTemizle() {
