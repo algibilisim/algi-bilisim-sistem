@@ -36,6 +36,11 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "gelistirme-icin-degistir")
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
+# Yanlışlıkla (veya kötü niyetle) çok büyük dosya yüklenip sunucunun
+# yorulmasını önlemek için tüm istekler için üst sınır (fotoğraf/video
+# yükleme özelliği eklenince gerekli oldu). Birden fazla video aynı anda
+# yüklenebildiği için tekil dosya sınırından (60 MB) daha geniş tutuluyor.
+app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
 
 
 @app.template_filter('tl')
@@ -2547,10 +2552,47 @@ def _ariza_kaydet(ariza_id):
     if ariza_id is None:
         kolonlar = ", ".join(alanlar.keys())
         yer_tutucular = ", ".join(["%s"] * len(alanlar))
-        cur.execute(f"INSERT INTO ariza ({kolonlar}) VALUES ({yer_tutucular})", list(alanlar.values()))
+        cur.execute(
+            f"INSERT INTO ariza ({kolonlar}) VALUES ({yer_tutucular}) RETURNING id",
+            list(alanlar.values()),
+        )
+        ariza_id = cur.fetchone()["id"]
     else:
         set_ifadesi = ", ".join([f"{k} = %s" for k in alanlar.keys()])
         cur.execute(f"UPDATE ariza SET {set_ifadesi}, updated_at = NOW() WHERE id = %s", list(alanlar.values()) + [ariza_id])
+    db.commit()
+    cur.close()
+    return ariza_id
+
+
+# Fotoğraf/video yüklerken izin verilen dosya türleri ve üst boyut sınırı
+# (kötüye kullanımı / veritabanının aşırı şişmesini önlemek için). Video
+# dosyaları fotoğraftan çok daha büyük olabildiği için sınır video'yu da
+# rahatça kapsayacak şekilde yükseltildi — ama unutulmamalı: videolar da
+# tıpkı fotoğraflar gibi doğrudan veritabanında saklanıyor, bu yüzden çok
+# sayıda/uzun video biriktirmek veritabanı boyutunu belirgin şekilde büyütür.
+_FOTOGRAF_MAKS_BOYUT = 60 * 1024 * 1024  # 60 MB (tek dosya)
+
+
+def _ariza_fotograflarini_kaydet(db, ariza_id, dosyalar):
+    cur = db.cursor()
+    for dosya in dosyalar:
+        if not dosya or not dosya.filename:
+            continue
+        icerik = dosya.read()
+        if not icerik:
+            continue
+        if len(icerik) > _FOTOGRAF_MAKS_BOYUT:
+            flash(f'"{dosya.filename}" dosyası çok büyük (60 MB üstü), yüklenmedi.')
+            continue
+        tur = dosya.mimetype or ""
+        if not (tur.startswith("image/") or tur.startswith("video/")):
+            flash(f'"{dosya.filename}" bir resim/video dosyası gibi görünmüyor, yüklenmedi.')
+            continue
+        cur.execute(
+            "INSERT INTO ariza_fotograf (ariza_id, dosya_adi, content_type, icerik) VALUES (%s, %s, %s, %s)",
+            (ariza_id, dosya.filename, tur, psycopg2.Binary(icerik)),
+        )
     db.commit()
     cur.close()
 
@@ -2676,7 +2718,9 @@ def secenek_yonetimi_tasi(secenek_id, yon):
 @login_required
 def ariza_yeni():
     if request.method == "POST":
-        _ariza_kaydet(None)
+        yeni_id = _ariza_kaydet(None)
+        db = get_db()
+        _ariza_fotograflarini_kaydet(db, yeni_id, request.files.getlist("fotograflar"))
         return redirect(url_for("ariza_listesi"))
     db = get_db()
     return render_template(
@@ -2686,6 +2730,7 @@ def ariza_yeni():
         secili_tespit=set(), secili_islem=set(),
         ilk_montaj_tarihi="",
         bugun=datetime.now().strftime("%Y-%m-%d"),
+        fotograflar=[],
     )
 
 
@@ -2695,7 +2740,9 @@ def ariza_duzenle(ariza_id):
     db = get_db()
     if request.method == "POST":
         _ariza_kaydet(ariza_id)
-        return redirect(url_for("ariza_listesi"))
+        _ariza_fotograflarini_kaydet(db, ariza_id, request.files.getlist("fotograflar"))
+        flash("Kayıt kaydedildi.")
+        return redirect(url_for("ariza_duzenle", ariza_id=ariza_id))
     cur = db.cursor()
     cur.execute("SELECT * FROM ariza WHERE id = %s", (ariza_id,))
     kayit = cur.fetchone()
@@ -2718,12 +2765,21 @@ def ariza_duzenle(ariza_id):
         if abone_satir:
             ilk_montaj_tarihi = _tarih_iso_hale_getir(abone_satir["montaj_tarihi"])
 
+    cur = db.cursor()
+    cur.execute(
+        "SELECT id, dosya_adi, content_type FROM ariza_fotograf WHERE ariza_id = %s ORDER BY id",
+        (ariza_id,),
+    )
+    fotograflar = cur.fetchall()
+    cur.close()
+
     return render_template(
         "ariza_form.html", kayit=kayit,
         **_ariza_secenek_baglami(db),
         secili_tespit=secili_tespit, secili_islem=secili_islem,
         ilk_montaj_tarihi=ilk_montaj_tarihi,
         bugun=datetime.now().strftime("%Y-%m-%d"),
+        fotograflar=fotograflar,
     )
 
 
@@ -2735,6 +2791,35 @@ def ariza_sil(ariza_id):
     cur.execute("DELETE FROM ariza WHERE id = %s", (ariza_id,))
     db.commit()
     cur.close()
+    return redirect(url_for("ariza_listesi"))
+
+
+@app.route("/ariza-fotograf/<int:foto_id>")
+@login_required
+def ariza_fotograf_goster(foto_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT content_type, icerik FROM ariza_fotograf WHERE id = %s", (foto_id,))
+    foto = cur.fetchone()
+    cur.close()
+    if foto is None:
+        return "Fotoğraf bulunamadı.", 404
+    return Response(bytes(foto["icerik"]), mimetype=foto["content_type"] or "application/octet-stream")
+
+
+@app.route("/ariza-fotograf/<int:foto_id>/sil", methods=["POST"])
+@login_required
+def ariza_fotograf_sil(foto_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT ariza_id FROM ariza_fotograf WHERE id = %s", (foto_id,))
+    foto = cur.fetchone()
+    if foto:
+        cur.execute("DELETE FROM ariza_fotograf WHERE id = %s", (foto_id,))
+        db.commit()
+    cur.close()
+    if foto:
+        return redirect(url_for("ariza_duzenle", ariza_id=foto["ariza_id"]))
     return redirect(url_for("ariza_listesi"))
 
 

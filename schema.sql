@@ -98,6 +98,20 @@ CREATE TABLE IF NOT EXISTS ariza_tahsilat (
 
 CREATE INDEX IF NOT EXISTS idx_ariza_tahsilat_ariza ON ariza_tahsilat(ariza_id);
 
+-- Arızalı sayaca ait fotoğraflar. Dosyalar DigitalOcean App Platform'un
+-- diskine değil (o disk kalıcı değil, her deploy'da silinebilir), doğrudan
+-- veritabanına (BYTEA) kaydedilir ki deploy sonrasında da kaybolmasın.
+CREATE TABLE IF NOT EXISTS ariza_fotograf (
+    id SERIAL PRIMARY KEY,
+    ariza_id INTEGER NOT NULL REFERENCES ariza(id) ON DELETE CASCADE,
+    dosya_adi TEXT,
+    content_type TEXT,
+    icerik BYTEA NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ariza_fotograf_ariza ON ariza_fotograf(ariza_id);
+
 -- Köylerden Excel ile gelen abone listeleri: ana "abone" tablosundan (faturalama/tahsilat)
 -- tamamen ayrı, sadece köylerin kendi kayıt defterini (TEKSAN tarzı roster) tutar.
 -- Arıza Takip'te seri no aramasında ana abone tablosunda bulunamayan seri no'lar için
