@@ -11,6 +11,24 @@
     <a class="btn btn-yesil" href="{{ url_for('abone_yeni') }}">+ Yeni Abone</a>
 </div>
 
+{% if odeme_hatirlatmalari %}
+<div class="odeme-hatirlatma-kutusu no-print">
+    <div class="odeme-hatirlatma-baslik">
+        ⚠ Ödeme Gün Sözü Geldi/Geçti ({{ odeme_hatirlatmalari|length }} abone)
+    </div>
+    <ul class="odeme-hatirlatma-liste">
+        {% for h in odeme_hatirlatmalari %}
+        <li>
+            <a href="{{ url_for('abone_duzenle', abone_id=h['id']) }}">
+                {{ h['adi'] }} {{ h['soyadi'] }} ({{ h['koy_adi'] }})
+            </a>
+            — Söz Tarihi: {{ h['odeme_gun_sozu'] }} — Kalan: {{ h['toplam_kalan'] }}
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
 <form class="filtre-form no-print" method="get" style="flex-direction: column; align-items: stretch;">
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <input type="text" name="q" value="{{ q }}" placeholder="Aranacak kelime..." style="flex:2; min-width:200px;">
