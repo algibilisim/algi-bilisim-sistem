@@ -139,6 +139,8 @@
                 <button type="button" class="btn" id="konum-al-buton">📍 Konum Al</button>
                 <a class="btn btn-yesil" id="konuma-git-buton" href="#" target="_blank" rel="noopener"
                    style="display:{{ 'inline-block' if kayit and kayit['konum_enlem'] is not none else 'none' }};">🧭 Konuma Git</a>
+                <a class="btn" id="uydu-goruntusu-buton" href="#" target="_blank" rel="noopener"
+                   style="display:{{ 'inline-block' if kayit and kayit['konum_enlem'] is not none else 'none' }};">🛰 Uydu Görüntüsü</a>
                 <span id="konum-bilgisi" style="font-size:12.5px; color:#666;">
                     {% if kayit and kayit['konum_enlem'] is not none %}Kayıtlı konum: {{ kayit['konum_enlem'] }}, {{ kayit['konum_boylam'] }}{% endif %}
                 </span>
@@ -147,8 +149,10 @@
             <input type="hidden" name="konum_boylam" id="konum_boylam" value="{{ kayit['konum_boylam'] if kayit and kayit['konum_boylam'] is not none else '' }}">
             <p style="margin:6px 0 0; font-size:12px; color:#888;">
                 "Konum Al" o an bulunduğunuz yerin GPS konumunu kaydeder (abonenin
-                adresindeyken basmanız gerekir). "Konuma Git" ise telefonunuzun harita
-                uygulamasını açıp o konuma navigasyon başlatır.
+                adresindeyken basmanız gerekir). "Konuma Git" telefonunuzun harita
+                uygulamasını açıp o konuma navigasyon başlatır. "Uydu Görüntüsü" ise
+                Google Haritalar'ı o konumun uydudan çekilmiş görüntüsüyle (evin
+                görünümü) açar.
             </p>
         </div>
 
@@ -232,6 +236,7 @@
 (function() {
     var konumAlButon = document.getElementById('konum-al-buton');
     var konumaGitButon = document.getElementById('konuma-git-buton');
+    var uyduGoruntusuButon = document.getElementById('uydu-goruntusu-buton');
     var enlemInput = document.getElementById('konum_enlem');
     var boylamInput = document.getElementById('konum_boylam');
     var konumBilgisi = document.getElementById('konum-bilgisi');
@@ -239,6 +244,10 @@
     function _konumaGitLinkiGuncelle(enlem, boylam) {
         konumaGitButon.href = 'https://www.google.com/maps/dir/?api=1&destination=' + enlem + ',' + boylam;
         konumaGitButon.style.display = 'inline-block';
+        // Google Haritalar'ı bu koordinatta, yakın zoom (19) ve uydu görünümünde
+        // (data=!3m1!1e3) açan bağlantı — ayrı bir API anahtarı/ücret gerektirmez.
+        uyduGoruntusuButon.href = 'https://www.google.com/maps/@' + enlem + ',' + boylam + ',19z/data=!3m1!1e3';
+        uyduGoruntusuButon.style.display = 'inline-block';
     }
 
     // Sayfa yüklendiğinde kayıtlı bir konum varsa "Konuma Git" linkini hazırla.
