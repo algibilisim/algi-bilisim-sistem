@@ -2601,6 +2601,8 @@ def _ariza_kaydet(ariza_id):
         tespit_aciklama=f.get("tespit_aciklama", "").strip(),
         yapilan_islemler=islem_metni,
         islem_aciklama=f.get("islem_aciklama", "").strip(),
+        konum_enlem=_konum_sayilastir(f.get("konum_enlem")),
+        konum_boylam=_konum_sayilastir(f.get("konum_boylam")),
     )
 
     db = get_db()

@@ -81,6 +81,10 @@ ALTER TABLE ariza ADD COLUMN IF NOT EXISTS telefon TEXT;
 ALTER TABLE ariza ADD COLUMN IF NOT EXISTS telefon2 TEXT;
 ALTER TABLE ariza ADD COLUMN IF NOT EXISTS tespit_aciklama TEXT;
 ALTER TABLE ariza ADD COLUMN IF NOT EXISTS islem_aciklama TEXT;
+-- Arızanın tespit edildiği konum (enlem/boylam) — abone kaydındaki "Konum Al" /
+-- "Konuma Git" ile aynı mantık.
+ALTER TABLE ariza ADD COLUMN IF NOT EXISTS konum_enlem DOUBLE PRECISION;
+ALTER TABLE ariza ADD COLUMN IF NOT EXISTS konum_boylam DOUBLE PRECISION;
 
 CREATE INDEX IF NOT EXISTS idx_ariza_koy ON ariza(koy_adi);
 CREATE INDEX IF NOT EXISTS idx_ariza_seri_no ON ariza(seri_no);
