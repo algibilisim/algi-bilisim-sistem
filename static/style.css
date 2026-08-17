@@ -290,6 +290,31 @@ th.sabit-sutun { background: #eef3ef; z-index: 4; }
 .seri-uyari-kutu h4 { margin: 0 0 6px; color: #a15c00; font-size: 13px; }
 .seri-uyari-kutu table { font-size: 11.5px; background: #fff; }
 .seri-uyari-kutu th, .seri-uyari-kutu td { padding: 4px 6px; }
+.fotograf-izgara {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 10px;
+    margin-bottom: 10px;
+}
+.fotograf-kutu {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    background: #fff;
+    border: 1px solid #dfe6e1;
+    border-radius: 8px;
+    padding: 6px;
+}
+.fotograf-kutu img,
+.fotograf-kutu video {
+    width: 100%;
+    height: 100px;
+    object-fit: cover;
+    border-radius: 4px;
+    background: #000;
+}
+.fotograf-kutu .btn { font-size: 11.5px; padding: 3px 6px; }
 .gecmis-ariza-kutu {
     background: #eaf2fb;
     border: 1px solid #a9c9e8;
