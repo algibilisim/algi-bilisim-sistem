@@ -124,17 +124,26 @@
             {% endif %}
 
             <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-                <button type="button" class="btn" id="fotograf-cek-buton">📷 Fotoğraf/Video Çek</button>
-                <button type="button" class="btn" id="fotograf-yukle-buton">🖼 Fotoğraf/Video Yükle</button>
+                <button type="button" class="btn" id="foto-cek-buton">📷 Fotoğraf Çek</button>
+                <button type="button" class="btn" id="video-cek-buton">🎥 Video Çek</button>
+                <button type="button" class="btn" id="fotograf-yukle-buton">🖼 Galeriden Yükle</button>
                 <span id="fotograf-secim-bilgisi" style="font-size:12.5px; color:#666;"></span>
             </div>
-            <input type="file" name="fotograflar" id="fotograf-cek-input" accept="image/*,video/*" capture="environment" style="display:none;">
+            <!-- Not: kamerayı doğrudan açtırmak için accept tek bir türe (ya sadece
+                 image/* ya da sadece video/*) sabitlenmiş olmalı — accept="image/*,video/*"
+                 gibi ikisini birden kabul eden bir alanla "capture" birleştirilince bazı
+                 telefonlarda (ör. Android Chrome) tarayıcı kamerayı değil doğrudan galeriyi
+                 açıyor. Bu yüzden fotoğraf ve video için AYRI, tek türlü capture input'u var;
+                 galeriden seçim için ise capture olmayan, iki türü birden kabul eden ayrı bir
+                 input kullanılıyor. -->
+            <input type="file" name="fotograflar" id="foto-cek-input" accept="image/*" capture="environment" style="display:none;">
+            <input type="file" name="fotograflar" id="video-cek-input" accept="video/*" capture="environment" style="display:none;">
             <input type="file" name="fotograflar" id="fotograf-yukle-input" accept="image/*,video/*" multiple style="display:none;">
             <p style="margin:6px 0 0; font-size:12px; color:#888;">
-                "Fotoğraf/Video Çek" telefon/tabletlerde kamerayı doğrudan açar (fotoğraf
-                veya video çekebilirsiniz). "Fotoğraf/Video Yükle" ise cihazınızda zaten
-                kayıtlı bir dosyayı seçmenizi sağlar. Kaydet'e bastığınızda seçtikleriniz
-                bu kayda eklenir. Video dosyaları büyük olabilir (üst sınır tek dosyada 60 MB).
+                "Fotoğraf Çek" ve "Video Çek" telefon/tabletlerde kamerayı doğrudan açar.
+                "Galeriden Yükle" ise cihazınızda zaten kayıtlı bir fotoğraf/video seçmenizi
+                sağlar. Kaydet'e bastığınızda seçtikleriniz bu kayda eklenir. Video dosyaları
+                büyük olabilir (üst sınır tek dosyada 60 MB).
             </p>
         </div>
 
@@ -176,25 +185,29 @@
 
 <script>
 (function() {
-    var cekButon = document.getElementById('fotograf-cek-buton');
-    var cekInput = document.getElementById('fotograf-cek-input');
-    var yukleButon = document.getElementById('fotograf-yukle-buton');
-    var yukleInput = document.getElementById('fotograf-yukle-input');
+    var eslesmeler = [
+        ['foto-cek-buton', 'foto-cek-input'],
+        ['video-cek-buton', 'video-cek-input'],
+        ['fotograf-yukle-buton', 'fotograf-yukle-input'],
+    ];
+    var girdiler = [];
     var bilgi = document.getElementById('fotograf-secim-bilgisi');
 
     function _bilgiGuncelle() {
-        var toplam = (cekInput.files ? cekInput.files.length : 0) + (yukleInput.files ? yukleInput.files.length : 0);
+        var toplam = 0;
+        girdiler.forEach(function(g) { toplam += (g.files ? g.files.length : 0); });
         bilgi.textContent = toplam > 0 ? (toplam + ' dosya seçildi (Kaydet\'e basınca eklenecek)') : '';
     }
 
-    if (cekButon && cekInput) {
-        cekButon.addEventListener('click', function() { cekInput.click(); });
-        cekInput.addEventListener('change', _bilgiGuncelle);
-    }
-    if (yukleButon && yukleInput) {
-        yukleButon.addEventListener('click', function() { yukleInput.click(); });
-        yukleInput.addEventListener('change', _bilgiGuncelle);
-    }
+    eslesmeler.forEach(function(cift) {
+        var buton = document.getElementById(cift[0]);
+        var girdi = document.getElementById(cift[1]);
+        if (buton && girdi) {
+            girdiler.push(girdi);
+            buton.addEventListener('click', function() { girdi.click(); });
+            girdi.addEventListener('change', _bilgiGuncelle);
+        }
+    });
 })();
 
 function _seriAlanlariniTemizle() {
