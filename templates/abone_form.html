@@ -4,7 +4,7 @@
 
 <h2>{{ 'Abone Düzenle' if kayit else 'Yeni Abone' }}</h2>
 
-<form method="post" class="abone-form">
+<form method="post" class="abone-form" enctype="multipart/form-data">
     {% if geri %}<input type="hidden" name="geri" value="{{ geri }}">{% endif %}
     <div class="form-kaydirici">
     <div class="form-grid">
@@ -133,6 +133,62 @@
             <input type="text" name="muhtara_odenen" value="{{ kayit['muhtara_odenen'] if kayit else '0' }}">
         </div>
 
+        <div class="ayirici">Konum</div>
+        <div class="tam-genislik">
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <button type="button" class="btn" id="konum-al-buton">📍 Konum Al</button>
+                <a class="btn btn-yesil" id="konuma-git-buton" href="#" target="_blank" rel="noopener"
+                   style="display:{{ 'inline-block' if kayit and kayit['konum_enlem'] is not none else 'none' }};">🧭 Konuma Git</a>
+                <span id="konum-bilgisi" style="font-size:12.5px; color:#666;">
+                    {% if kayit and kayit['konum_enlem'] is not none %}Kayıtlı konum: {{ kayit['konum_enlem'] }}, {{ kayit['konum_boylam'] }}{% endif %}
+                </span>
+            </div>
+            <input type="hidden" name="konum_enlem" id="konum_enlem" value="{{ kayit['konum_enlem'] if kayit and kayit['konum_enlem'] is not none else '' }}">
+            <input type="hidden" name="konum_boylam" id="konum_boylam" value="{{ kayit['konum_boylam'] if kayit and kayit['konum_boylam'] is not none else '' }}">
+            <p style="margin:6px 0 0; font-size:12px; color:#888;">
+                "Konum Al" o an bulunduğunuz yerin GPS konumunu kaydeder (abonenin
+                adresindeyken basmanız gerekir). "Konuma Git" ise telefonunuzun harita
+                uygulamasını açıp o konuma navigasyon başlatır.
+            </p>
+        </div>
+
+        <div class="ayirici">Sayaç / Tesisat Fotoğrafları / Videoları</div>
+        <div class="tam-genislik">
+            {% if fotograflar %}
+            <div class="fotograf-izgara">
+                {% for f in fotograflar %}
+                <div class="fotograf-kutu">
+                    {% if f.content_type and f.content_type.startswith('video/') %}
+                    <video src="{{ url_for('abone_fotograf_goster', foto_id=f.id) }}" controls preload="metadata"></video>
+                    {% else %}
+                    <a href="{{ url_for('abone_fotograf_goster', foto_id=f.id) }}" target="_blank">
+                        <img src="{{ url_for('abone_fotograf_goster', foto_id=f.id) }}" alt="{{ f.dosya_adi or 'fotoğraf' }}">
+                    </a>
+                    {% endif %}
+                    <button type="submit" class="btn btn-kirmizi"
+                            formaction="{{ url_for('abone_fotograf_sil', foto_id=f.id) }}"
+                            formmethod="post" formnovalidate
+                            onclick="return confirm('Bunu silmek istediğinize emin misiniz?');">Sil</button>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <button type="button" class="btn" id="foto-cek-buton">📷 Fotoğraf Çek</button>
+                <button type="button" class="btn" id="video-cek-buton">🎥 Video Çek</button>
+                <button type="button" class="btn" id="fotograf-yukle-buton">🖼 Galeriden Yükle</button>
+                <span id="fotograf-secim-bilgisi" style="font-size:12.5px; color:#666;"></span>
+            </div>
+            <input type="file" name="fotograflar" id="foto-cek-input" accept="image/*" capture="environment" style="display:none;">
+            <input type="file" name="fotograflar" id="video-cek-input" accept="video/*" capture="environment" style="display:none;">
+            <input type="file" name="fotograflar" id="fotograf-yukle-input" accept="image/*,video/*" multiple style="display:none;">
+            <p style="margin:6px 0 0; font-size:12px; color:#888;">
+                Kaydet'e bastığınızda seçtiğiniz fotoğraf/videolar bu kayda eklenir.
+                {% if not kayit %}Yeni kayıt önce oluşturulur, fotoğraflar ondan sonra eklenir.{% endif %}
+            </p>
+        </div>
+
         <div class="tam-genislik">
             <label>Açıklama</label>
             <textarea name="aciklama" rows="3">{{ kayit['aciklama'] if kayit else '' }}</textarea>
@@ -145,6 +201,76 @@
     </div>
     </div>
 </form>
+
+<script>
+(function() {
+    var eslesmeler = [
+        ['foto-cek-buton', 'foto-cek-input'],
+        ['video-cek-buton', 'video-cek-input'],
+        ['fotograf-yukle-buton', 'fotograf-yukle-input'],
+    ];
+    var girdiler = [];
+    var bilgi = document.getElementById('fotograf-secim-bilgisi');
+
+    function _bilgiGuncelle() {
+        var toplam = 0;
+        girdiler.forEach(function(g) { toplam += (g.files ? g.files.length : 0); });
+        bilgi.textContent = toplam > 0 ? (toplam + ' dosya seçildi (Kaydet\'e basınca eklenecek)') : '';
+    }
+
+    eslesmeler.forEach(function(cift) {
+        var buton = document.getElementById(cift[0]);
+        var girdi = document.getElementById(cift[1]);
+        if (buton && girdi) {
+            girdiler.push(girdi);
+            buton.addEventListener('click', function() { girdi.click(); });
+            girdi.addEventListener('change', _bilgiGuncelle);
+        }
+    });
+})();
+
+(function() {
+    var konumAlButon = document.getElementById('konum-al-buton');
+    var konumaGitButon = document.getElementById('konuma-git-buton');
+    var enlemInput = document.getElementById('konum_enlem');
+    var boylamInput = document.getElementById('konum_boylam');
+    var konumBilgisi = document.getElementById('konum-bilgisi');
+
+    function _konumaGitLinkiGuncelle(enlem, boylam) {
+        konumaGitButon.href = 'https://www.google.com/maps/dir/?api=1&destination=' + enlem + ',' + boylam;
+        konumaGitButon.style.display = 'inline-block';
+    }
+
+    // Sayfa yüklendiğinde kayıtlı bir konum varsa "Konuma Git" linkini hazırla.
+    if (enlemInput.value && boylamInput.value) {
+        _konumaGitLinkiGuncelle(enlemInput.value, boylamInput.value);
+    }
+
+    if (konumAlButon) {
+        konumAlButon.addEventListener('click', function() {
+            if (!navigator.geolocation) {
+                konumBilgisi.textContent = 'Bu tarayıcı konum almayı desteklemiyor.';
+                return;
+            }
+            konumBilgisi.textContent = 'Konum alınıyor...';
+            navigator.geolocation.getCurrentPosition(function(konum) {
+                var enlem = konum.coords.latitude;
+                var boylam = konum.coords.longitude;
+                enlemInput.value = enlem;
+                boylamInput.value = boylam;
+                konumBilgisi.textContent = 'Konum alındı: ' + enlem.toFixed(6) + ', ' + boylam.toFixed(6) + ' (Kaydet\'e basınca kaydedilecek)';
+                _konumaGitLinkiGuncelle(enlem, boylam);
+            }, function(hata) {
+                if (hata.code === hata.PERMISSION_DENIED) {
+                    konumBilgisi.textContent = 'Konum izni verilmedi — tarayıcı ayarlarından konum iznini açmanız gerekiyor.';
+                } else {
+                    konumBilgisi.textContent = 'Konum alınamadı, lütfen tekrar deneyin.';
+                }
+            }, { enableHighAccuracy: true, timeout: 15000 });
+        });
+    }
+})();
+</script>
 
 {% if not kayit %}
 <script>
