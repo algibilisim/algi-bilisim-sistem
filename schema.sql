@@ -85,6 +85,8 @@ ALTER TABLE ariza ADD COLUMN IF NOT EXISTS islem_aciklama TEXT;
 -- "Konuma Git" ile aynı mantık.
 ALTER TABLE ariza ADD COLUMN IF NOT EXISTS konum_enlem DOUBLE PRECISION;
 ALTER TABLE ariza ADD COLUMN IF NOT EXISTS konum_boylam DOUBLE PRECISION;
+-- Arızanın giderilip sayacın/malzemenin aboneye ne zaman teslim edildiği.
+ALTER TABLE ariza ADD COLUMN IF NOT EXISTS teslim_tarihi TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_ariza_koy ON ariza(koy_adi);
 CREATE INDEX IF NOT EXISTS idx_ariza_seri_no ON ariza(seri_no);

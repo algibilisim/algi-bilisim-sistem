@@ -13,7 +13,7 @@ import psycopg2
 import psycopg2.extras
 from flask import (
     Flask, render_template, request, redirect,
-    url_for, session, g, flash, jsonify, Response
+    url_for, session, g, flash, jsonify, Response, send_from_directory
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -59,6 +59,41 @@ def _fatura_no_temizle(deger):
     if s.endswith(".0"):
         s = s[:-2]
     return s
+
+
+_TURKCE_KUCUK_HARF_TABLOSU = str.maketrans({
+    "İ": "i", "I": "i", "ı": "i", "i": "i",
+    "Ç": "c", "ç": "c",
+    "Ğ": "g", "ğ": "g",
+    "Ö": "o", "ö": "o",
+    "Ş": "s", "ş": "s",
+    "Ü": "u", "ü": "u",
+})
+
+
+def _turkce_normallestir(deger):
+    """Arama kutusuna büyük/küçük harf ya da Türkçe'ye özgü İ/I/ı/i, Ç/Ş/Ğ/Ö/Ü
+    farkı gözetmeden yazılabilmesi için kullanılıyor. Postgres'in kendi
+    LOWER()/ILIKE'ı veritabanının "locale" ayarına bağlı çalışıyor — birçok
+    yönetilen (managed) Postgres kurulumu varsayılan olarak "C"/"C.UTF-8"
+    locale kullanıyor, bu da Türkçe'ye özgü harfleri (özellikle İ/ı ve
+    Ç/Ş/Ğ/Ö/Ü) tanımadığı için küçük harfe çevirmiyor — sonuçta "İBRAHİM"
+    yazılı bir kayıt "ibrahim" ile aranınca bulunamıyor. Bunun yerine hem
+    aranan kelimeyi (burada) hem veritabanı tarafındaki kolonu (bkz.
+    _turkce_esle_kosul) SABİT, locale'den bağımsız bir çeviriyle küçük harfe
+    çeviriyoruz ki ikisi her zaman aynı şekilde eşleşsin."""
+    return (deger or "").translate(_TURKCE_KUCUK_HARF_TABLOSU).lower()
+
+
+def _turkce_esle_kosul(kolon_ifadesi):
+    """`_turkce_normallestir` ile birebir aynı çeviriyi SQL tarafında (bir
+    kolon/ifade için) uygulayan, `LIKE %s` ile birlikte kullanılacak ifadeyi
+    döndürür. `kolon_ifadesi` her zaman kod içinde sabit (kullanıcıdan
+    gelmiyor), bu yüzden doğrudan string birleştirme güvenlidir."""
+    return (
+        f"LOWER(TRANSLATE({kolon_ifadesi}, "
+        "'İIıiÇĞÖŞÜçğöşü', 'iiiicgosucgosu'))"
+    )
 
 
 def _telefon_formatla(deger):
@@ -222,6 +257,7 @@ ARIZA_DISPLAY_KOLONLARI = [
     ("kalan_ucret", "Kalan Ücret"),
     ("gelis_tarihi", "Geliş Tarihi"),
     ("takilan_tarih", "Takılan Tarih"),
+    ("teslim_tarihi", "Teslim Edilen Tarih"),
     ("sayac_kredisi", "Sayaç Kredisi"),
     ("tespit_edilen_ariza", "Tespit Edilen Arıza"),
     ("tespit_aciklama", "Tespit Açıklama"),
@@ -244,6 +280,7 @@ ARIZA_KOLON_BILGI = {
     "kalan_ucret": ("(ariza_ucret - alinan_ucret)", "sayi"),
     "gelis_tarihi": ("gelis_tarihi", "tarih"),
     "takilan_tarih": ("takilan_tarih", "tarih"),
+    "teslim_tarihi": ("teslim_tarihi", "tarih"),
     "sayac_kredisi": ("sayac_kredisi", "metin"),
     "tespit_edilen_ariza": ("tespit_edilen_ariza", "metin"),
     "tespit_aciklama": ("tespit_aciklama", "metin"),
@@ -269,6 +306,7 @@ ARIZA_ALAN_TANIMLARI = [
     ("takilan_tarih", "Takılan Tarih", "takilan_tarih", False),
     ("telefon", "Telefon", "telefon", False),
     ("telefon2", "Telefon 2", "telefon2", False),
+    ("teslim_tarihi", "Teslim Edilen Tarih", "teslim_tarihi", False),
     ("tespit_aciklama", "Tespit Açıklama", "tespit_aciklama", False),
     ("tespit_edilen_ariza", "Tespit Edilen Arıza", "tespit_edilen_ariza", False),
     ("yapilan_islemler", "Yapılan İşlemler", "yapilan_islemler", False),
@@ -358,11 +396,11 @@ def _abone_filtreli_kayitlari_getir(db):
                     kosul_listesi.append(f"ROUND(CAST({kolon} AS NUMERIC), 2) = %s")
                     kosul_params.append(round(q_sayi, 2))
                 elif sayisal:
-                    kosul_listesi.append(f"CAST({kolon} AS TEXT) ILIKE %s")
-                    kosul_params.append(f"%{q}%")
+                    kosul_listesi.append(f"{_turkce_esle_kosul(f'CAST({kolon} AS TEXT)')} LIKE %s")
+                    kosul_params.append(_turkce_normallestir(f"%{q}%"))
                 else:
-                    kosul_listesi.append(f"{kolon} ILIKE %s")
-                    kosul_params.append(f"%{q}%")
+                    kosul_listesi.append(f"{_turkce_esle_kosul(kolon)} LIKE %s")
+                    kosul_params.append(_turkce_normallestir(f"%{q}%"))
         if kosul_listesi:
             sql += " AND (" + " OR ".join(kosul_listesi) + ")"
             params += kosul_params
@@ -390,7 +428,7 @@ def _abone_filtreli_kayitlari_getir(db):
 _ARIZA_ALFABETIK_SIRA = [
     "adi", "alinan_ucret", "ariza_ucret", "gelis_tarihi", "islem_aciklama",
     "kalan_ucret", "koy_adi", "ozel_s_no", "s_no", "sayac_kredisi", "seri_no",
-    "soyadi", "takilan_tarih", "telefon", "telefon2", "tespit_aciklama",
+    "soyadi", "takilan_tarih", "telefon", "telefon2", "teslim_tarihi", "tespit_aciklama",
     "tespit_edilen_ariza", "yapilan_islemler", "yeni_seri_no",
 ]
 _ARIZA_DISPLAY_KOLON_HARITASI = dict(ARIZA_DISPLAY_KOLONLARI)
@@ -606,6 +644,7 @@ def _ariza_satir_sozlugu(k):
         "kalan_ucret": tl_format(kalan_ucret),
         "gelis_tarihi": _gg_aa_yyyy(k["gelis_tarihi"]),
         "takilan_tarih": _gg_aa_yyyy(k["takilan_tarih"]),
+        "teslim_tarihi": _gg_aa_yyyy(k["teslim_tarihi"]),
         "sayac_kredisi": k["sayac_kredisi"],
         "tespit_edilen_ariza": k["tespit_edilen_ariza"],
         "tespit_aciklama": k["tespit_aciklama"],
@@ -1164,6 +1203,19 @@ def index():
     return redirect(url_for("abone_listesi"))
 
 
+@app.route("/sw.js")
+def service_worker():
+    # PWA Service Worker dosyası, tüm siteyi (/) kapsayabilmesi için kök
+    # dizinden (/sw.js) sunulur — static/ altından sunulsaydı varsayılan
+    # kapsamı sadece /static/ olurdu ve uygulama "kurulabilir" (installable)
+    # sayılmazdı. Giriş gerektirmez, çünkü tarayıcı bunu oturum açılmadan
+    # önce de indirebilmeli.
+    yanit = send_from_directory(app.static_folder, "sw.js")
+    yanit.headers["Service-Worker-Allowed"] = "/"
+    yanit.headers["Content-Type"] = "application/javascript"
+    return yanit
+
+
 @app.route("/yedek-al")
 @login_required
 def yedek_al():
@@ -1384,11 +1436,11 @@ def abone_listesi():
                     kosul_listesi.append(f"ROUND(CAST({kolon} AS NUMERIC), 2) = %s")
                     kosul_params.append(round(q_sayi, 2))
                 elif sayisal:
-                    kosul_listesi.append(f"CAST({kolon} AS TEXT) ILIKE %s")
-                    kosul_params.append(f"%{q}%")
+                    kosul_listesi.append(f"{_turkce_esle_kosul(f'CAST({kolon} AS TEXT)')} LIKE %s")
+                    kosul_params.append(_turkce_normallestir(f"%{q}%"))
                 else:
-                    kosul_listesi.append(f"{kolon} ILIKE %s")
-                    kosul_params.append(f"%{q}%")
+                    kosul_listesi.append(f"{_turkce_esle_kosul(kolon)} LIKE %s")
+                    kosul_params.append(_turkce_normallestir(f"%{q}%"))
         if kosul_listesi:
             sql += " AND (" + " OR ".join(kosul_listesi) + ")"
             params += kosul_params
@@ -1416,6 +1468,33 @@ def abone_listesi():
     cur.execute("SELECT COUNT(*) AS c FROM abone")
     toplam_kayit = cur.fetchone()["c"]
 
+    # Ödeme Gün Sözü hatırlatması: sözü verilen tarih bugüne gelmiş/geçmiş VE
+    # hâlâ ödenmemiş (toplam kalan borç > 0) olan abonelerin uyarı listesi.
+    bugun_iso = datetime.now().strftime("%Y-%m-%d")
+    cur.execute(
+        """
+        SELECT id, koy_adi, adi, soyadi, odeme_gun_sozu,
+               (sayac_tutari + malzeme_tutari - alinan_tutar - malzeme_alinan) AS toplam_kalan
+        FROM abone
+        WHERE odeme_gun_sozu IS NOT NULL AND odeme_gun_sozu <> ''
+          AND odeme_gun_sozu <= %s
+          AND (sayac_tutari + malzeme_tutari - alinan_tutar - malzeme_alinan) > 0
+        ORDER BY odeme_gun_sozu ASC
+        """,
+        (bugun_iso,),
+    )
+    odeme_hatirlatmalari = [
+        {
+            "id": r["id"],
+            "koy_adi": r["koy_adi"],
+            "adi": r["adi"],
+            "soyadi": r["soyadi"],
+            "odeme_gun_sozu": _gg_aa_yyyy(r["odeme_gun_sozu"]),
+            "toplam_kalan": tl_format(r["toplam_kalan"]),
+        }
+        for r in cur.fetchall()
+    ]
+
     satirlar = [_abone_satir_sozlugu(k) for k in kayitlar_ham]
 
     deger_secenekleri = {}
@@ -1431,6 +1510,7 @@ def abone_listesi():
         arama_satir=_izgara_satir(len(alan_listesi)),
         arama_satir_2=_izgara_satir(len(alan_listesi), 2),
         filtreli_kayit=len(satirlar), toplam_kayit=toplam_kayit,
+        odeme_hatirlatmalari=odeme_hatirlatmalari,
     )
 
 
@@ -1908,9 +1988,10 @@ def koy_abone_listesi():
         sql += " AND koy_adi = %s"
         params.append(koy)
     if q:
-        sql += (" AND (adi ILIKE %s OR soyadi ILIKE %s OR cihaz_no ILIKE %s "
-                "OR abone_no ILIKE %s OR adres ILIKE %s)")
-        params += [f"%{q}%"] * 5
+        _kk = _turkce_esle_kosul
+        sql += (f" AND ({_kk('adi')} LIKE %s OR {_kk('soyadi')} LIKE %s OR {_kk('cihaz_no')} LIKE %s "
+                f"OR {_kk('abone_no')} LIKE %s OR {_kk('adres')} LIKE %s)")
+        params += [_turkce_normallestir(f"%{q}%")] * 5
 
     cur.execute(sql, params)
     kayitlar_ham = cur.fetchall()
@@ -2094,11 +2175,39 @@ def _konum_sayilastir(deger):
 
 
 def _sonraki_s_no(db):
+    """Yeni Abone formunda gösterilen, KABACA bir öngörü — kesin sıra numarası
+    kayıt kaydedildikten sonra _abone_sira_numaralarini_yenile ile (montaj
+    tarihine göre) yeniden hesaplanır."""
     cur = db.cursor()
-    cur.execute("SELECT MAX(s_no) AS m FROM abone")
+    cur.execute("SELECT COUNT(*) AS c FROM abone")
     satir = cur.fetchone()
     cur.close()
-    return (satir["m"] or 0) + 1
+    return (satir["c"] or 0) + 1
+
+
+def _abone_sira_numaralarini_yenile(db):
+    """S.No artık elle girilen bir değer değil — abone kayıtları HER ZAMAN
+    montaj tarihine göre (eskiden yeniye) sıralı tutuluyor ve S.No bu sıraya
+    göre 1'den başlayarak boşluksuz yeniden numaralandırılıyor (arıza
+    kayıtlarındaki geliş tarihi mantığıyla birebir aynı — bkz.
+    _ariza_sira_numaralarini_yenile). Bir kayıt silindiğinde arada boşluk
+    kalmaması, yeni bir kayıt geçmiş bir montaj tarihiyle girildiğinde de
+    sıraya doğru yerine oturması için bu fonksiyon her ekleme/güncelleme/
+    silme sonrasında çağrılıyor."""
+    cur = db.cursor()
+    cur.execute(
+        """
+        UPDATE abone a
+        SET s_no = t.yeni_sira
+        FROM (
+            SELECT id, ROW_NUMBER() OVER (ORDER BY montaj_tarihi ASC NULLS LAST, id ASC) AS yeni_sira
+            FROM abone
+        ) t
+        WHERE a.id = t.id AND a.s_no IS DISTINCT FROM t.yeni_sira
+        """
+    )
+    db.commit()
+    cur.close()
 
 
 def _sonraki_senet_no(db):
@@ -2172,6 +2281,7 @@ def abone_sil(abone_id):
     cur.execute("DELETE FROM abone WHERE id = %s", (abone_id,))
     db.commit()
     cur.close()
+    _abone_sira_numaralarini_yenile(db)
     hedef = url_for("abone_listesi")
     if geri:
         hedef += "?" + geri
@@ -2238,7 +2348,6 @@ def _abone_kaydet(abone_id):
         senet_no_final = mevcut_senet_no if mevcut_senet_no else _sonraki_senet_no(db)
 
     alanlar = dict(
-        s_no=f.get("s_no") or None,
         koy_adi=f.get("koy_adi", "").strip(),
         adi=f.get("adi", "").strip(),
         soyadi=f.get("soyadi", "").strip(),
@@ -2284,6 +2393,7 @@ def _abone_kaydet(abone_id):
         )
     db.commit()
     cur.close()
+    _abone_sira_numaralarini_yenile(db)
     return abone_id
 
 
@@ -2568,11 +2678,37 @@ def _ariza_secenek_baglami(db):
 
 
 def _ariza_sonraki_s_no(db):
+    """Yeni Arıza formunda gösterilen, KABACA bir öngörü — kesin sıra numarası
+    kayıt kaydedildikten sonra _ariza_sira_numaralarini_yenile ile (geliş
+    tarihine göre) yeniden hesaplanır."""
     cur = db.cursor()
-    cur.execute("SELECT MAX(s_no) AS m FROM ariza")
+    cur.execute("SELECT COUNT(*) AS c FROM ariza")
     satir = cur.fetchone()
     cur.close()
-    return (satir["m"] or 0) + 1
+    return (satir["c"] or 0) + 1
+
+
+def _ariza_sira_numaralarini_yenile(db):
+    """S.No artık elle girilen bir değer değil — arıza kayıtları HER ZAMAN
+    geliş tarihine göre (eskiden yeniye) sıralı tutuluyor ve S.No bu sıraya
+    göre 1'den başlayarak boşluksuz yeniden numaralandırılıyor. Bir kayıt
+    silindiğinde arada boşluk kalmaması, yeni bir kayıt geçmiş bir tarihle
+    girildiğinde de sıraya doğru yerine oturması için bu fonksiyon her
+    ekleme/güncelleme/silme sonrasında çağrılıyor."""
+    cur = db.cursor()
+    cur.execute(
+        """
+        UPDATE ariza a
+        SET s_no = t.yeni_sira
+        FROM (
+            SELECT id, ROW_NUMBER() OVER (ORDER BY gelis_tarihi ASC NULLS LAST, id ASC) AS yeni_sira
+            FROM ariza
+        ) t
+        WHERE a.id = t.id AND a.s_no IS DISTINCT FROM t.yeni_sira
+        """
+    )
+    db.commit()
+    cur.close()
 
 
 def _ariza_kaydet(ariza_id):
@@ -2583,7 +2719,6 @@ def _ariza_kaydet(ariza_id):
     islem_metni = ", ".join(f.getlist("yapilan_islemler"))
 
     alanlar = dict(
-        s_no=f.get("s_no") or None,
         ozel_s_no=f.get("ozel_s_no", "").strip(),
         koy_adi=f.get("koy_adi", "").strip(),
         yeni_seri_no=f.get("yeni_seri_no", "").strip(),
@@ -2596,6 +2731,7 @@ def _ariza_kaydet(ariza_id):
         alinan_ucret=alinan_ucret,
         gelis_tarihi=f.get("gelis_tarihi", "").strip(),
         takilan_tarih=f.get("takilan_tarih", "").strip(),
+        teslim_tarihi=f.get("teslim_tarihi", "").strip(),
         sayac_kredisi=f.get("sayac_kredisi", "").strip(),
         tespit_edilen_ariza=tespit_metni,
         tespit_aciklama=f.get("tespit_aciklama", "").strip(),
@@ -2620,6 +2756,7 @@ def _ariza_kaydet(ariza_id):
         cur.execute(f"UPDATE ariza SET {set_ifadesi}, updated_at = NOW() WHERE id = %s", list(alanlar.values()) + [ariza_id])
     db.commit()
     cur.close()
+    _ariza_sira_numaralarini_yenile(db)
     return ariza_id
 
 
@@ -2861,6 +2998,7 @@ def ariza_sil(ariza_id):
     cur.execute("DELETE FROM ariza WHERE id = %s", (ariza_id,))
     db.commit()
     cur.close()
+    _ariza_sira_numaralarini_yenile(db)
     return redirect(url_for("ariza_listesi"))
 
 
@@ -2928,11 +3066,11 @@ def ariza_listesi():
                     kosul_listesi.append(f"ROUND(CAST({kolon} AS NUMERIC), 2) = %s")
                     kosul_params.append(round(q_sayi, 2))
                 elif sayisal:
-                    kosul_listesi.append(f"CAST({kolon} AS TEXT) ILIKE %s")
-                    kosul_params.append(f"%{q}%")
+                    kosul_listesi.append(f"{_turkce_esle_kosul(f'CAST({kolon} AS TEXT)')} LIKE %s")
+                    kosul_params.append(_turkce_normallestir(f"%{q}%"))
                 else:
-                    kosul_listesi.append(f"{kolon} ILIKE %s")
-                    kosul_params.append(f"%{q}%")
+                    kosul_listesi.append(f"{_turkce_esle_kosul(kolon)} LIKE %s")
+                    kosul_params.append(_turkce_normallestir(f"%{q}%"))
         if kosul_listesi:
             sql += " AND (" + " OR ".join(kosul_listesi) + ")"
             params += kosul_params
@@ -3362,7 +3500,7 @@ def tarih_formati_duzelt():
 
     hedefler = [
         ("abone", ["montaj_tarihi", "odeme_tarihi", "odeme_gun_sozu"]),
-        ("ariza", ["gelis_tarihi", "takilan_tarih"]),
+        ("ariza", ["gelis_tarihi", "takilan_tarih", "teslim_tarihi"]),
     ]
 
     bulunanlar = []
