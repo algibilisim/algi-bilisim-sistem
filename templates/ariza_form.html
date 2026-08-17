@@ -8,7 +8,7 @@
     <a class="btn" href="{{ url_for('secenek_yonetimi') }}">Onay Kutusu Ayarları</a>
 </div>
 
-<form method="post" class="abone-form">
+<form method="post" class="abone-form" enctype="multipart/form-data">
     <div class="form-kaydirici">
     <div class="form-grid">
         <div>
@@ -101,6 +101,43 @@
             <input type="text" name="sayac_kredisi" value="{{ kayit['sayac_kredisi'] if kayit else '' }}">
         </div>
 
+        <div class="ayirici">Sayaç Fotoğrafları / Videoları</div>
+        <div class="tam-genislik">
+            {% if fotograflar %}
+            <div class="fotograf-izgara">
+                {% for f in fotograflar %}
+                <div class="fotograf-kutu">
+                    {% if f.content_type and f.content_type.startswith('video/') %}
+                    <video src="{{ url_for('ariza_fotograf_goster', foto_id=f.id) }}" controls preload="metadata"></video>
+                    {% else %}
+                    <a href="{{ url_for('ariza_fotograf_goster', foto_id=f.id) }}" target="_blank">
+                        <img src="{{ url_for('ariza_fotograf_goster', foto_id=f.id) }}" alt="{{ f.dosya_adi or 'fotoğraf' }}">
+                    </a>
+                    {% endif %}
+                    <button type="submit" class="btn btn-kirmizi"
+                            formaction="{{ url_for('ariza_fotograf_sil', foto_id=f.id) }}"
+                            formmethod="post" formnovalidate
+                            onclick="return confirm('Bunu silmek istediğinize emin misiniz?');">Sil</button>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <button type="button" class="btn" id="fotograf-cek-buton">📷 Fotoğraf/Video Çek</button>
+                <button type="button" class="btn" id="fotograf-yukle-buton">🖼 Fotoğraf/Video Yükle</button>
+                <span id="fotograf-secim-bilgisi" style="font-size:12.5px; color:#666;"></span>
+            </div>
+            <input type="file" name="fotograflar" id="fotograf-cek-input" accept="image/*,video/*" capture="environment" style="display:none;">
+            <input type="file" name="fotograflar" id="fotograf-yukle-input" accept="image/*,video/*" multiple style="display:none;">
+            <p style="margin:6px 0 0; font-size:12px; color:#888;">
+                "Fotoğraf/Video Çek" telefon/tabletlerde kamerayı doğrudan açar (fotoğraf
+                veya video çekebilirsiniz). "Fotoğraf/Video Yükle" ise cihazınızda zaten
+                kayıtlı bir dosyayı seçmenizi sağlar. Kaydet'e bastığınızda seçtikleriniz
+                bu kayda eklenir. Video dosyaları büyük olabilir (üst sınır tek dosyada 60 MB).
+            </p>
+        </div>
+
         <div class="ayirici">Tespit Edilen Arıza</div>
         <div class="tam-genislik onay-kutu-grid" style="--satir-sayisi: {{ tespit_satir }}; --satir-sayisi-2: {{ tespit_satir_2 }};">
             {% for secenek in tespit_secenekleri %}
@@ -138,6 +175,28 @@
 </form>
 
 <script>
+(function() {
+    var cekButon = document.getElementById('fotograf-cek-buton');
+    var cekInput = document.getElementById('fotograf-cek-input');
+    var yukleButon = document.getElementById('fotograf-yukle-buton');
+    var yukleInput = document.getElementById('fotograf-yukle-input');
+    var bilgi = document.getElementById('fotograf-secim-bilgisi');
+
+    function _bilgiGuncelle() {
+        var toplam = (cekInput.files ? cekInput.files.length : 0) + (yukleInput.files ? yukleInput.files.length : 0);
+        bilgi.textContent = toplam > 0 ? (toplam + ' dosya seçildi (Kaydet\'e basınca eklenecek)') : '';
+    }
+
+    if (cekButon && cekInput) {
+        cekButon.addEventListener('click', function() { cekInput.click(); });
+        cekInput.addEventListener('change', _bilgiGuncelle);
+    }
+    if (yukleButon && yukleInput) {
+        yukleButon.addEventListener('click', function() { yukleInput.click(); });
+        yukleInput.addEventListener('change', _bilgiGuncelle);
+    }
+})();
+
 function _seriAlanlariniTemizle() {
     document.getElementById('ariza_adi').value = '';
     document.getElementById('ariza_soyadi').value = '';
