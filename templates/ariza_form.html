@@ -288,8 +288,36 @@
         _konumaGitLinkiGuncelle(enlemInput.value, boylamInput.value);
     }
 
+    // Bilgisayarların (masaüstü/dizüstü) çoğunda gerçek GPS yok — tarayıcı
+    // konumu WiFi/IP üzerinden TAHMİN ediyor ve bu tahmin onlarca/yüzlerce km
+    // yanlış çıkabiliyor. Bu yüzden dokunmatik olmayan (fare ile kullanılan)
+    // cihazlarda GPS hiç denenmiyor; onun yerine Hesap Ayarları'nda bir kez
+    // kaydedilen sabit OFİS KONUMU kullanılıyor — bu hem güvenilir hem de
+    // "bu kayıt ofiste verildi" bilgisini taşıyor. Telefon/tablet gibi
+    // dokunmatik cihazlarda hiçbir şey değişmedi, gerçek GPS kullanılıyor.
+    var masaustuCihaz = !('ontouchstart' in window) && (navigator.maxTouchPoints || 0) === 0;
+
     if (konumAlButon) {
         konumAlButon.addEventListener('click', function() {
+            if (masaustuCihaz) {
+                konumBilgisi.textContent = 'Ofis konumu alınıyor...';
+                fetch('/api/ofis-konumu')
+                    .then(function(r) { return r.json(); })
+                    .then(function(veri) {
+                        if (veri.enlem == null || veri.boylam == null) {
+                            konumBilgisi.textContent = 'Ofis konumu henüz ayarlanmamış — Hesap Ayarları\'ndan bir kez ayarlamanız gerekiyor.';
+                            return;
+                        }
+                        enlemInput.value = veri.enlem;
+                        boylamInput.value = veri.boylam;
+                        konumBilgisi.textContent = 'Ofis konumu kullanıldı: bu kayıt "ofiste verildi" olarak işaretlendi. (Kaydet\'e basınca kaydedilecek)';
+                        _konumaGitLinkiGuncelle(veri.enlem, veri.boylam);
+                    })
+                    .catch(function() {
+                        konumBilgisi.textContent = 'Ofis konumu alınamadı, lütfen tekrar deneyin.';
+                    });
+                return;
+            }
             if (!navigator.geolocation) {
                 konumBilgisi.textContent = 'Bu tarayıcı konum almayı desteklemiyor.';
                 return;

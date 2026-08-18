@@ -41,4 +41,36 @@
         </div>
     </form>
 </div>
+
+<div class="seri-uyari-kutu no-print" style="max-width:520px;">
+    <h4 style="margin:0 0 6px;">Ofis Konumu</h4>
+    <p style="margin:0 0 10px; font-size:12.5px;">
+        Bilgisayarların GPS'i olmadığı için "Konum Al" bastığınızda konum tahmini
+        çok yanlış çıkabiliyor. Bunu önlemek için: Abone/Arıza formundaki
+        "Konum Al" artık bilgisayardan basıldığında GPS denemek yerine, burada
+        bir kez kaydedeceğiniz OFİS KONUMUNU kullanacak — böylece o kayıt
+        "ofiste verildi" olarak işaretlenmiş olur. Telefondan basıldığında
+        hiçbir şey değişmiyor, her zamanki gibi gerçek GPS kullanılır.
+    </p>
+    <p style="margin:0 0 10px; font-size:12px; color:#888;">
+        Koordinatları bulmak için: Google Haritalar'ı açın, ofisinizin tam
+        konumuna sağ tıklayın (telefonda basılı tutun), çıkan iki sayıyı
+        (enlem, boylam) kopyalayıp aşağıya yapıştırın.
+    </p>
+    <form method="post" action="{{ url_for('hesap_ayarlari_ofis_konumu') }}" style="display:flex; flex-direction:column; gap:10px;">
+        <label>
+            Enlem (Latitude)
+            <input type="text" name="ofis_enlem" value="{{ ofis_enlem or '' }}" placeholder="ör. 39.966431" required
+                   style="width:100%; padding:6px 8px; border:1px solid #ccc; border-radius:6px; margin-top:3px;">
+        </label>
+        <label>
+            Boylam (Longitude)
+            <input type="text" name="ofis_boylam" value="{{ ofis_boylam or '' }}" placeholder="ör. 32.837036" required
+                   style="width:100%; padding:6px 8px; border:1px solid #ccc; border-radius:6px; margin-top:3px;">
+        </label>
+        <div class="form-butonlar">
+            <button type="submit" class="btn btn-yesil">Kaydet</button>
+        </div>
+    </form>
+</div>
 {% endblock %}
