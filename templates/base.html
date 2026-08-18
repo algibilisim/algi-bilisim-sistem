@@ -47,15 +47,35 @@
 // PWA: Kurulu (standalone) uygulama penceresi ilk açıldığında ekranı
 // tam kaplayacak şekilde büyütülmeye çalışılır (tarayıcı sekmesi olarak
 // açıldığında bu adım atlanır, sadece kurulu uygulama penceresini etkiler).
+//
+// ÖNEMLİ: Bu uygulama tek sayfalık (SPA) değil — her menüye tıklamak tam bir
+// sayfa yeniden yüklemesi anlamına geliyor, yani bu <script> her sayfa
+// geçişinde yeniden çalışıyor. Bir koruma olmadan, pencere her tıklamada
+// tekrar tekrar (0,0)'a taşınıp yeniden boyutlandırılıyordu — bu da kurulu
+// uygulama penceresinde her menü geçişinde gözle görülür bir titreme/donma
+// ("aşırı yavaşlama" hissi) yaratıyordu. sessionStorage ile bunu SADECE bu
+// pencere oturumunda (uygulama kapatılıp yeniden açılana kadar) bir kez
+// yapılacak şekilde sınırlıyoruz.
 if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
-    window.addEventListener('load', function () {
-        try {
-            window.moveTo(0, 0);
-            window.resizeTo(screen.availWidth, screen.availHeight);
-        } catch (hata) {
-            console.log('Pencere tam ekran boyutlandırılamadı:', hata);
-        }
-    });
+    var _pencereZatenBoyutlandirildi = false;
+    try {
+        _pencereZatenBoyutlandirildi = sessionStorage.getItem('algiPencereBoyutlandirildi') === '1';
+    } catch (depoHatasi) {
+        // sessionStorage kullanılamıyorsa (ör. bazı gizlilik ayarları) güvenli
+        // tarafta kal: her sayfada tekrar boyutlandırmak yerine hiç dokunma.
+        _pencereZatenBoyutlandirildi = true;
+    }
+    if (!_pencereZatenBoyutlandirildi) {
+        window.addEventListener('load', function () {
+            try {
+                window.moveTo(0, 0);
+                window.resizeTo(screen.availWidth, screen.availHeight);
+                sessionStorage.setItem('algiPencereBoyutlandirildi', '1');
+            } catch (hata) {
+                console.log('Pencere tam ekran boyutlandırılamadı:', hata);
+            }
+        });
+    }
 }
 
 // PWA: Service Worker'ı kaydet (uygulamanın telefona/bilgisayara
