@@ -417,6 +417,72 @@ th.sabit-sutun { background: #eef0f1; z-index: 4; }
     color: #2c3136;
 }
 .ucret-ozet-satiri .ucret-deger.kirmizi { color: #c0392b; }
+.alan-onizleme-liste {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-bottom: 4px;
+}
+.alan-satiri {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    border: 1px solid transparent;
+    background: #fff;
+}
+.sabit-alan-satiri {
+    background: #f2f4f5;
+    color: #777;
+}
+.ozel-alan-satiri {
+    background: #fff7e6;
+    border-color: #f0c36d;
+}
+.surukle-tutamac {
+    cursor: grab;
+    touch-action: none;
+    font-size: 16px;
+    line-height: 1;
+    color: #a15c00;
+    user-select: none;
+    padding: 2px 4px;
+    flex: none;
+}
+.surukle-tutamac:active { cursor: grabbing; }
+.kilit-simge {
+    font-size: 11px;
+    opacity: 0.6;
+    width: 16px;
+    text-align: center;
+    flex: none;
+}
+.alan-etiket-metni { flex: 1; }
+.alan-tur-etiket {
+    font-size: 10.5px;
+    color: #a15c00;
+    background: #fff1cf;
+    padding: 2px 7px;
+    border-radius: 4px;
+    flex: none;
+    white-space: nowrap;
+}
+.alan-sil-form { margin: 0; flex: none; }
+.alan-sil-form .btn, .ozel-alan-satiri > form.alan-sil-form .btn { padding: 4px 10px; font-size: 11.5px; }
+.alan-satiri.surukleniyor {
+    opacity: 0.4;
+    border-style: dashed;
+}
+.siralama-durum {
+    font-size: 11.5px;
+    font-weight: 400;
+    color: #1e7d3c;
+    margin-left: 6px;
+}
+.secenek-liste .alan-satiri { flex-wrap: wrap; }
+
 @media print {
     .no-print { display: none !important; }
     body { background: #fff; }
