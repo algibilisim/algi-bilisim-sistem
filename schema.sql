@@ -192,3 +192,24 @@ CREATE TABLE IF NOT EXISTS form_secenegi (
 );
 
 CREATE INDEX IF NOT EXISTS idx_form_secenegi_grup ON form_secenegi(grup, sira);
+
+-- "Özel Alan Ayarları" ekranından, kod değiştirmeden Abone veya Arıza formuna
+-- yeni bir bilgi kutusu (metin/tarih/sayı) eklenebilmesi için. Her yeni özel
+-- alan eklendiğinde app.py, bu tabloya bir satır ekler VE ilgili tabloya
+-- (abone/ariza) gerçek bir sütun ekler (ALTER TABLE ... ADD COLUMN) — "kolon_adi"
+-- o gerçek sütunun adıdır (kullanıcı görmez, program kendisi üretir: "ozel_<id>"),
+-- "etiket" ise kullanıcının formda/listede gördüğü isimdir. Bir alan "silindiğinde"
+-- veri kaybı olmaması için sütun gerçekten silinmez, sadece aktif=FALSE yapılır
+-- (form/liste/filtrelerden gizlenir).
+CREATE TABLE IF NOT EXISTS ozel_alan (
+    id SERIAL PRIMARY KEY,
+    tablo TEXT NOT NULL,
+    kolon_adi TEXT NOT NULL,
+    etiket TEXT NOT NULL,
+    tur TEXT NOT NULL,
+    sira INTEGER NOT NULL DEFAULT 0,
+    aktif BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ozel_alan_tablo ON ozel_alan(tablo, aktif, sira);

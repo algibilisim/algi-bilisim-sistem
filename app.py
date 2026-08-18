@@ -331,6 +331,129 @@ _ABONE_ALFABETIK_SIRA = [
 _DISPLAY_KOLON_HARITASI = dict(DISPLAY_KOLONLARI)
 DISPLAY_KOLONLARI_ALFABETIK = [(k, _DISPLAY_KOLON_HARITASI[k]) for k in _ABONE_ALFABETIK_SIRA]
 
+# "Özel Alan Ayarları" ekranından kullanıcının koda dokunmadan eklediği alanlar
+# (bkz. schema.sql'deki ozel_alan tablosu). Bu alanlar gerçek veritabanı
+# sütunlarıdır (ALTER TABLE ile eklenir) — bu yüzden mevcut sıralama/filtreleme/
+# CSV dışa aktarma mekanizmasına, sadece DISPLAY_KOLONLARI/KOLON_BILGI gibi
+# sabit listelere bu fonksiyonlarla üretilen ek satırları katarak sorunsuzca
+# dahil olurlar.
+_OZEL_ALAN_TUR_PG = {"metin": "TEXT", "tarih": "TEXT", "sayi": "REAL"}
+_OZEL_ALAN_TUR_ETIKETLERI = {"metin": "Metin", "tarih": "Tarih", "sayi": "Sayı"}
+
+
+def _ozel_alanlari_getir(db, tablo):
+    """Bir tablonun ('abone' ya da 'ariza') aktif özel alanlarını, gösterim
+    sırasına göre döndürür (id, kolon_adi, etiket, tur alanlarını içeren
+    sözlük listesi)."""
+    cur = db.cursor()
+    cur.execute(
+        "SELECT id, kolon_adi, etiket, tur FROM ozel_alan WHERE tablo = %s AND aktif = TRUE ORDER BY sira, id",
+        (tablo,),
+    )
+    satirlar = cur.fetchall()
+    cur.close()
+    return satirlar
+
+
+def _abone_kolon_takimi(db):
+    """DISPLAY_KOLONLARI/KOLON_BILGI/SAYISAL_KOLONLAR'ı, kullanıcının Özel Alan
+    Ayarları'ndan eklediği abone alanlarıyla birleştirip döndürür:
+    (kolon_listesi, kolon_bilgi, sayisal_kolonlar, ozel_alanlar)."""
+    ozel = _ozel_alanlari_getir(db, "abone")
+    kolon_listesi = DISPLAY_KOLONLARI + [(o["kolon_adi"], o["etiket"]) for o in ozel]
+    kolon_bilgi = dict(KOLON_BILGI)
+    for o in ozel:
+        kolon_bilgi[o["kolon_adi"]] = (o["kolon_adi"], o["tur"])
+    sayisal = SAYISAL_KOLONLAR | {o["kolon_adi"] for o in ozel if o["tur"] == "sayi"}
+    return kolon_listesi, kolon_bilgi, sayisal, ozel
+
+
+def _ariza_kolon_takimi(db):
+    """ARIZA_DISPLAY_KOLONLARI/ARIZA_KOLON_BILGI/ARIZA_SAYISAL_KOLONLAR'ı,
+    kullanıcının Özel Alan Ayarları'ndan eklediği arıza alanlarıyla birleştirip
+    döndürür: (kolon_listesi, kolon_bilgi, sayisal_kolonlar, ozel_alanlar)."""
+    ozel = _ozel_alanlari_getir(db, "ariza")
+    kolon_listesi = ARIZA_DISPLAY_KOLONLARI + [(o["kolon_adi"], o["etiket"]) for o in ozel]
+    kolon_bilgi = dict(ARIZA_KOLON_BILGI)
+    for o in ozel:
+        kolon_bilgi[o["kolon_adi"]] = (o["kolon_adi"], o["tur"])
+    sayisal = ARIZA_SAYISAL_KOLONLAR | {o["kolon_adi"] for o in ozel if o["tur"] == "sayi"}
+    return kolon_listesi, kolon_bilgi, sayisal, ozel
+
+
+def _ozel_alan_deger_formatla(deger, tur):
+    """Bir özel alan değerini, listede gösterilirken diğer alanlarla aynı
+    bicimde (para/tarih/metin) göstermek için biçimlendirir."""
+    if deger is None:
+        return ""
+    if tur == "sayi":
+        return tl_format(deger)
+    if tur == "tarih":
+        return _gg_aa_yyyy(str(deger))
+    return deger
+
+
+def _ozel_alan_ekle(db, tablo, etiket, tur):
+    """Yeni bir özel alan tanımlar VE ilgili tabloya gerçek bir sütun ekler."""
+    if tablo not in ("abone", "ariza"):
+        raise ValueError("geçersiz tablo")
+    if tur not in _OZEL_ALAN_TUR_PG:
+        raise ValueError("geçersiz tür")
+    cur = db.cursor()
+    cur.execute("SELECT nextval(pg_get_serial_sequence('ozel_alan', 'id')) AS id")
+    yeni_id = cur.fetchone()["id"]
+    kolon_adi = f"ozel_{yeni_id}"
+    cur.execute(
+        "INSERT INTO ozel_alan (id, tablo, kolon_adi, etiket, tur, sira) VALUES "
+        "(%s, %s, %s, %s, %s, (SELECT COALESCE(MAX(sira), -1) + 1 FROM ozel_alan WHERE tablo = %s))",
+        (yeni_id, tablo, kolon_adi, etiket, tur, tablo),
+    )
+    # kolon_adi programın kendisi ürettiği (kullanıcıdan gelmeyen) güvenli bir
+    # isim olduğu için burada f-string ile SQL'e eklenmesi güvenlidir.
+    pg_tur = _OZEL_ALAN_TUR_PG[tur]
+    cur.execute(f"ALTER TABLE {tablo} ADD COLUMN {kolon_adi} {pg_tur}")
+    db.commit()
+    cur.close()
+
+
+def _ozel_alan_sil(db, ozel_alan_id):
+    """Özel alanı formdan/listeden gizler (aktif=FALSE). Veri kaybı olmaması
+    için ilgili veritabanı sütunu SİLİNMEZ, sadece pasif hale getirilir."""
+    cur = db.cursor()
+    cur.execute("UPDATE ozel_alan SET aktif = FALSE WHERE id = %s", (ozel_alan_id,))
+    db.commit()
+    cur.close()
+
+
+def _ozel_alan_tasi(db, ozel_alan_id, yon):
+    """Bir özel alanı kendi tablosundaki (abone/ariza) sıralamasında bir
+    yukarı/aşağı taşır — Onay Kutusu Ayarları'ndaki aynı mantık."""
+    cur = db.cursor()
+    cur.execute("SELECT id, tablo, sira FROM ozel_alan WHERE id = %s", (ozel_alan_id,))
+    mevcut = cur.fetchone()
+    if not mevcut:
+        cur.close()
+        return
+    if yon == "yukari":
+        cur.execute(
+            "SELECT id, sira FROM ozel_alan WHERE tablo = %s AND aktif = TRUE AND sira < %s "
+            "ORDER BY sira DESC, id DESC LIMIT 1",
+            (mevcut["tablo"], mevcut["sira"]),
+        )
+    else:
+        cur.execute(
+            "SELECT id, sira FROM ozel_alan WHERE tablo = %s AND aktif = TRUE AND sira > %s "
+            "ORDER BY sira ASC, id ASC LIMIT 1",
+            (mevcut["tablo"], mevcut["sira"]),
+        )
+    komsu = cur.fetchone()
+    if komsu:
+        cur.execute("UPDATE ozel_alan SET sira = %s WHERE id = %s", (komsu["sira"], mevcut["id"]))
+        cur.execute("UPDATE ozel_alan SET sira = %s WHERE id = %s", (mevcut["sira"], komsu["id"]))
+        db.commit()
+    cur.close()
+
+
 # abone_listesi() sayfasındaki serbest metin araması hangi alanlarda yapılabilir
 # tanımı. Hem abone_listesi() route'u hem de Montaj Formu'nun toplu oluşturma
 # özelliği aynı filtreleme mantığını (_abone_filtreli_kayitlari_getir) kullanır.
@@ -409,12 +532,13 @@ def _abone_filtreli_kayitlari_getir(db):
         sql += " AND koy_adi = %s"
         params.append(koy)
 
+    kolon_listesi, kolon_bilgi, _sayisal, _ozel = _abone_kolon_takimi(db)
     deger_secili = {}
-    for anahtar, _ in DISPLAY_KOLONLARI:
+    for anahtar, _ in kolon_listesi:
         secilenler = request.args.getlist(f"deger_{anahtar}")
         deger_secili[anahtar] = secilenler
         if secilenler:
-            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, KOLON_BILGI)
+            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, kolon_bilgi)
             if kosul:
                 sql += f" AND {kosul}"
                 params += param_listesi
@@ -601,17 +725,20 @@ def _kolon_kosul_coklu(anahtar, deger_listesi, bilgi_sozlugu):
     return f"{ifade} IN ({yer_tutucular})", deger_listesi
 
 
-def _abone_satir_sozlugu(k):
+def _abone_satir_sozlugu(k, ozel_alanlar=None):
     sayac_kalan = (k["sayac_tutari"] or 0) - (k["alinan_tutar"] or 0)
     malzeme_kalan = (k["malzeme_tutari"] or 0) - (k["malzeme_alinan"] or 0)
     toplam_kalan = sayac_kalan + malzeme_kalan
     muhtara_kalan = (k["muhtara_odenecek"] or 0) - (k["muhtara_odenen"] or 0)
+    ozel_alanlar = ozel_alanlar or []
     renk = {anahtar: '' for anahtar, _ in DISPLAY_KOLONLARI}
+    for oa in ozel_alanlar:
+        renk[oa["kolon_adi"]] = ''
     renk["sayac_kalan"] = 'kirmizi' if sayac_kalan > 0 else 'yesil'
     renk["malzeme_kalan"] = 'kirmizi' if malzeme_kalan > 0 else 'yesil'
     renk["toplam_kalan"] = 'kirmizi' if toplam_kalan > 0 else 'yesil'
     renk["muhtara_kalan"] = 'kirmizi' if muhtara_kalan > 0 else 'yesil'
-    return {
+    satir = {
         "id": k["id"],
         "s_no": k["s_no"],
         "koy_adi": k["koy_adi"],
@@ -645,13 +772,19 @@ def _abone_satir_sozlugu(k):
         "fatura_no": _fatura_no_temizle(k["fatura_no"]),
         "_renk": renk,
     }
+    for oa in ozel_alanlar:
+        satir[oa["kolon_adi"]] = _ozel_alan_deger_formatla(k[oa["kolon_adi"]], oa["tur"])
+    return satir
 
 
-def _ariza_satir_sozlugu(k):
+def _ariza_satir_sozlugu(k, ozel_alanlar=None):
     kalan_ucret = (k["ariza_ucret"] or 0) - (k["alinan_ucret"] or 0)
+    ozel_alanlar = ozel_alanlar or []
     renk = {anahtar: '' for anahtar, _ in ARIZA_DISPLAY_KOLONLARI}
+    for oa in ozel_alanlar:
+        renk[oa["kolon_adi"]] = ''
     renk["kalan_ucret"] = 'kirmizi' if kalan_ucret > 0 else 'yesil'
-    return {
+    satir = {
         "id": k["id"],
         "s_no": k["s_no"],
         "ozel_s_no": k["ozel_s_no"],
@@ -675,6 +808,9 @@ def _ariza_satir_sozlugu(k):
         "islem_aciklama": k["islem_aciklama"],
         "_renk": renk,
     }
+    for oa in ozel_alanlar:
+        satir[oa["kolon_adi"]] = _ozel_alan_deger_formatla(k[oa["kolon_adi"]], oa["tur"])
+    return satir
 
 
 # Montaj Formu'nun varsayılan tasarımı. Bu, sadece TEK bir kopyayı tanımlar —
@@ -1419,15 +1555,15 @@ def kolon_secenekleri_api():
     (JavaScript ile) seçenekler istenir."""
     tablo = request.args.get("tablo", "").strip()
     anahtar = request.args.get("anahtar", "").strip()
-    if tablo == "abone":
-        bilgi_sozlugu = KOLON_BILGI
-    elif tablo == "ariza":
-        bilgi_sozlugu = ARIZA_KOLON_BILGI
-    else:
+    if tablo not in ("abone", "ariza"):
         return jsonify({"hata": "geçersiz tablo"}), 400
+    db = get_db()
+    if tablo == "abone":
+        _kolon_listesi, bilgi_sozlugu, _sayisal, _ozel = _abone_kolon_takimi(db)
+    else:
+        _kolon_listesi, bilgi_sozlugu, _sayisal, _ozel = _ariza_kolon_takimi(db)
     if anahtar not in bilgi_sozlugu:
         return jsonify({"hata": "geçersiz sütun"}), 400
-    db = get_db()
     secenekler = _kolon_secenekleri(db, anahtar, tablo, bilgi_sozlugu)
     return jsonify({"secenekler": secenekler})
 
@@ -1514,12 +1650,13 @@ def abone_listesi():
         sql += " AND koy_adi = %s"
         params.append(koy)
 
+    kolon_listesi, kolon_bilgi, sayisal_kolonlar, ozel_alanlar = _abone_kolon_takimi(db)
     deger_secili = {}
-    for anahtar, _ in DISPLAY_KOLONLARI:
+    for anahtar, _ in kolon_listesi:
         secilenler = request.args.getlist(f"deger_{anahtar}")
         deger_secili[anahtar] = secilenler
         if secilenler:
-            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, KOLON_BILGI)
+            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, kolon_bilgi)
             if kosul:
                 sql += f" AND {kosul}"
                 params += param_listesi
@@ -1561,7 +1698,7 @@ def abone_listesi():
         for r in cur.fetchall()
     ]
 
-    satirlar = [_abone_satir_sozlugu(k) for k in kayitlar_ham]
+    satirlar = [_abone_satir_sozlugu(k, ozel_alanlar) for k in kayitlar_ham]
 
     # Sütun filtre kutularının seçenekleri artık burada TÜM sütunlar için
     # tek tek sorgulanmıyor (30 ayrı SELECT DISTINCT — sayfanın yavaş
@@ -1572,8 +1709,8 @@ def abone_listesi():
     return render_template(
         "abone_list.html", satirlar=satirlar, koyler=koyler, q=q, secili_koy=koy,
         secili_alanlar=alanlar_secili, alan_listesi=alan_listesi,
-        kolon_listesi=DISPLAY_KOLONLARI, deger_secili=deger_secili,
-        sayisal_kolonlar=SAYISAL_KOLONLAR,
+        kolon_listesi=kolon_listesi, deger_secili=deger_secili,
+        sayisal_kolonlar=sayisal_kolonlar,
         arama_satir=_izgara_satir(len(alan_listesi)),
         arama_satir_2=_izgara_satir(len(alan_listesi), 2),
         filtreli_kayit=len(satirlar), toplam_kayit=toplam_kayit,
@@ -2310,6 +2447,7 @@ def abone_yeni():
         sonraki_s_no=_sonraki_s_no(db),
         sonraki_senet_no=_sonraki_senet_no(db),
         fotograflar=[],
+        ozel_alanlar=_ozel_alanlari_getir(db, "abone"),
     )
 
 
@@ -2339,7 +2477,10 @@ def abone_duzenle(abone_id):
     )
     fotograflar = cur.fetchall()
     cur.close()
-    return render_template("abone_form.html", kayit=kayit, geri=geri, fotograflar=fotograflar)
+    return render_template(
+        "abone_form.html", kayit=kayit, geri=geri, fotograflar=fotograflar,
+        ozel_alanlar=_ozel_alanlari_getir(db, "abone"),
+    )
 
 
 @app.route("/abone/<int:abone_id>/sil", methods=["POST"])
@@ -2446,6 +2587,12 @@ def _abone_kaydet(abone_id):
         konum_enlem=_konum_sayilastir(f.get("konum_enlem")),
         konum_boylam=_konum_sayilastir(f.get("konum_boylam")),
     )
+
+    for oa in _ozel_alanlari_getir(db, "abone"):
+        if oa["tur"] == "sayi":
+            alanlar[oa["kolon_adi"]] = _sayilastir(f.get(oa["kolon_adi"]))
+        else:
+            alanlar[oa["kolon_adi"]] = f.get(oa["kolon_adi"], "").strip()
 
     if abone_id is None:
         kolonlar = ", ".join(alanlar.keys())
@@ -2663,15 +2810,16 @@ def tahsilat():
 
 
 def _tahsilat_ciktisi_satirlar():
-    kolonlar_secili = request.args.getlist("kolon")
-    goster_kolonlari = kolonlar_secili if kolonlar_secili else [k for k, _ in DISPLAY_KOLONLARI]
     db = get_db()
+    kolon_listesi, kolon_bilgi, _sayisal, ozel_alanlar = _abone_kolon_takimi(db)
+    kolonlar_secili = request.args.getlist("kolon")
+    goster_kolonlari = kolonlar_secili if kolonlar_secili else [k for k, _ in kolon_listesi]
     sql = "SELECT * FROM abone WHERE 1=1"
     params = []
     for anahtar in goster_kolonlari:
         secilenler = request.args.getlist(f"deger_{anahtar}")
         if secilenler:
-            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, KOLON_BILGI)
+            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, kolon_bilgi)
             if kosul:
                 sql += f" AND {kosul}"
                 params += param_listesi
@@ -2680,8 +2828,8 @@ def _tahsilat_ciktisi_satirlar():
     cur.execute(sql, params)
     kayitlar_ham = cur.fetchall()
     cur.close()
-    satirlar = [_abone_satir_sozlugu(k) for k in kayitlar_ham]
-    return satirlar, goster_kolonlari
+    satirlar = [_abone_satir_sozlugu(k, ozel_alanlar) for k in kayitlar_ham]
+    return satirlar, goster_kolonlari, kolon_listesi
 
 
 @app.route("/tahsilat-ciktisi")
@@ -2691,9 +2839,13 @@ def tahsilat_ciktisi():
     if yonlendirme:
         return yonlendirme
 
-    satirlar, goster_kolonlari = _tahsilat_ciktisi_satirlar()
+    satirlar, goster_kolonlari, kolon_listesi = _tahsilat_ciktisi_satirlar()
     kolonlar_secili = request.args.getlist("kolon")
     db = get_db()
+    _kl, _kb, sayisal_kolonlar, _ozel = _abone_kolon_takimi(db)
+    kolon_secim_listesi = DISPLAY_KOLONLARI_ALFABETIK + [
+        (k, e) for k, e in kolon_listesi if k not in _DISPLAY_KOLON_HARITASI
+    ]
 
     deger_secili = {}
     for anahtar in goster_kolonlari:
@@ -2708,13 +2860,13 @@ def tahsilat_ciktisi():
     return render_template(
         "tahsilat_ciktisi.html",
         satirlar=satirlar,
-        kolon_listesi=DISPLAY_KOLONLARI, goster_kolonlari=goster_kolonlari,
-        kolon_secim_listesi=DISPLAY_KOLONLARI_ALFABETIK,
+        kolon_listesi=kolon_listesi, goster_kolonlari=goster_kolonlari,
+        kolon_secim_listesi=kolon_secim_listesi,
         secili_kolonlar=kolonlar_secili,
         deger_secili=deger_secili,
-        sayisal_kolonlar=SAYISAL_KOLONLAR,
-        kolon_satir=_izgara_satir(len(DISPLAY_KOLONLARI_ALFABETIK)),
-        kolon_satir_2=_izgara_satir(len(DISPLAY_KOLONLARI_ALFABETIK), 2),
+        sayisal_kolonlar=sayisal_kolonlar,
+        kolon_satir=_izgara_satir(len(kolon_secim_listesi)),
+        kolon_satir_2=_izgara_satir(len(kolon_secim_listesi), 2),
         filtreli_kayit=len(satirlar), toplam_kayit=toplam_kayit,
         sira=_sira_yonu_al(), sira_toggle_qs=_sira_toggle_qs(),
     )
@@ -2723,9 +2875,9 @@ def tahsilat_ciktisi():
 @app.route("/tahsilat-ciktisi-excel")
 @login_required
 def tahsilat_ciktisi_excel():
-    satirlar, goster_kolonlari = _tahsilat_ciktisi_satirlar()
+    satirlar, goster_kolonlari, kolon_listesi = _tahsilat_ciktisi_satirlar()
     tarih = datetime.now().strftime("%d_%m_%Y")
-    return _csv_olustur(DISPLAY_KOLONLARI, goster_kolonlari, satirlar, f"tahsilat_ciktisi_{tarih}.csv")
+    return _csv_olustur(kolon_listesi, goster_kolonlari, satirlar, f"tahsilat_ciktisi_{tarih}.csv")
 
 
 def _ariza_secenek_baglami(db):
@@ -2810,6 +2962,12 @@ def _ariza_kaydet(ariza_id):
     )
 
     db = get_db()
+    for oa in _ozel_alanlari_getir(db, "ariza"):
+        if oa["tur"] == "sayi":
+            alanlar[oa["kolon_adi"]] = _sayilastir(f.get(oa["kolon_adi"]))
+        else:
+            alanlar[oa["kolon_adi"]] = f.get(oa["kolon_adi"], "").strip()
+
     cur = db.cursor()
     if ariza_id is None:
         kolonlar = ", ".join(alanlar.keys())
@@ -2989,6 +3147,64 @@ def secenek_yonetimi_tasi(secenek_id, yon):
     return redirect(url_for("secenek_yonetimi"))
 
 
+@app.route("/admin/ozel-alan-ayarlari")
+@login_required
+def ozel_alan_ayarlari():
+    """Abone/Arıza formuna kod yazmadan yeni bir bilgi kutusu (metin/tarih/sayı)
+    eklenebildiği ayarlar ekranı — bkz. app.py başındaki _ozel_alan_ekle() ve
+    schema.sql'deki ozel_alan tablosu üzerindeki açıklama."""
+    db = get_db()
+    abone_alanlari = _ozel_alanlari_getir(db, "abone")
+    ariza_alanlari = _ozel_alanlari_getir(db, "ariza")
+    return render_template(
+        "ozel_alan_ayarlari.html",
+        abone_alanlari=abone_alanlari,
+        ariza_alanlari=ariza_alanlari,
+        tur_etiketleri=_OZEL_ALAN_TUR_ETIKETLERI,
+    )
+
+
+@app.route("/admin/ozel-alan-ayarlari/ekle", methods=["POST"])
+@login_required
+def ozel_alan_ayarlari_ekle():
+    tablo = request.form.get("tablo", "")
+    etiket = request.form.get("etiket", "").strip()
+    tur = request.form.get("tur", "")
+    if tablo not in ("abone", "ariza"):
+        flash("Geçersiz tablo.")
+        return redirect(url_for("ozel_alan_ayarlari"))
+    if not etiket:
+        flash("Boş alan adı eklenemez.")
+        return redirect(url_for("ozel_alan_ayarlari"))
+    if tur not in _OZEL_ALAN_TUR_PG:
+        flash("Geçersiz alan türü.")
+        return redirect(url_for("ozel_alan_ayarlari"))
+
+    db = get_db()
+    _ozel_alan_ekle(db, tablo, etiket, tur)
+    flash(f'"{etiket}" alanı eklendi.')
+    return redirect(url_for("ozel_alan_ayarlari"))
+
+
+@app.route("/admin/ozel-alan-ayarlari/sil/<int:ozel_alan_id>", methods=["POST"])
+@login_required
+def ozel_alan_ayarlari_sil(ozel_alan_id):
+    db = get_db()
+    _ozel_alan_sil(db, ozel_alan_id)
+    flash("Alan kaldırıldı. (Daha önce bu alana girilmiş veriler kaybolmadı, sadece form/listeden gizlendi.)")
+    return redirect(url_for("ozel_alan_ayarlari"))
+
+
+@app.route("/admin/ozel-alan-ayarlari/tasi/<int:ozel_alan_id>/<yon>", methods=["POST"])
+@login_required
+def ozel_alan_ayarlari_tasi(ozel_alan_id, yon):
+    if yon not in ("yukari", "asagi"):
+        return redirect(url_for("ozel_alan_ayarlari"))
+    db = get_db()
+    _ozel_alan_tasi(db, ozel_alan_id, yon)
+    return redirect(url_for("ozel_alan_ayarlari"))
+
+
 @app.route("/ariza/yeni", methods=["GET", "POST"])
 @login_required
 def ariza_yeni():
@@ -3006,6 +3222,7 @@ def ariza_yeni():
         ilk_montaj_tarihi="",
         bugun=datetime.now().strftime("%Y-%m-%d"),
         fotograflar=[],
+        ozel_alanlar=_ozel_alanlari_getir(db, "ariza"),
     )
 
 
@@ -3055,6 +3272,7 @@ def ariza_duzenle(ariza_id):
         ilk_montaj_tarihi=ilk_montaj_tarihi,
         bugun=datetime.now().strftime("%Y-%m-%d"),
         fotograflar=fotograflar,
+        ozel_alanlar=_ozel_alanlari_getir(db, "ariza"),
     )
 
 
@@ -3143,12 +3361,13 @@ def ariza_listesi():
             sql += " AND (" + " OR ".join(kosul_listesi) + ")"
             params += kosul_params
 
+    kolon_listesi, kolon_bilgi, sayisal_kolonlar, ozel_alanlar = _ariza_kolon_takimi(db)
     deger_secili = {}
-    for anahtar, _ in ARIZA_DISPLAY_KOLONLARI:
+    for anahtar, _ in kolon_listesi:
         secilenler = request.args.getlist(f"deger_{anahtar}")
         deger_secili[anahtar] = secilenler
         if secilenler:
-            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, ARIZA_KOLON_BILGI)
+            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, kolon_bilgi)
             if kosul:
                 sql += f" AND {kosul}"
                 params += param_listesi
@@ -3161,7 +3380,7 @@ def ariza_listesi():
     toplam_kayit = cur.fetchone()["c"]
     cur.close()
 
-    satirlar = [_ariza_satir_sozlugu(k) for k in kayitlar_ham]
+    satirlar = [_ariza_satir_sozlugu(k, ozel_alanlar) for k in kayitlar_ham]
 
     toplam_ariza_ucreti = sum(float(k["ariza_ucret"] or 0) for k in kayitlar_ham)
     tahsil_edilen_ucret = sum(float(k["alinan_ucret"] or 0) for k in kayitlar_ham)
@@ -3171,10 +3390,10 @@ def ariza_listesi():
 
     return render_template(
         "ariza_listesi.html", satirlar=satirlar,
-        kolon_listesi=ARIZA_DISPLAY_KOLONLARI,
+        kolon_listesi=kolon_listesi,
         q=q, secili_alanlar=alanlar_secili, alan_listesi=alan_listesi,
         deger_secili=deger_secili,
-        sayisal_kolonlar=ARIZA_SAYISAL_KOLONLAR,
+        sayisal_kolonlar=sayisal_kolonlar,
         arama_satir=_izgara_satir(len(alan_listesi)),
         arama_satir_2=_izgara_satir(len(alan_listesi), 2),
         filtreli_kayit=len(satirlar), toplam_kayit=toplam_kayit,
@@ -3186,15 +3405,16 @@ def ariza_listesi():
 
 
 def _ariza_ciktisi_satirlar():
-    kolonlar_secili = request.args.getlist("kolon")
-    goster_kolonlari = kolonlar_secili if kolonlar_secili else [k for k, _ in ARIZA_DISPLAY_KOLONLARI]
     db = get_db()
+    kolon_listesi, kolon_bilgi, _sayisal, ozel_alanlar = _ariza_kolon_takimi(db)
+    kolonlar_secili = request.args.getlist("kolon")
+    goster_kolonlari = kolonlar_secili if kolonlar_secili else [k for k, _ in kolon_listesi]
     sql = "SELECT * FROM ariza WHERE 1=1"
     params = []
     for anahtar in goster_kolonlari:
         secilenler = request.args.getlist(f"deger_{anahtar}")
         if secilenler:
-            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, ARIZA_KOLON_BILGI)
+            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, kolon_bilgi)
             if kosul:
                 sql += f" AND {kosul}"
                 params += param_listesi
@@ -3203,8 +3423,8 @@ def _ariza_ciktisi_satirlar():
     cur.execute(sql, params)
     kayitlar_ham = cur.fetchall()
     cur.close()
-    satirlar = [_ariza_satir_sozlugu(k) for k in kayitlar_ham]
-    return satirlar, goster_kolonlari
+    satirlar = [_ariza_satir_sozlugu(k, ozel_alanlar) for k in kayitlar_ham]
+    return satirlar, goster_kolonlari, kolon_listesi
 
 
 @app.route("/ariza-ciktisi")
@@ -3214,9 +3434,14 @@ def ariza_ciktisi():
     if yonlendirme:
         return yonlendirme
 
-    satirlar, goster_kolonlari = _ariza_ciktisi_satirlar()
+    satirlar, goster_kolonlari, kolon_listesi = _ariza_ciktisi_satirlar()
     kolonlar_secili = request.args.getlist("kolon")
     db = get_db()
+
+    kolon_secim_listesi = ARIZA_DISPLAY_KOLONLARI_ALFABETIK + [
+        (k, e) for k, e in kolon_listesi if k not in _ARIZA_DISPLAY_KOLON_HARITASI
+    ]
+    _kl, _kb, sayisal_kolonlar, _ozel = _ariza_kolon_takimi(db)
 
     deger_secili = {}
     for anahtar in goster_kolonlari:
@@ -3231,13 +3456,13 @@ def ariza_ciktisi():
     return render_template(
         "ariza_ciktisi.html",
         satirlar=satirlar,
-        kolon_listesi=ARIZA_DISPLAY_KOLONLARI, goster_kolonlari=goster_kolonlari,
-        kolon_secim_listesi=ARIZA_DISPLAY_KOLONLARI_ALFABETIK,
+        kolon_listesi=kolon_listesi, goster_kolonlari=goster_kolonlari,
+        kolon_secim_listesi=kolon_secim_listesi,
         secili_kolonlar=kolonlar_secili,
         deger_secili=deger_secili,
-        sayisal_kolonlar=ARIZA_SAYISAL_KOLONLAR,
-        kolon_satir=_izgara_satir(len(ARIZA_DISPLAY_KOLONLARI_ALFABETIK)),
-        kolon_satir_2=_izgara_satir(len(ARIZA_DISPLAY_KOLONLARI_ALFABETIK), 2),
+        sayisal_kolonlar=sayisal_kolonlar,
+        kolon_satir=_izgara_satir(len(kolon_secim_listesi)),
+        kolon_satir_2=_izgara_satir(len(kolon_secim_listesi), 2),
         filtreli_kayit=len(satirlar), toplam_kayit=toplam_kayit,
         sira=_sira_yonu_al(), sira_toggle_qs=_sira_toggle_qs(),
     )
@@ -3246,9 +3471,9 @@ def ariza_ciktisi():
 @app.route("/ariza-ciktisi-excel")
 @login_required
 def ariza_ciktisi_excel():
-    satirlar, goster_kolonlari = _ariza_ciktisi_satirlar()
+    satirlar, goster_kolonlari, kolon_listesi = _ariza_ciktisi_satirlar()
     tarih = datetime.now().strftime("%d_%m_%Y")
-    return _csv_olustur(ARIZA_DISPLAY_KOLONLARI, goster_kolonlari, satirlar, f"ariza_ciktisi_{tarih}.csv")
+    return _csv_olustur(kolon_listesi, goster_kolonlari, satirlar, f"ariza_ciktisi_{tarih}.csv")
 
 
 @app.route("/ariza/<int:ariza_id>/tahsilat", methods=["GET", "POST"])
