@@ -200,6 +200,17 @@
             <label>Açıklama</label>
             <textarea name="islem_aciklama" rows="2">{{ kayit['islem_aciklama'] if kayit else '' }}</textarea>
         </div>
+
+        {% if ozel_alanlar %}
+        <div class="ayirici">Özel Alanlar</div>
+        {% for oa in ozel_alanlar %}
+        <div>
+            <label>{{ oa.etiket }}</label>
+            <input type="{{ 'date' if oa.tur == 'tarih' else 'text' }}" name="{{ oa.kolon_adi }}"
+                   value="{{ kayit[oa.kolon_adi] if kayit and kayit[oa.kolon_adi] is not none else '' }}">
+        </div>
+        {% endfor %}
+        {% endif %}
     </div>
 
     <div class="form-butonlar">

@@ -12,6 +12,7 @@
         S.No: {{ 'Küçükten Büyüğe ▲' if sira == 'asc' else 'Büyükten Küçüğe ▼' }}
     </a>
     <a class="btn btn-yesil" href="{{ url_for('abone_yeni') }}">+ Yeni Abone</a>
+    <a class="btn no-print" href="{{ url_for('ozel_alan_ayarlari') }}">Özel Alan Ayarları</a>
 </div>
 
 {% if odeme_hatirlatmalari %}

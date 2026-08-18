@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Özel Alan Ayarları - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi no-print">
+    <h2>Özel Alan Ayarları</h2>
+    <a class="btn" href="{{ url_for('abone_listesi') }}">Abone Listesi'ne Dön</a>
+</div>
+
+<div class="seri-uyari-kutu no-print" style="max-width:900px;">
+    <p style="margin:0; font-size:12.5px;">
+        Burada eklediğiniz alanlar, "Yeni Abone" / "Yeni Arıza" formuna hemen
+        yeni bir bilgi kutusu olarak eklenir; ayrıca ilgili listede ve
+        sütun filtrelerinde de otomatik olarak görünür — kod değişikliği veya
+        yeniden yayınlama (deploy) gerekmez. Bir alanı "Kaldır" ile sildiğinizde
+        o alana daha önce girilmiş veriler KAYBOLMAZ, sadece form/listeden
+        gizlenir.
+    </p>
+</div>
+
+{% for tablo, baslik, alanlar in [('abone', 'Abone Alanları', abone_alanlari), ('ariza', 'Arıza Alanları', ariza_alanlari)] %}
+<div class="seri-uyari-kutu no-print" style="max-width:760px;">
+    <h4>{{ baslik }}</h4>
+
+    <table style="margin-bottom:10px;">
+        <thead>
+            <tr>
+                <th style="width:36px;">Sıra</th>
+                <th>Alan Adı</th>
+                <th style="width:90px;">Tür</th>
+                <th style="width:110px;">İşlemler</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for alan in alanlar %}
+            <tr>
+                <td>
+                    <div style="display:flex; flex-direction:column; gap:2px;">
+                        <form method="post" action="{{ url_for('ozel_alan_ayarlari_tasi', ozel_alan_id=alan.id, yon='yukari') }}" style="margin:0;">
+                            <button type="submit" class="btn" style="padding:2px 6px; font-size:11px;" {% if loop.first %}disabled{% endif %} title="Yukarı taşı">▲</button>
+                        </form>
+                        <form method="post" action="{{ url_for('ozel_alan_ayarlari_tasi', ozel_alan_id=alan.id, yon='asagi') }}" style="margin:0;">
+                            <button type="submit" class="btn" style="padding:2px 6px; font-size:11px;" {% if loop.last %}disabled{% endif %} title="Aşağı taşı">▼</button>
+                        </form>
+                    </div>
+                </td>
+                <td style="white-space:normal;">{{ alan.etiket }}</td>
+                <td>{{ tur_etiketleri.get(alan.tur, alan.tur) }}</td>
+                <td>
+                    <form method="post" action="{{ url_for('ozel_alan_ayarlari_sil', ozel_alan_id=alan.id) }}" style="margin:0;"
+                          onsubmit="return confirm('Bu alanı kaldırmak istediğinize emin misiniz? (Daha önce girilmiş veriler kaybolmaz.)');">
+                        <button type="submit" class="btn btn-kirmizi" style="padding:5px 10px; font-size:12px;">Kaldır</button>
+                    </form>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" style="color:#7a7a7a;">Henüz özel alan eklenmemiş.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <form method="post" action="{{ url_for('ozel_alan_ayarlari_ekle') }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <input type="hidden" name="tablo" value="{{ tablo }}">
+        <input type="text" name="etiket" placeholder="Yeni alan adı (ör. Montaj Tarihi)..." required style="flex:1; min-width:200px; padding:8px; border:1px solid #ccc; border-radius:6px;">
+        <select name="tur" style="padding:8px; border:1px solid #ccc; border-radius:6px;">
+            <option value="metin">Metin</option>
+            <option value="tarih">Tarih</option>
+            <option value="sayi">Sayı</option>
+        </select>
+        <button type="submit" class="btn btn-yesil">+ Ekle</button>
+    </form>
+</div>
+{% endfor %}
+
+{% endblock %}
