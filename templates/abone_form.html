@@ -23,46 +23,46 @@
         </div>
         <div>
             <label>Senet No (otomatik)</label>
-            <input type="text" value="{{ kayit['senet_no'] if kayit else '' }}" readonly tabindex="-1">
+            <input type="text" value="{{ kayit['senet_no'] if kayit and kayit['senet_no'] is not none else '' }}" readonly tabindex="-1">
         </div>
         <div>
             <label>Senet Tutarı (otomatik hesaplanır)</label>
-            <input type="text" value="{{ kayit['senet_tutari'] if kayit else '0' }}" readonly tabindex="-1">
+            <input type="text" value="{{ kayit['senet_tutari'] if kayit and kayit['senet_tutari'] is not none else '0' }}" readonly tabindex="-1">
         </div>
 
         <div>
             <label>Köy Adı *</label>
-            <input type="text" name="koy_adi" value="{{ kayit['koy_adi'] if kayit else '' }}" required autofocus>
+            <input type="text" name="koy_adi" value="{{ kayit['koy_adi'] if kayit and kayit['koy_adi'] is not none else '' }}" required autofocus>
         </div>
         {{ ozel_alanlari_bas('koy_adi') }}
         <div>
             <label>Adı *</label>
-            <input type="text" name="adi" value="{{ kayit['adi'] if kayit else '' }}" required>
+            <input type="text" name="adi" value="{{ kayit['adi'] if kayit and kayit['adi'] is not none else '' }}" required>
         </div>
         {{ ozel_alanlari_bas('adi') }}
         <div>
             <label>Soyadı *</label>
-            <input type="text" name="soyadi" value="{{ kayit['soyadi'] if kayit else '' }}" required>
+            <input type="text" name="soyadi" value="{{ kayit['soyadi'] if kayit and kayit['soyadi'] is not none else '' }}" required>
         </div>
         {{ ozel_alanlari_bas('soyadi') }}
         <div>
             <label>Sayaç No</label>
-            <input type="text" id="abone_sayac_no" name="sayac_no" value="{{ kayit['sayac_no'] if kayit else '' }}">
+            <input type="text" id="abone_sayac_no" name="sayac_no" value="{{ kayit['sayac_no'] if kayit and kayit['sayac_no'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('sayac_no') }}
         <div>
             <label>Baba Adı</label>
-            <input type="text" name="baba_adi" value="{{ kayit['baba_adi'] if kayit else '' }}">
+            <input type="text" name="baba_adi" value="{{ kayit['baba_adi'] if kayit and kayit['baba_adi'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('baba_adi') }}
         <div>
             <label>Telefon</label>
-            <input type="text" name="telefon" value="{{ kayit['telefon'] if kayit else '' }}">
+            <input type="text" name="telefon" value="{{ kayit['telefon'] if kayit and kayit['telefon'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('telefon') }}
         <div>
             <label>Telefon 2</label>
-            <input type="text" name="telefon2" value="{{ kayit['telefon2'] if kayit else '' }}">
+            <input type="text" name="telefon2" value="{{ kayit['telefon2'] if kayit and kayit['telefon2'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('telefon2') }}
 
@@ -81,22 +81,22 @@
 
         <div>
             <label>Sayaç Tutarı</label>
-            <input type="text" name="sayac_tutari" value="{{ kayit['sayac_tutari'] if kayit else '0' }}">
+            <input type="text" name="sayac_tutari" value="{{ kayit['sayac_tutari'] if kayit and kayit['sayac_tutari'] is not none else '0' }}">
         </div>
         {{ ozel_alanlari_bas('sayac_tutari') }}
         <div>
             <label>Alınan Tutar</label>
-            <input type="text" name="alinan_tutar" value="{{ kayit['alinan_tutar'] if kayit else '0' }}">
+            <input type="text" name="alinan_tutar" value="{{ kayit['alinan_tutar'] if kayit and kayit['alinan_tutar'] is not none else '0' }}">
         </div>
         {{ ozel_alanlari_bas('alinan_tutar') }}
         <div>
             <label>Senet Sahibi Adı</label>
-            <input type="text" name="senet_sahibi_adi" value="{{ kayit['senet_sahibi_adi'] if kayit else '' }}">
+            <input type="text" name="senet_sahibi_adi" value="{{ kayit['senet_sahibi_adi'] if kayit and kayit['senet_sahibi_adi'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('senet_sahibi_adi') }}
         <div>
             <label>Senet Sahibi Soyadı</label>
-            <input type="text" name="senet_sahibi_soyadi" value="{{ kayit['senet_sahibi_soyadi'] if kayit else '' }}">
+            <input type="text" name="senet_sahibi_soyadi" value="{{ kayit['senet_sahibi_soyadi'] if kayit and kayit['senet_sahibi_soyadi'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('senet_sahibi_soyadi') }}
 
@@ -104,12 +104,12 @@
 
         <div>
             <label>Malzeme Tutarı</label>
-            <input type="text" name="malzeme_tutari" value="{{ kayit['malzeme_tutari'] if kayit else '0' }}">
+            <input type="text" name="malzeme_tutari" value="{{ kayit['malzeme_tutari'] if kayit and kayit['malzeme_tutari'] is not none else '0' }}">
         </div>
         {{ ozel_alanlari_bas('malzeme_tutari') }}
         <div>
             <label>Malzeme Alınan</label>
-            <input type="text" name="malzeme_alinan" value="{{ kayit['malzeme_alinan'] if kayit else '0' }}">
+            <input type="text" name="malzeme_alinan" value="{{ kayit['malzeme_alinan'] if kayit and kayit['malzeme_alinan'] is not none else '0' }}">
         </div>
         {{ ozel_alanlari_bas('malzeme_alinan') }}
 
@@ -117,37 +117,37 @@
 
         <div>
             <label>Montaj Tarihi</label>
-            <input type="date" name="montaj_tarihi" value="{{ kayit['montaj_tarihi'] if kayit else '' }}">
+            <input type="date" name="montaj_tarihi" value="{{ kayit['montaj_tarihi'] if kayit and kayit['montaj_tarihi'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('montaj_tarihi') }}
         <div>
             <label>Montaj Personeli</label>
-            <input type="text" name="montaj_personeli" value="{{ kayit['montaj_personeli'] if kayit else '' }}">
+            <input type="text" name="montaj_personeli" value="{{ kayit['montaj_personeli'] if kayit and kayit['montaj_personeli'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('montaj_personeli') }}
         <div>
             <label>Ödeme Tarihi</label>
-            <input type="date" name="odeme_tarihi" value="{{ kayit['odeme_tarihi'] if kayit else '' }}">
+            <input type="date" name="odeme_tarihi" value="{{ kayit['odeme_tarihi'] if kayit and kayit['odeme_tarihi'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('odeme_tarihi') }}
         <div>
             <label>Ödeme Şekli</label>
-            <input type="text" name="odeme_sekli" value="{{ kayit['odeme_sekli'] if kayit else '' }}">
+            <input type="text" name="odeme_sekli" value="{{ kayit['odeme_sekli'] if kayit and kayit['odeme_sekli'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('odeme_sekli') }}
         <div>
             <label>Ödemeyi Gönderen</label>
-            <input type="text" name="odemeyi_gonderen" value="{{ kayit['odemeyi_gonderen'] if kayit else '' }}">
+            <input type="text" name="odemeyi_gonderen" value="{{ kayit['odemeyi_gonderen'] if kayit and kayit['odemeyi_gonderen'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('odemeyi_gonderen') }}
         <div>
             <label>Ödeme Gün Sözü</label>
-            <input type="date" name="odeme_gun_sozu" value="{{ kayit['odeme_gun_sozu'] if kayit else '' }}">
+            <input type="date" name="odeme_gun_sozu" value="{{ kayit['odeme_gun_sozu'] if kayit and kayit['odeme_gun_sozu'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('odeme_gun_sozu') }}
         <div>
             <label>Fatura No</label>
-            <input type="text" name="fatura_no" value="{{ kayit['fatura_no'] if kayit else '' }}">
+            <input type="text" name="fatura_no" value="{{ kayit['fatura_no'] if kayit and kayit['fatura_no'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('fatura_no') }}
 
@@ -155,12 +155,12 @@
 
         <div>
             <label>Muhtara Ödenecek</label>
-            <input type="text" name="muhtara_odenecek" value="{{ kayit['muhtara_odenecek'] if kayit else '0' }}">
+            <input type="text" name="muhtara_odenecek" value="{{ kayit['muhtara_odenecek'] if kayit and kayit['muhtara_odenecek'] is not none else '0' }}">
         </div>
         {{ ozel_alanlari_bas('muhtara_odenecek') }}
         <div>
             <label>Muhtara Ödenen</label>
-            <input type="text" name="muhtara_odenen" value="{{ kayit['muhtara_odenen'] if kayit else '0' }}">
+            <input type="text" name="muhtara_odenen" value="{{ kayit['muhtara_odenen'] if kayit and kayit['muhtara_odenen'] is not none else '0' }}">
         </div>
         {{ ozel_alanlari_bas('muhtara_odenen') }}
 
@@ -172,6 +172,8 @@
                    style="display:{{ 'inline-block' if kayit and kayit['konum_enlem'] is not none else 'none' }};">🧭 Konuma Git</a>
                 <a class="btn" id="uydu-goruntusu-buton" href="#" target="_blank" rel="noopener"
                    style="display:{{ 'inline-block' if kayit and kayit['konum_enlem'] is not none else 'none' }};">🛰 Uydu Görüntüsü</a>
+                <button type="button" class="btn btn-kirmizi" id="konum-sil-buton"
+                        style="display:{{ 'inline-block' if kayit and kayit['konum_enlem'] is not none else 'none' }};">🗑 Konumu Sil</button>
                 <span id="konum-bilgisi" style="font-size:12.5px; color:#666;">
                     {% if kayit and kayit['konum_enlem'] is not none %}Kayıtlı konum: {{ kayit['konum_enlem'] }}, {{ kayit['konum_boylam'] }}{% endif %}
                 </span>
@@ -226,7 +228,7 @@
 
         <div class="tam-genislik">
             <label>Açıklama</label>
-            <textarea name="aciklama" rows="3">{{ kayit['aciklama'] if kayit else '' }}</textarea>
+            <textarea name="aciklama" rows="3">{{ kayit['aciklama'] if kayit and kayit['aciklama'] is not none else '' }}</textarea>
         </div>
         {{ ozel_alanlari_bas('aciklama') }}
 
@@ -276,6 +278,7 @@
     var konumAlButon = document.getElementById('konum-al-buton');
     var konumaGitButon = document.getElementById('konuma-git-buton');
     var uyduGoruntusuButon = document.getElementById('uydu-goruntusu-buton');
+    var konumSilButon = document.getElementById('konum-sil-buton');
     var enlemInput = document.getElementById('konum_enlem');
     var boylamInput = document.getElementById('konum_boylam');
     var konumBilgisi = document.getElementById('konum-bilgisi');
@@ -287,6 +290,7 @@
         // (data=!3m1!1e3) açan bağlantı — ayrı bir API anahtarı/ücret gerektirmez.
         uyduGoruntusuButon.href = 'https://www.google.com/maps/@' + enlem + ',' + boylam + ',19z/data=!3m1!1e3';
         uyduGoruntusuButon.style.display = 'inline-block';
+        konumSilButon.style.display = 'inline-block';
     }
 
     // Sayfa yüklendiğinde kayıtlı bir konum varsa "Konuma Git" linkini hazırla.
@@ -343,6 +347,17 @@
                     konumBilgisi.textContent = 'Konum alınamadı, lütfen tekrar deneyin.';
                 }
             }, { enableHighAccuracy: true, timeout: 15000 });
+        });
+    }
+
+    if (konumSilButon) {
+        konumSilButon.addEventListener('click', function() {
+            enlemInput.value = '';
+            boylamInput.value = '';
+            konumBilgisi.textContent = 'Konum silindi. (Kaydet\'e basınca kaydedilecek)';
+            konumaGitButon.style.display = 'none';
+            uyduGoruntusuButon.style.display = 'none';
+            konumSilButon.style.display = 'none';
         });
     }
 })();
