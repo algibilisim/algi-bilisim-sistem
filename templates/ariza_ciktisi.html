@@ -9,6 +9,9 @@
         <span>TOPLAM KAYIT : {{ toplam_kayit }}</span>
     </div>
     <div style="display:flex; gap:8px;">
+        <a class="btn" href="?{{ sira_toggle_qs }}" title="Sıralama yönünü değiştir">
+            S.No: {{ 'Küçükten Büyüğe ▲' if sira == 'asc' else 'Büyükten Küçüğe ▼' }}
+        </a>
         <a class="btn" href="{{ url_for('ariza_ciktisi_excel') }}?{{ request.query_string.decode() }}">Excel'e Aktar</a>
         <button type="button" class="btn btn-yesil" onclick="window.print()">Yazdır</button>
     </div>
@@ -44,7 +47,8 @@
                 {% for anahtar, etiket in kolon_listesi %}
                 {% if anahtar in goster_kolonlari %}
                 <th class="kolon-filtre-th">
-                    <button type="button" class="btn filtre-ac-buton" data-hedef="arcfiltre-{{ anahtar }}">
+                    <button type="button" class="btn filtre-ac-buton" data-hedef="arcfiltre-{{ anahtar }}"
+                            data-tablo="ariza" data-anahtar="{{ anahtar }}">
                         {% if deger_secili[anahtar] %}{{ deger_secili[anahtar]|length }} seçili ▾{% else %}Tümü ▾{% endif %}
                     </button>
                     <div id="arcfiltre-{{ anahtar }}" class="filtre-kutu">
@@ -53,12 +57,9 @@
                         </div>
                         <div class="filtre-liste">
                             <label class="tumu-satir"><input type="checkbox" class="tumu-tik"> Tümü</label>
-                            {% for ham, metin in deger_secenekleri[anahtar] %}
-                            <label>
-                                <input type="checkbox" name="deger_{{ anahtar }}" value="{{ ham }}"
-                                       {% if ham in deger_secili[anahtar] %}checked{% endif %}>
-                                {{ metin }}
-                            </label>
+                            <p class="filtre-yukleniyor">Yükleniyor...</p>
+                            {% for v in deger_secili[anahtar] %}
+                            <input type="hidden" name="deger_{{ anahtar }}" value="{{ v }}" class="filtre-mevcut-gizli">
                             {% endfor %}
                         </div>
                         <div class="filtre-kutu-alt">

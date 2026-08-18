@@ -8,6 +8,9 @@
         <span>FİLTRELİ KAYIT : {{ filtreli_kayit }}</span>
         <span>TOPLAM KAYIT : {{ toplam_kayit }}</span>
     </div>
+    <a class="btn no-print" href="?{{ sira_toggle_qs }}" title="Sıralama yönünü değiştir">
+        S.No: {{ 'Küçükten Büyüğe ▲' if sira == 'asc' else 'Büyükten Küçüğe ▼' }}
+    </a>
     <a class="btn btn-yesil" href="{{ url_for('abone_yeni') }}">+ Yeni Abone</a>
 </div>
 
@@ -19,7 +22,7 @@
     <ul class="odeme-hatirlatma-liste">
         {% for h in odeme_hatirlatmalari %}
         <li>
-            <a href="{{ url_for('abone_duzenle', abone_id=h['id']) }}">
+            <a href="{{ url_for('abone_tahsilat', abone_id=h['id']) }}">
                 {{ h['adi'] }} {{ h['soyadi'] }} ({{ h['koy_adi'] }})
             </a>
             — Söz Tarihi: {{ h['odeme_gun_sozu'] }} — Kalan: {{ h['toplam_kalan'] }}
@@ -79,7 +82,8 @@
             <tr class="no-print">
                 {% for anahtar, etiket in kolon_listesi %}
                 <th class="kolon-filtre-th">
-                    <button type="button" class="btn filtre-ac-buton" data-hedef="afiltre-{{ anahtar }}">
+                    <button type="button" class="btn filtre-ac-buton" data-hedef="afiltre-{{ anahtar }}"
+                            data-tablo="abone" data-anahtar="{{ anahtar }}">
                         {% if deger_secili[anahtar] %}{{ deger_secili[anahtar]|length }} seçili ▾{% else %}Tümü ▾{% endif %}
                     </button>
                     <div id="afiltre-{{ anahtar }}" class="filtre-kutu">
@@ -88,12 +92,9 @@
                         </div>
                         <div class="filtre-liste">
                             <label class="tumu-satir"><input type="checkbox" class="tumu-tik"> Tümü</label>
-                            {% for ham, metin in deger_secenekleri[anahtar] %}
-                            <label>
-                                <input type="checkbox" name="deger_{{ anahtar }}" value="{{ ham }}"
-                                       {% if ham in deger_secili[anahtar] %}checked{% endif %}>
-                                {{ metin }}
-                            </label>
+                            <p class="filtre-yukleniyor">Yükleniyor...</p>
+                            {% for v in deger_secili[anahtar] %}
+                            <input type="hidden" name="deger_{{ anahtar }}" value="{{ v }}" class="filtre-mevcut-gizli">
                             {% endfor %}
                         </div>
                         <div class="filtre-kutu-alt">
@@ -150,7 +151,7 @@
 #mform-onizleme-alan { flex: 1; padding: 12px 18px; overflow: auto; background: #f2f4f5; }
 #mform-onizleme-iframe { width: 100%; height: 55vh; border: 1px solid #dfe6e1; border-radius: 6px; background: #fff; }
 #mform-modal-alt { padding: 12px 18px; border-top: 1px solid #e2e6e3; display: flex; justify-content: flex-end; gap: 8px; }
-.mform-sablon-buton.secili { background: #2e7d46; color: #fff; }
+.mform-sablon-buton.secili { background: #e8720c; color: #fff; }
 </style>
 
 <div id="mform-modal-overlay">

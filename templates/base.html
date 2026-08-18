@@ -8,7 +8,7 @@
 
 <!-- PWA: telefona/bilgisayara "uygulama gibi" kurulabilmesi için -->
 <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
-<meta name="theme-color" content="#1e5631">
+<meta name="theme-color" content="#2c3136">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -17,7 +17,7 @@
 <body>
 {% if session.get('user_id') %}
 <header class="topbar no-print">
-    <div class="brand"><img src="{{ url_for('static', filename='logo.jpg') }}" alt="ALGI BİLİŞİM"></div>
+    <div class="brand"><img src="{{ url_for('static', filename='icons/icon-512.png') }}" alt="ALGI BİLİŞİM"></div>
     <nav>
         <a href="{{ url_for('abone_listesi') }}">Abone Listesi</a>
         <a href="{{ url_for('tahsilat') }}">Köy Satış / Tahsilat Raporu</a>
@@ -44,6 +44,20 @@
     {% block content %}{% endblock %}
 </main>
 <script>
+// PWA: Kurulu (standalone) uygulama penceresi ilk açıldığında ekranı
+// tam kaplayacak şekilde büyütülmeye çalışılır (tarayıcı sekmesi olarak
+// açıldığında bu adım atlanır, sadece kurulu uygulama penceresini etkiler).
+if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+    window.addEventListener('load', function () {
+        try {
+            window.moveTo(0, 0);
+            window.resizeTo(screen.availWidth, screen.availHeight);
+        } catch (hata) {
+            console.log('Pencere tam ekran boyutlandırılamadı:', hata);
+        }
+    });
+}
+
 // PWA: Service Worker'ı kaydet (uygulamanın telefona/bilgisayara
 // kurulabilmesi ve statik dosyaların hızlı yüklenmesi için).
 if ('serviceWorker' in navigator) {
@@ -60,6 +74,50 @@ function tumFiltreKutulariniKapat() {
         k.classList.remove('acik');
         k.style.maxHeight = '';
     });
+}
+
+// Sütun filtre kutusu seçenekleri (ör. Abone Listesi, Arıza Takip): sayfa
+// ilk açıldığında TÜM sütunlar için önceden hesaplanmıyor — bu, 30 sütunlu
+// bir sayfada 30 ayrı veritabanı sorgusu demekti ve yavaş açılmanın asıl
+// sebebiydi. Bunun yerine, kullanıcı bir sütunun "Tümü ▾" kutusunu ilk kez
+// açtığında, sadece o sütun için /api/kolon-secenekleri üzerinden anlık istenir.
+function filtreSecenekleriniYukle(buton, kutu) {
+    if (kutu.getAttribute('data-yuklendi') === '1') { return; }
+    var tablo = buton.getAttribute('data-tablo');
+    var anahtar = buton.getAttribute('data-anahtar');
+    if (!tablo || !anahtar) { return; }
+    kutu.setAttribute('data-yuklendi', '1');
+    var liste = kutu.querySelector('.filtre-liste');
+    if (!liste) { return; }
+    var mevcutSecililer = [];
+    liste.querySelectorAll('.filtre-mevcut-gizli').forEach(function(inp) {
+        mevcutSecililer.push(inp.value);
+    });
+    fetch('/api/kolon-secenekleri?tablo=' + encodeURIComponent(tablo) + '&anahtar=' + encodeURIComponent(anahtar))
+        .then(function(r) { return r.json(); })
+        .then(function(veri) {
+            var yukleniyorEtiketi = liste.querySelector('.filtre-yukleniyor');
+            if (yukleniyorEtiketi) { yukleniyorEtiketi.remove(); }
+            liste.querySelectorAll('.filtre-mevcut-gizli').forEach(function(inp) { inp.remove(); });
+            (veri.secenekler || []).forEach(function(cift) {
+                var ham = cift[0];
+                var metin = cift[1];
+                var etiket = document.createElement('label');
+                var kutucuk = document.createElement('input');
+                kutucuk.type = 'checkbox';
+                kutucuk.name = 'deger_' + anahtar;
+                kutucuk.value = ham;
+                if (mevcutSecililer.indexOf(ham) !== -1) { kutucuk.checked = true; }
+                etiket.appendChild(kutucuk);
+                etiket.appendChild(document.createTextNode(' ' + metin));
+                liste.appendChild(etiket);
+            });
+        })
+        .catch(function() {
+            var yukleniyorEtiketi = liste.querySelector('.filtre-yukleniyor');
+            if (yukleniyorEtiketi) { yukleniyorEtiketi.textContent = 'Seçenekler yüklenemedi, tekrar açmayı deneyin.'; }
+            kutu.setAttribute('data-yuklendi', '0');
+        });
 }
 
 document.addEventListener('click', function(e) {
@@ -94,6 +152,7 @@ document.addEventListener('click', function(e) {
             hedefKutu.style.left = sol + 'px';
             hedefKutu.style.width = genislik + 'px';
             hedefKutu.classList.add('acik');
+            filtreSecenekleriniYukle(tiklananButon, hedefKutu);
             var aramaKutusu = hedefKutu.querySelector('.filtre-arama-kutusu input');
             if (aramaKutusu) {
                 aramaKutusu.value = '';

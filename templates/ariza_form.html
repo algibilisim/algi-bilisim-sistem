@@ -389,12 +389,20 @@ document.getElementById('seri_no_girisi').addEventListener('blur', function() {
                 if (veri.bulundu && veri.kayitlar && veri.kayitlar.length) {
                     veri.kayitlar.forEach(function(k) {
                         var satir = document.createElement('tr');
+                        satir.className = 'gecmis-ariza-satir';
+                        satir.style.cursor = 'pointer';
+                        satir.title = 'Bu arıza kaydının detayına gitmek için tıklayın';
                         satir.innerHTML =
                             '<td>' + (k.gelis_tarihi || '') + '</td>' +
                             '<td>' + (k.takilan_tarih || '') + '</td>' +
                             '<td>' + (k.tespit_edilen_ariza || '') + '</td>' +
                             '<td>' + (k.yapilan_islemler || '') + '</td>' +
                             '<td>' + (k.kalan_ucret || '') + '</td>';
+                        if (k.duzenle_url) {
+                            satir.addEventListener('click', function() {
+                                window.location.href = k.duzenle_url;
+                            });
+                        }
                         govde.appendChild(satir);
                     });
                     gecmisKutu.style.display = 'block';

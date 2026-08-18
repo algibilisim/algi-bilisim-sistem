@@ -9,6 +9,9 @@
         <span>TOPLAM KAYIT : {{ toplam_kayit }}</span>
     </div>
     <div style="display:flex; gap:8px;">
+        <a class="btn no-print" href="?{{ sira_toggle_qs }}" title="Sıralama yönünü değiştir">
+            Sıra: {{ 'Küçükten Büyüğe ▲' if sira == 'asc' else 'Büyükten Küçüğe ▼' }}
+        </a>
         <a class="btn" href="{{ url_for('koy_abone_yukle') }}">Excel'den Yükle / Güncelle</a>
         <a class="btn btn-yesil" href="{{ url_for('koy_abone_yeni') }}">+ Yeni Kayıt</a>
     </div>
