@@ -220,3 +220,14 @@ CREATE INDEX IF NOT EXISTS idx_ozel_alan_tablo ON ozel_alan(tablo, aktif, sira);
 -- arasına yerleştirilebilir. Boş metin ('') = formun en sonundaki "Özel
 -- Alanlar" kutusu (varsayılan, yeni eklenen her alan önce buraya düşer).
 ALTER TABLE ozel_alan ADD COLUMN IF NOT EXISTS sonra_gelen_alan TEXT NOT NULL DEFAULT '';
+
+-- Basit anahtar/değer ayar deposu. İlk kullanım amacı: Hesap Ayarları'ndan bir
+-- kez girilen "Ofis Konumu" (ofis_enlem/ofis_boylam) — bilgisayardan (GPS'i
+-- olmayan, konum tahmini güvenilmez olan cihazlardan) "Konum Al" basıldığında,
+-- gerçek (ama yanlış çıkabilen) tarayıcı konumu yerine bu sabit, bilinen doğru
+-- ofis konumu kullanılır; böylece "bu kayıt ofiste verildi" bilgisi güvenilir
+-- şekilde işaretlenebilir. İleride başka tekil ayarlar için de kullanılabilir.
+CREATE TABLE IF NOT EXISTS ayar (
+    anahtar TEXT PRIMARY KEY,
+    deger TEXT
+);

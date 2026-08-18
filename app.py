@@ -1440,7 +1440,44 @@ def hesap_ayarlari():
                 return redirect(url_for("hesap_ayarlari"))
 
     cur.close()
-    return render_template("hesap_ayarlari.html", kullanici=kullanici)
+    return render_template(
+        "hesap_ayarlari.html", kullanici=kullanici,
+        ofis_enlem=_ayar_getir(db, "ofis_enlem"),
+        ofis_boylam=_ayar_getir(db, "ofis_boylam"),
+    )
+
+
+@app.route("/hesap-ayarlari/ofis-konumu", methods=["POST"])
+@login_required
+def hesap_ayarlari_ofis_konumu():
+    """Hesap Ayarları'ndaki 'Ofis Konumu' kutusunun kaydet düğmesi. Buradaki
+    değer, bilgisayardan (GPS'siz, konum tahmini güvenilmez) "Konum Al"
+    basıldığında kullanılır — bkz. /api/ofis-konumu."""
+    enlem = _konum_sayilastir(request.form.get("ofis_enlem"))
+    boylam = _konum_sayilastir(request.form.get("ofis_boylam"))
+    if enlem is None or boylam is None or not (-90 <= enlem <= 90) or not (-180 <= boylam <= 180):
+        flash("Geçersiz koordinat — enlem -90 ile 90, boylam -180 ile 180 arasında bir sayı olmalı.")
+        return redirect(url_for("hesap_ayarlari"))
+    db = get_db()
+    _ayar_kaydet(db, "ofis_enlem", str(enlem))
+    _ayar_kaydet(db, "ofis_boylam", str(boylam))
+    flash("Ofis konumu kaydedildi.")
+    return redirect(url_for("hesap_ayarlari"))
+
+
+@app.route("/api/ofis-konumu")
+@login_required
+def ofis_konumu_api():
+    """abone_form.html / ariza_form.html'deki "Konum Al" butonu, bilgisayardan
+    (dokunmatik olmayan bir cihazdan) basıldığında GPS denemek yerine bu uçtan
+    kayıtlı ofis konumunu okur."""
+    db = get_db()
+    enlem = _ayar_getir(db, "ofis_enlem")
+    boylam = _ayar_getir(db, "ofis_boylam")
+    return jsonify({
+        "enlem": float(enlem) if enlem else None,
+        "boylam": float(boylam) if boylam else None,
+    })
 
 
 @app.route("/")
@@ -2449,6 +2486,29 @@ def _konum_sayilastir(deger):
         return float(deger) if deger else None
     except (ValueError, TypeError):
         return None
+
+
+def _ayar_getir(db, anahtar):
+    """Basit anahtar/değer ayar deposundan ('ayar' tablosu) bir değeri okur;
+    hiç ayarlanmamışsa None döner."""
+    cur = db.cursor()
+    cur.execute("SELECT deger FROM ayar WHERE anahtar = %s", (anahtar,))
+    satir = cur.fetchone()
+    cur.close()
+    return satir["deger"] if satir else None
+
+
+def _ayar_kaydet(db, anahtar, deger):
+    """Basit anahtar/değer ayar deposuna ('ayar' tablosu) bir değer yazar
+    (varsa günceller, yoksa ekler)."""
+    cur = db.cursor()
+    cur.execute(
+        "INSERT INTO ayar (anahtar, deger) VALUES (%s, %s) "
+        "ON CONFLICT (anahtar) DO UPDATE SET deger = EXCLUDED.deger",
+        (anahtar, deger),
+    )
+    db.commit()
+    cur.close()
 
 
 def _sonraki_s_no(db):
