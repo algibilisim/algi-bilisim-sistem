@@ -9,57 +9,43 @@
 
 <div class="seri-uyari-kutu no-print" style="max-width:900px;">
     <p style="margin:0; font-size:12.5px;">
-        Burada eklediğiniz alanlar, "Yeni Abone" / "Yeni Arıza" formuna hemen
-        yeni bir bilgi kutusu olarak eklenir; ayrıca ilgili listede ve
-        sütun filtrelerinde de otomatik olarak görünür — kod değişikliği veya
-        yeniden yayınlama (deploy) gerekmez. Bir alanı "Kaldır" ile sildiğinizde
-        o alana daha önce girilmiş veriler KAYBOLMAZ, sadece form/listeden
-        gizlenir.
+        Aşağıdaki listeler, "Yeni Abone" / "Yeni Arıza" formundaki alanların TAM OLARAK
+        göründükleri sırayı gösterir. Turuncu renkli, ⠿ simgeli satırlar sizin
+        eklediğiniz özel alanlardır — bunları mouse ile tutup, istediğiniz iki
+        alanın arasına bırakabilirsiniz; bıraktığınız anda o konum kaydedilir ve
+        form da hemen o sırayla gösterilir. Gri, 🔒 simgeli satırlar sabit
+        (koddan gelen) alanlardır, taşınamazlar — ama aralarına özel alan
+        bırakabilirsiniz. Bir alanı "Kaldır" ile sildiğinizde, o alana daha önce
+        girilmiş veriler KAYBOLMAZ, sadece form/listeden gizlenir.
     </p>
 </div>
 
-{% for tablo, baslik, alanlar in [('abone', 'Abone Alanları', abone_alanlari), ('ariza', 'Arıza Alanları', ariza_alanlari)] %}
-<div class="seri-uyari-kutu no-print" style="max-width:760px;">
-    <h4>{{ baslik }}</h4>
+{% for tablo, baslik, sirasi in [('abone', 'Abone Formu', abone_sirasi), ('ariza', 'Arıza Formu', ariza_sirasi)] %}
+<div class="seri-uyari-kutu no-print" style="max-width:600px;">
+    <h4>{{ baslik }} <span class="siralama-durum" data-durum-tablo="{{ tablo }}"></span></h4>
 
-    <table style="margin-bottom:10px;">
-        <thead>
-            <tr>
-                <th style="width:36px;">Sıra</th>
-                <th>Alan Adı</th>
-                <th style="width:90px;">Tür</th>
-                <th style="width:110px;">İşlemler</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for alan in alanlar %}
-            <tr>
-                <td>
-                    <div style="display:flex; flex-direction:column; gap:2px;">
-                        <form method="post" action="{{ url_for('ozel_alan_ayarlari_tasi', ozel_alan_id=alan.id, yon='yukari') }}" style="margin:0;">
-                            <button type="submit" class="btn" style="padding:2px 6px; font-size:11px;" {% if loop.first %}disabled{% endif %} title="Yukarı taşı">▲</button>
-                        </form>
-                        <form method="post" action="{{ url_for('ozel_alan_ayarlari_tasi', ozel_alan_id=alan.id, yon='asagi') }}" style="margin:0;">
-                            <button type="submit" class="btn" style="padding:2px 6px; font-size:11px;" {% if loop.last %}disabled{% endif %} title="Aşağı taşı">▼</button>
-                        </form>
-                    </div>
-                </td>
-                <td style="white-space:normal;">{{ alan.etiket }}</td>
-                <td>{{ tur_etiketleri.get(alan.tur, alan.tur) }}</td>
-                <td>
-                    <form method="post" action="{{ url_for('ozel_alan_ayarlari_sil', ozel_alan_id=alan.id) }}" style="margin:0;"
-                          onsubmit="return confirm('Bu alanı kaldırmak istediğinize emin misiniz? (Daha önce girilmiş veriler kaybolmaz.)');">
-                        <button type="submit" class="btn btn-kirmizi" style="padding:5px 10px; font-size:12px;">Kaldır</button>
-                    </form>
-                </td>
-            </tr>
-            {% else %}
-            <tr><td colspan="4" style="color:#7a7a7a;">Henüz özel alan eklenmemiş.</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="alan-onizleme-liste" id="onizleme-{{ tablo }}" data-tablo="{{ tablo }}">
+        {% for oge in sirasi %}
+        {% if oge.tip == 'ozel' %}
+        <div class="alan-satiri ozel-alan-satiri" data-alan-key="{{ oge.anahtar }}">
+            <span class="surukle-tutamac" title="Sürükleyerek taşı">⠿</span>
+            <span class="alan-etiket-metni">{{ oge.etiket }}</span>
+            <span class="alan-tur-etiket">{{ tur_etiketleri.get(oge.tur, oge.tur) }}</span>
+            <form method="post" action="{{ url_for('ozel_alan_ayarlari_sil', ozel_alan_id=oge.id) }}" class="alan-sil-form"
+                  onsubmit="return confirm('Bu alanı kaldırmak istediğinize emin misiniz? (Daha önce girilmiş veriler kaybolmaz.)');">
+                <button type="submit" class="btn btn-kirmizi">Kaldır</button>
+            </form>
+        </div>
+        {% else %}
+        <div class="alan-satiri sabit-alan-satiri" data-alan-key="{{ oge.anahtar }}">
+            <span class="kilit-simge" title="Sabit alan, taşınamaz">🔒</span>
+            <span class="alan-etiket-metni">{{ oge.etiket }}</span>
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
 
-    <form method="post" action="{{ url_for('ozel_alan_ayarlari_ekle') }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+    <form method="post" action="{{ url_for('ozel_alan_ayarlari_ekle') }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px;">
         <input type="hidden" name="tablo" value="{{ tablo }}">
         <input type="text" name="etiket" placeholder="Yeni alan adı (ör. Montaj Tarihi)..." required style="flex:1; min-width:200px; padding:8px; border:1px solid #ccc; border-radius:6px;">
         <select name="tur" style="padding:8px; border:1px solid #ccc; border-radius:6px;">
@@ -71,5 +57,82 @@
     </form>
 </div>
 {% endfor %}
+
+<script>
+(function() {
+    function siralanabilirListeKur(liste) {
+        var aktifOge = null;
+        var tablo = liste.getAttribute('data-tablo');
+        var durumEtiketi = document.querySelector('.siralama-durum[data-durum-tablo="' + tablo + '"]');
+
+        function sonrakiOgeyiBul(pointerY) {
+            var ogeler = Array.prototype.slice.call(liste.querySelectorAll('.alan-satiri:not(.surukleniyor)'));
+            for (var i = 0; i < ogeler.length; i++) {
+                var kutu = ogeler[i].getBoundingClientRect();
+                if (pointerY < kutu.top + kutu.height / 2) {
+                    return ogeler[i];
+                }
+            }
+            return null;
+        }
+
+        function durumGoster(metin, kalici) {
+            if (!durumEtiketi) { return; }
+            durumEtiketi.textContent = metin;
+            if (!kalici) {
+                setTimeout(function() {
+                    if (durumEtiketi.textContent === metin) { durumEtiketi.textContent = ''; }
+                }, 1500);
+            }
+        }
+
+        function sirayiKaydet() {
+            var anahtarlar = Array.prototype.slice.call(liste.querySelectorAll('.alan-satiri')).map(function(o) {
+                return o.getAttribute('data-alan-key');
+            });
+            durumGoster('Kaydediliyor...', true);
+            fetch("{{ url_for('ozel_alan_ayarlari_sirala') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tablo: tablo, sira: anahtarlar }),
+            })
+                .then(function(r) { return r.json(); })
+                .then(function() { durumGoster('Kaydedildi ✓'); })
+                .catch(function() { durumGoster('Kaydedilemedi, tekrar deneyin.'); });
+        }
+
+        liste.querySelectorAll('.surukle-tutamac').forEach(function(tutamac) {
+            tutamac.addEventListener('pointerdown', function(e) {
+                aktifOge = tutamac.closest('.alan-satiri');
+                if (!aktifOge) { return; }
+                aktifOge.classList.add('surukleniyor');
+                try { tutamac.setPointerCapture(e.pointerId); } catch (hata) {}
+                e.preventDefault();
+            });
+        });
+
+        liste.addEventListener('pointermove', function(e) {
+            if (!aktifOge) { return; }
+            var sonraki = sonrakiOgeyiBul(e.clientY);
+            if (sonraki == null) {
+                liste.appendChild(aktifOge);
+            } else if (sonraki !== aktifOge) {
+                liste.insertBefore(aktifOge, sonraki);
+            }
+        });
+
+        function birak() {
+            if (!aktifOge) { return; }
+            aktifOge.classList.remove('surukleniyor');
+            aktifOge = null;
+            sirayiKaydet();
+        }
+        liste.addEventListener('pointerup', birak);
+        liste.addEventListener('pointercancel', birak);
+    }
+
+    document.querySelectorAll('.alan-onizleme-liste').forEach(siralanabilirListeKur);
+})();
+</script>
 
 {% endblock %}

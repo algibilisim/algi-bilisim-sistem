@@ -2,6 +2,14 @@
 {% block title %}{{ 'Arıza Düzenle' if kayit else 'Yeni Arıza' }} - ALGI BİLİŞİM{% endblock %}
 {% block content %}
 
+{% macro ozel_alan_kutu(oa) %}
+<div>
+    <label>{{ oa.etiket }}</label>
+    <input type="{{ 'date' if oa.tur == 'tarih' else 'text' }}" name="{{ oa.kolon_adi }}"
+           value="{{ kayit[oa.kolon_adi] if kayit and kayit[oa.kolon_adi] is not none else '' }}">
+</div>
+{% endmacro %}
+{% macro ozel_alanlari_bas(anahtar) %}{% for oa in ozel_alan_harita.get(anahtar, []) %}{{ ozel_alan_kutu(oa) }}{% endfor %}{% endmacro %}
 
 <div class="sayfa-basligi no-print">
     <h2>{{ 'Arıza Düzenle' if kayit else 'Yeni Arıza' }}</h2>
@@ -19,34 +27,42 @@
             <label>Özel S.No</label>
             <input type="text" name="ozel_s_no" value="{{ kayit['ozel_s_no'] if kayit else '' }}">
         </div>
+        {{ ozel_alanlari_bas('ozel_s_no') }}
         <div>
             <label>Seri No</label>
             <input type="text" id="seri_no_girisi" name="seri_no" value="{{ kayit['seri_no'] if kayit else '' }}" {% if not kayit %}autofocus{% endif %}>
         </div>
+        {{ ozel_alanlari_bas('seri_no') }}
         <div>
             <label>Köy Adı</label>
             <input type="text" id="ariza_koy_adi" name="koy_adi" value="{{ kayit['koy_adi'] if kayit else '' }}">
         </div>
+        {{ ozel_alanlari_bas('koy_adi') }}
         <div>
             <label>Yeni Seri No</label>
             <input type="text" name="yeni_seri_no" value="{{ kayit['yeni_seri_no'] if kayit else '' }}">
         </div>
+        {{ ozel_alanlari_bas('yeni_seri_no') }}
         <div>
             <label>Adı</label>
             <input type="text" id="ariza_adi" name="adi" value="{{ kayit['adi'] if kayit else '' }}">
         </div>
+        {{ ozel_alanlari_bas('adi') }}
         <div>
             <label>Soyadı</label>
             <input type="text" id="ariza_soyadi" name="soyadi" value="{{ kayit['soyadi'] if kayit else '' }}">
         </div>
+        {{ ozel_alanlari_bas('soyadi') }}
         <div>
             <label>Telefon</label>
             <input type="text" id="ariza_telefon" name="telefon" value="{{ kayit['telefon'] if kayit else '' }}">
         </div>
+        {{ ozel_alanlari_bas('telefon') }}
         <div>
             <label>Telefon 2</label>
             <input type="text" id="ariza_telefon2" name="telefon2" value="{{ kayit['telefon2'] if kayit else '' }}">
         </div>
+        {{ ozel_alanlari_bas('telefon2') }}
         <div>
             <label class="ilk-montaj-etiket">İlk Montaj Tarihi</label>
             <input type="date" id="ilk_montaj_tarihi" class="ilk-montaj-tarihi" value="{{ ilk_montaj_tarihi }}" readonly tabindex="-1">
@@ -81,10 +97,12 @@
             <label>Arıza Ücret</label>
             <input type="text" name="ariza_ucret" value="{{ kayit['ariza_ucret'] if kayit else '0' }}">
         </div>
+        {{ ozel_alanlari_bas('ariza_ucret') }}
         <div>
             <label>Alınan Ücret</label>
             <input type="text" name="alinan_ucret" value="{{ kayit['alinan_ucret'] if kayit else '0' }}">
         </div>
+        {{ ozel_alanlari_bas('alinan_ucret') }}
 
         <div class="ayirici">Tarih / Kredi</div>
 
@@ -92,18 +110,22 @@
             <label>Geliş Tarihi</label>
             <input type="date" name="gelis_tarihi" value="{{ kayit['gelis_tarihi'] if kayit else bugun }}">
         </div>
+        {{ ozel_alanlari_bas('gelis_tarihi') }}
         <div>
             <label>Takılan Tarih</label>
             <input type="date" name="takilan_tarih" value="{{ kayit['takilan_tarih'] if kayit else '' }}">
         </div>
+        {{ ozel_alanlari_bas('takilan_tarih') }}
         <div>
             <label>Teslim Edilen Tarih</label>
             <input type="date" name="teslim_tarihi" value="{{ kayit['teslim_tarihi'] if kayit else '' }}">
         </div>
+        {{ ozel_alanlari_bas('teslim_tarihi') }}
         <div>
             <label>Sayaç Kredisi</label>
             <input type="text" name="sayac_kredisi" value="{{ kayit['sayac_kredisi'] if kayit else '' }}">
         </div>
+        {{ ozel_alanlari_bas('sayac_kredisi') }}
 
         <div class="ayirici">Konum</div>
         <div class="tam-genislik">
@@ -186,6 +208,7 @@
             <label>Açıklama</label>
             <textarea name="tespit_aciklama" rows="2">{{ kayit['tespit_aciklama'] if kayit else '' }}</textarea>
         </div>
+        {{ ozel_alanlari_bas('tespit_aciklama') }}
 
         <div class="ayirici">Yapılan İşlemler</div>
         <div class="tam-genislik onay-kutu-grid" style="--satir-sayisi: {{ islem_satir }}; --satir-sayisi-2: {{ islem_satir_2 }};">
@@ -200,15 +223,12 @@
             <label>Açıklama</label>
             <textarea name="islem_aciklama" rows="2">{{ kayit['islem_aciklama'] if kayit else '' }}</textarea>
         </div>
+        {{ ozel_alanlari_bas('islem_aciklama') }}
 
-        {% if ozel_alanlar %}
+        {% if ozel_alan_harita.get('', []) %}
         <div class="ayirici">Özel Alanlar</div>
-        {% for oa in ozel_alanlar %}
-        <div>
-            <label>{{ oa.etiket }}</label>
-            <input type="{{ 'date' if oa.tur == 'tarih' else 'text' }}" name="{{ oa.kolon_adi }}"
-                   value="{{ kayit[oa.kolon_adi] if kayit and kayit[oa.kolon_adi] is not none else '' }}">
-        </div>
+        {% for oa in ozel_alan_harita.get('', []) %}
+        {{ ozel_alan_kutu(oa) }}
         {% endfor %}
         {% endif %}
     </div>

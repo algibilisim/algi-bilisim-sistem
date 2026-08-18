@@ -9,62 +9,122 @@
 
 <div class="seri-uyari-kutu no-print" style="max-width:900px;">
     <p style="margin:0; font-size:12.5px;">
-        Burada eklediğiniz/sildiğiniz/sıraladığınız seçenekler, Arıza formundaki
-        "Tespit Edilen Arıza" ve "Yapılan İşlemler" onay kutusu listelerine hemen
-        yansır — kod değişikliği veya yeniden yayınlama (deploy) gerekmez.
-        Bir seçeneği silmek ya da adını değiştirmek, o seçenekle daha önce
-        kaydedilmiş arıza kayıtlarını etkilemez; sadece yeni kayıtlarda
-        gösterilen listeyi değiştirir.
+        Burada eklediğiniz/sildiğiniz seçenekler, Arıza formundaki "Tespit Edilen
+        Arıza" ve "Yapılan İşlemler" onay kutusu listelerine hemen yansır — kod
+        değişikliği veya yeniden yayınlama (deploy) gerekmez. Sırayı değiştirmek
+        için ⠿ simgesinden tutup mouse ile istediğiniz yere sürükleyin, bırakınca
+        otomatik kaydedilir. Bir seçeneği silmek ya da adını değiştirmek, o
+        seçenekle daha önce kaydedilmiş arıza kayıtlarını etkilemez; sadece yeni
+        kayıtlarda gösterilen listeyi değiştirir.
     </p>
 </div>
 
 {% for grup in grup_sirasi %}
 {% set bilgi = gruplar[grup] %}
 <div class="seri-uyari-kutu no-print" style="max-width:700px;">
-    <h4>{{ bilgi.baslik }}</h4>
+    <h4>{{ bilgi.baslik }} <span class="siralama-durum" data-durum-grup="{{ grup }}"></span></h4>
 
-    <table style="margin-bottom:10px;">
-        <thead>
-            <tr><th style="width:36px;">Sıra</th><th>Seçenek</th><th style="width:190px;">İşlemler</th></tr>
-        </thead>
-        <tbody>
-            {% for secenek in bilgi.secenekler %}
-            <tr>
-                <td>
-                    <div style="display:flex; flex-direction:column; gap:2px;">
-                        <form method="post" action="{{ url_for('secenek_yonetimi_tasi', secenek_id=secenek.id, yon='yukari') }}" style="margin:0;">
-                            <button type="submit" class="btn" style="padding:2px 6px; font-size:11px;" {% if loop.first %}disabled{% endif %} title="Yukarı taşı">▲</button>
-                        </form>
-                        <form method="post" action="{{ url_for('secenek_yonetimi_tasi', secenek_id=secenek.id, yon='asagi') }}" style="margin:0;">
-                            <button type="submit" class="btn" style="padding:2px 6px; font-size:11px;" {% if loop.last %}disabled{% endif %} title="Aşağı taşı">▼</button>
-                        </form>
-                    </div>
-                </td>
-                <td style="white-space:normal;">
-                    <form method="post" action="{{ url_for('secenek_yonetimi_duzenle', secenek_id=secenek.id) }}" style="display:flex; gap:6px; margin:0;">
-                        <input type="text" name="deger" value="{{ secenek.deger }}" style="flex:1; padding:5px 7px; border:1px solid #ccc; border-radius:5px; font-size:12px;">
-                        <button type="submit" class="btn" style="padding:5px 10px; font-size:12px;">Kaydet</button>
-                    </form>
-                </td>
-                <td>
-                    <form method="post" action="{{ url_for('secenek_yonetimi_sil', secenek_id=secenek.id) }}" style="margin:0;"
-                          onsubmit="return confirm('Bu seçeneği silmek istediğinize emin misiniz?');">
-                        <button type="submit" class="btn btn-kirmizi" style="padding:5px 10px; font-size:12px;">Sil</button>
-                    </form>
-                </td>
-            </tr>
-            {% else %}
-            <tr><td colspan="3" style="color:#7a7a7a;">Bu listede henüz seçenek yok.</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="alan-onizleme-liste secenek-liste" id="secenek-liste-{{ grup }}" data-grup="{{ grup }}">
+        {% for secenek in bilgi.secenekler %}
+        <div class="alan-satiri ozel-alan-satiri" data-secenek-id="{{ secenek.id }}">
+            <span class="surukle-tutamac" title="Sürükleyerek taşı">⠿</span>
+            <form method="post" action="{{ url_for('secenek_yonetimi_duzenle', secenek_id=secenek.id) }}" style="display:flex; gap:6px; margin:0; flex:1; align-items:center;">
+                <input type="text" name="deger" value="{{ secenek.deger }}" style="flex:1; padding:5px 7px; border:1px solid #ccc; border-radius:5px; font-size:12px;">
+                <button type="submit" class="btn" style="padding:5px 10px; font-size:12px;">Kaydet</button>
+            </form>
+            <form method="post" action="{{ url_for('secenek_yonetimi_sil', secenek_id=secenek.id) }}" style="margin:0;"
+                  onsubmit="return confirm('Bu seçeneği silmek istediğinize emin misiniz?');">
+                <button type="submit" class="btn btn-kirmizi">Sil</button>
+            </form>
+        </div>
+        {% else %}
+        <p style="color:#7a7a7a; font-size:12.5px; margin:4px 0;">Bu listede henüz seçenek yok.</p>
+        {% endfor %}
+    </div>
 
-    <form method="post" action="{{ url_for('secenek_yonetimi_ekle') }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+    <form method="post" action="{{ url_for('secenek_yonetimi_ekle') }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px;">
         <input type="hidden" name="grup" value="{{ grup }}">
         <input type="text" name="deger" placeholder="Yeni seçenek adı..." required style="flex:1; min-width:200px; padding:8px; border:1px solid #ccc; border-radius:6px;">
         <button type="submit" class="btn btn-yesil">+ Ekle</button>
     </form>
 </div>
 {% endfor %}
+
+<script>
+(function() {
+    function siralanabilirListeKur(liste) {
+        var aktifOge = null;
+        var grup = liste.getAttribute('data-grup');
+        var durumEtiketi = document.querySelector('.siralama-durum[data-durum-grup="' + grup + '"]');
+
+        function sonrakiOgeyiBul(pointerY) {
+            var ogeler = Array.prototype.slice.call(liste.querySelectorAll('.alan-satiri:not(.surukleniyor)'));
+            for (var i = 0; i < ogeler.length; i++) {
+                var kutu = ogeler[i].getBoundingClientRect();
+                if (pointerY < kutu.top + kutu.height / 2) {
+                    return ogeler[i];
+                }
+            }
+            return null;
+        }
+
+        function durumGoster(metin, kalici) {
+            if (!durumEtiketi) { return; }
+            durumEtiketi.textContent = metin;
+            if (!kalici) {
+                setTimeout(function() {
+                    if (durumEtiketi.textContent === metin) { durumEtiketi.textContent = ''; }
+                }, 1500);
+            }
+        }
+
+        function sirayiKaydet() {
+            var idler = Array.prototype.slice.call(liste.querySelectorAll('.alan-satiri')).map(function(o) {
+                return o.getAttribute('data-secenek-id');
+            });
+            durumGoster('Kaydediliyor...', true);
+            fetch("{{ url_for('secenek_yonetimi_sirala') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ grup: grup, sira: idler }),
+            })
+                .then(function(r) { return r.json(); })
+                .then(function() { durumGoster('Kaydedildi ✓'); })
+                .catch(function() { durumGoster('Kaydedilemedi, tekrar deneyin.'); });
+        }
+
+        liste.querySelectorAll('.surukle-tutamac').forEach(function(tutamac) {
+            tutamac.addEventListener('pointerdown', function(e) {
+                aktifOge = tutamac.closest('.alan-satiri');
+                if (!aktifOge) { return; }
+                aktifOge.classList.add('surukleniyor');
+                try { tutamac.setPointerCapture(e.pointerId); } catch (hata) {}
+                e.preventDefault();
+            });
+        });
+
+        liste.addEventListener('pointermove', function(e) {
+            if (!aktifOge) { return; }
+            var sonraki = sonrakiOgeyiBul(e.clientY);
+            if (sonraki == null) {
+                liste.appendChild(aktifOge);
+            } else if (sonraki !== aktifOge) {
+                liste.insertBefore(aktifOge, sonraki);
+            }
+        });
+
+        function birak() {
+            if (!aktifOge) { return; }
+            aktifOge.classList.remove('surukleniyor');
+            aktifOge = null;
+            sirayiKaydet();
+        }
+        liste.addEventListener('pointerup', birak);
+        liste.addEventListener('pointercancel', birak);
+    }
+
+    document.querySelectorAll('.secenek-liste').forEach(siralanabilirListeKur);
+})();
+</script>
 
 {% endblock %}
