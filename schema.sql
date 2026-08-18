@@ -36,6 +36,9 @@ ALTER TABLE abone ADD COLUMN IF NOT EXISTS montaj_personeli TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_abone_koy ON abone(koy_adi);
 CREATE INDEX IF NOT EXISTS idx_abone_sayac_no ON abone(sayac_no);
+-- Abone Listesi sayfası her açılışta s_no'ya göre sıralıyor; kayıt sayısı
+-- arttıkça bu sıralamayı hızlandırmak için.
+CREATE INDEX IF NOT EXISTS idx_abone_s_no ON abone(s_no);
 
 CREATE TABLE IF NOT EXISTS kullanici (
     id SERIAL PRIMARY KEY,
@@ -90,6 +93,9 @@ ALTER TABLE ariza ADD COLUMN IF NOT EXISTS teslim_tarihi TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_ariza_koy ON ariza(koy_adi);
 CREATE INDEX IF NOT EXISTS idx_ariza_seri_no ON ariza(seri_no);
+-- Arıza Takip sayfası her açılışta s_no'ya göre sıralıyor; kayıt sayısı
+-- arttıkça bu sıralamayı hızlandırmak için.
+CREATE INDEX IF NOT EXISTS idx_ariza_s_no ON ariza(s_no);
 
 CREATE TABLE IF NOT EXISTS ariza_tahsilat (
     id SERIAL PRIMARY KEY,

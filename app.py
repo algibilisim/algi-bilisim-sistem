@@ -11,6 +11,7 @@ from urllib.parse import quote as _url_quote, urlencode as _urlencode
 
 import psycopg2
 import psycopg2.extras
+import psycopg2.pool
 from flask import (
     Flask, render_template, request, redirect,
     url_for, session, g, flash, jsonify, Response, send_from_directory
@@ -1092,10 +1093,20 @@ def ensure_db():
 
 ensure_db()
 
+# Her sayfa isteğinde veritabanına sıfırdan yeni bir bağlantı açıp kapatmak
+# (özellikle uzak/şifreli bağlantılarda) küçük ama gerçek bir gecikme
+# ekliyordu — her tıklama, bağlantı kurma maliyetini baştan ödüyordu.
+# Bunun yerine uygulama başlarken birkaç bağlantı önceden açılıp bir havuzda
+# hazır tutulur; her istek bu havuzdan bir bağlantı ödünç alır, işi bitince
+# geri verir. Böylece bağlantı kurma maliyeti neredeyse tamamen ortadan kalkar.
+_DB_HAVUZU = psycopg2.pool.ThreadedConnectionPool(
+    1, 8, DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor
+)
+
 
 def get_db():
     if "db" not in g:
-        g.db = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+        g.db = _DB_HAVUZU.getconn()
     return g.db
 
 
@@ -1103,7 +1114,14 @@ def get_db():
 def close_db(exception=None):
     db = g.pop("db", None)
     if db is not None:
-        db.close()
+        try:
+            # Önceki istekten kalan yarım bir işlem (transaction) varsa temizle
+            # — yoksa havuzdan bu bağlantıyı bir sonraki ödünç alan istek onu
+            # miras alır ve garip/anlaşılmaz hatalara yol açabilir.
+            db.rollback()
+        except Exception:
+            pass
+        _DB_HAVUZU.putconn(db)
 
 
 def _filtre_durumu_uygula(route_adi):
