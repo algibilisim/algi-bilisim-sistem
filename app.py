@@ -340,19 +340,83 @@ DISPLAY_KOLONLARI_ALFABETIK = [(k, _DISPLAY_KOLON_HARITASI[k]) for k in _ABONE_A
 _OZEL_ALAN_TUR_PG = {"metin": "TEXT", "tarih": "TEXT", "sayi": "REAL"}
 _OZEL_ALAN_TUR_ETIKETLERI = {"metin": "Metin", "tarih": "Tarih", "sayi": "Sayı"}
 
+# "Özel Alan Ayarları" ekranındaki sürükle-bırak önizlemesinin ve abone_form.html/
+# ariza_form.html şablonlarının, formdaki SABİT (koddan gelen) alanların TAM
+# OLARAK hangi sırada göründüğünü bilmesi gerekiyor — bir özel alan, buradaki
+# iki anahtarın arasına yerleştirilebiliyor. Bu liste, ilgili şablondaki
+# <div>...<label>...<input name="..."> bloklarının GERÇEK sırasıyla birebir
+# aynı olmalı; şablonda alan sırası değişirse burası da güncellenmeli.
+ABONE_FORM_ALAN_SIRASI = [
+    ("koy_adi", "Köy Adı"), ("adi", "Adı"), ("soyadi", "Soyadı"), ("sayac_no", "Sayaç No"),
+    ("baba_adi", "Baba Adı"), ("telefon", "Telefon"), ("telefon2", "Telefon 2"),
+    ("sayac_tutari", "Sayaç Tutarı"), ("alinan_tutar", "Alınan Tutar"),
+    ("senet_sahibi_adi", "Senet Sahibi Adı"), ("senet_sahibi_soyadi", "Senet Sahibi Soyadı"),
+    ("malzeme_tutari", "Malzeme Tutarı"), ("malzeme_alinan", "Malzeme Alınan"),
+    ("montaj_tarihi", "Montaj Tarihi"), ("montaj_personeli", "Montaj Personeli"),
+    ("odeme_tarihi", "Ödeme Tarihi"), ("odeme_sekli", "Ödeme Şekli"),
+    ("odemeyi_gonderen", "Ödemeyi Gönderen"), ("odeme_gun_sozu", "Ödeme Gün Sözü"),
+    ("fatura_no", "Fatura No"), ("muhtara_odenecek", "Muhtara Ödenecek"),
+    ("muhtara_odenen", "Muhtara Ödenen"), ("aciklama", "Açıklama"),
+]
+ARIZA_FORM_ALAN_SIRASI = [
+    ("ozel_s_no", "Özel S.No"), ("seri_no", "Seri No"), ("koy_adi", "Köy Adı"),
+    ("yeni_seri_no", "Yeni Seri No"), ("adi", "Adı"), ("soyadi", "Soyadı"),
+    ("telefon", "Telefon"), ("telefon2", "Telefon 2"),
+    ("ariza_ucret", "Arıza Ücret"), ("alinan_ucret", "Alınan Ücret"),
+    ("gelis_tarihi", "Geliş Tarihi"), ("takilan_tarih", "Takılan Tarih"),
+    ("teslim_tarihi", "Teslim Edilen Tarih"), ("sayac_kredisi", "Sayaç Kredisi"),
+    ("tespit_aciklama", "Tespit Edilen Arıza - Açıklama"),
+    ("islem_aciklama", "Yapılan İşlemler - Açıklama"),
+]
+
 
 def _ozel_alanlari_getir(db, tablo):
     """Bir tablonun ('abone' ya da 'ariza') aktif özel alanlarını, gösterim
-    sırasına göre döndürür (id, kolon_adi, etiket, tur alanlarını içeren
-    sözlük listesi)."""
+    sırasına göre döndürür (id, kolon_adi, etiket, tur, sonra_gelen_alan
+    alanlarını içeren sözlük listesi)."""
     cur = db.cursor()
     cur.execute(
-        "SELECT id, kolon_adi, etiket, tur FROM ozel_alan WHERE tablo = %s AND aktif = TRUE ORDER BY sira, id",
+        "SELECT id, kolon_adi, etiket, tur, sonra_gelen_alan FROM ozel_alan "
+        "WHERE tablo = %s AND aktif = TRUE ORDER BY sira, id",
         (tablo,),
     )
     satirlar = cur.fetchall()
     cur.close()
     return satirlar
+
+
+def _ozel_alan_harita(ozel_alanlar):
+    """Özel alanları, formda hangi sabit alandan HEMEN SONRA görüneceklerine
+    göre gruplar (sonra_gelen_alan -> o alana bağlı özel alanlar listesi,
+    kendi aralarında sira/id sırasıyla). '' anahtarı, formun en sonundaki
+    "Özel Alanlar" kutusuna düşen (henüz özel olarak yerleştirilmemiş)
+    alanları tutar."""
+    harita = {}
+    for oa in ozel_alanlar:
+        anahtar = oa["sonra_gelen_alan"] or ""
+        harita.setdefault(anahtar, []).append(oa)
+    return harita
+
+
+def _form_onizleme_sirasi(sabit_alan_sirasi, ozel_alanlar):
+    """Özel Alan Ayarları sayfasındaki sürükle-bırak önizlemesi için, sabit
+    (koddan gelen) alanlarla özel alanları TEK bir listede, formda göründükleri
+    gerçek sırayla birleştirir."""
+    harita = _ozel_alan_harita(ozel_alanlar)
+    sonuc = []
+    for anahtar, etiket in sabit_alan_sirasi:
+        sonuc.append({"tip": "sabit", "anahtar": anahtar, "etiket": etiket})
+        for oa in harita.get(anahtar, []):
+            sonuc.append({
+                "tip": "ozel", "anahtar": oa["kolon_adi"], "etiket": oa["etiket"],
+                "tur": oa["tur"], "id": oa["id"],
+            })
+    for oa in harita.get("", []):
+        sonuc.append({
+            "tip": "ozel", "anahtar": oa["kolon_adi"], "etiket": oa["etiket"],
+            "tur": oa["tur"], "id": oa["id"],
+        })
+    return sonuc
 
 
 def _abone_kolon_takimi(db):
@@ -425,32 +489,38 @@ def _ozel_alan_sil(db, ozel_alan_id):
     cur.close()
 
 
-def _ozel_alan_tasi(db, ozel_alan_id, yon):
-    """Bir özel alanı kendi tablosundaki (abone/ariza) sıralamasında bir
-    yukarı/aşağı taşır — Onay Kutusu Ayarları'ndaki aynı mantık."""
+def _ozel_alan_sirala(db, tablo, sira_listesi):
+    """Özel Alan Ayarları sayfasındaki sürükle-bırak önizlemesinden gelen YENİ
+    tam sırayı (sabit alan anahtarları + özel alanların kolon_adi'leri, formda
+    göründükleri sırayla karışık) kaydeder. Liste baştan sona gezilirken en son
+    görülen SABİT alan anahtarı hatırlanır; her özel alana rastlandığında onun
+    "sonra_gelen_alan"ı o anahtar olur (henüz hiç sabit alan görülmediyse '' —
+    yani ilk sabit alandan önce bırakılmış demektir, bu da formun en sonundaki
+    "Özel Alanlar" kutusuyla aynı '' değerini kullanır; pratikte kullanıcı
+    alanları her zaman iki sabit alanın arasına bıraktığı için bu durum
+    oluşmaz). Bilinmeyen (artık geçerli olmayan) anahtarlar sessizce yok
+    sayılır — sira_listesi tamamen istemciden geldiği için güvenli tarafta
+    kalınır."""
+    if tablo not in ("abone", "ariza"):
+        raise ValueError("geçersiz tablo")
+    sabit_anahtarlar = {k for k, _ in (ABONE_FORM_ALAN_SIRASI if tablo == "abone" else ARIZA_FORM_ALAN_SIRASI)}
+    ozel_kolon_id = {oa["kolon_adi"]: oa["id"] for oa in _ozel_alanlari_getir(db, tablo)}
+
     cur = db.cursor()
-    cur.execute("SELECT id, tablo, sira FROM ozel_alan WHERE id = %s", (ozel_alan_id,))
-    mevcut = cur.fetchone()
-    if not mevcut:
-        cur.close()
-        return
-    if yon == "yukari":
+    son_sabit = ""
+    sira_sayaci = 0
+    for anahtar in sira_listesi:
+        if anahtar in sabit_anahtarlar:
+            son_sabit = anahtar
+            continue
+        if anahtar not in ozel_kolon_id:
+            continue
         cur.execute(
-            "SELECT id, sira FROM ozel_alan WHERE tablo = %s AND aktif = TRUE AND sira < %s "
-            "ORDER BY sira DESC, id DESC LIMIT 1",
-            (mevcut["tablo"], mevcut["sira"]),
+            "UPDATE ozel_alan SET sonra_gelen_alan = %s, sira = %s WHERE id = %s AND tablo = %s",
+            (son_sabit, sira_sayaci, ozel_kolon_id[anahtar], tablo),
         )
-    else:
-        cur.execute(
-            "SELECT id, sira FROM ozel_alan WHERE tablo = %s AND aktif = TRUE AND sira > %s "
-            "ORDER BY sira ASC, id ASC LIMIT 1",
-            (mevcut["tablo"], mevcut["sira"]),
-        )
-    komsu = cur.fetchone()
-    if komsu:
-        cur.execute("UPDATE ozel_alan SET sira = %s WHERE id = %s", (komsu["sira"], mevcut["id"]))
-        cur.execute("UPDATE ozel_alan SET sira = %s WHERE id = %s", (mevcut["sira"], komsu["id"]))
-        db.commit()
+        sira_sayaci += 1
+    db.commit()
     cur.close()
 
 
@@ -2447,7 +2517,7 @@ def abone_yeni():
         sonraki_s_no=_sonraki_s_no(db),
         sonraki_senet_no=_sonraki_senet_no(db),
         fotograflar=[],
-        ozel_alanlar=_ozel_alanlari_getir(db, "abone"),
+        ozel_alan_harita=_ozel_alan_harita(_ozel_alanlari_getir(db, "abone")),
     )
 
 
@@ -2479,7 +2549,7 @@ def abone_duzenle(abone_id):
     cur.close()
     return render_template(
         "abone_form.html", kayit=kayit, geri=geri, fotograflar=fotograflar,
-        ozel_alanlar=_ozel_alanlari_getir(db, "abone"),
+        ozel_alan_harita=_ozel_alan_harita(_ozel_alanlari_getir(db, "abone")),
     )
 
 
@@ -3112,39 +3182,32 @@ def secenek_yonetimi_sil(secenek_id):
     return redirect(url_for("secenek_yonetimi"))
 
 
-@app.route("/admin/secenek-yonetimi/tasi/<int:secenek_id>/<yon>", methods=["POST"])
+@app.route("/admin/secenek-yonetimi/sirala", methods=["POST"])
 @login_required
-def secenek_yonetimi_tasi(secenek_id, yon):
-    if yon not in ("yukari", "asagi"):
-        return redirect(url_for("secenek_yonetimi"))
-
+def secenek_yonetimi_sirala():
+    """Onay Kutusu Ayarları'ndaki sürükle-bırak listesi, bir seçenek
+    bırakıldığında bu uca JSON gövde ile {"grup": "...", "sira": [id, id, ...]}
+    gönderir — "sira" o grubun TÜM seçeneklerinin yeni (yukarıdan aşağıya)
+    id sırasıdır."""
+    veri = request.get_json(silent=True) or {}
+    grup = veri.get("grup", "")
+    sira_listesi = veri.get("sira", [])
+    if grup not in FORM_SECENEK_GRUPLARI or not isinstance(sira_listesi, list):
+        return jsonify({"hata": "geçersiz istek"}), 400
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT id, grup, sira FROM form_secenegi WHERE id = %s", (secenek_id,))
-    mevcut = cur.fetchone()
-    if not mevcut:
-        cur.close()
-        return redirect(url_for("secenek_yonetimi"))
-
-    if yon == "yukari":
+    for i, secenek_id in enumerate(sira_listesi):
+        try:
+            secenek_id = int(secenek_id)
+        except (TypeError, ValueError):
+            continue
         cur.execute(
-            "SELECT id, sira FROM form_secenegi WHERE grup = %s AND sira < %s "
-            "ORDER BY sira DESC, id DESC LIMIT 1",
-            (mevcut["grup"], mevcut["sira"]),
+            "UPDATE form_secenegi SET sira = %s WHERE id = %s AND grup = %s",
+            (i, secenek_id, grup),
         )
-    else:
-        cur.execute(
-            "SELECT id, sira FROM form_secenegi WHERE grup = %s AND sira > %s "
-            "ORDER BY sira ASC, id ASC LIMIT 1",
-            (mevcut["grup"], mevcut["sira"]),
-        )
-    komsu = cur.fetchone()
-    if komsu:
-        cur.execute("UPDATE form_secenegi SET sira = %s WHERE id = %s", (komsu["sira"], mevcut["id"]))
-        cur.execute("UPDATE form_secenegi SET sira = %s WHERE id = %s", (mevcut["sira"], komsu["id"]))
-        db.commit()
+    db.commit()
     cur.close()
-    return redirect(url_for("secenek_yonetimi"))
+    return jsonify({"tamam": True})
 
 
 @app.route("/admin/ozel-alan-ayarlari")
@@ -3158,8 +3221,8 @@ def ozel_alan_ayarlari():
     ariza_alanlari = _ozel_alanlari_getir(db, "ariza")
     return render_template(
         "ozel_alan_ayarlari.html",
-        abone_alanlari=abone_alanlari,
-        ariza_alanlari=ariza_alanlari,
+        abone_sirasi=_form_onizleme_sirasi(ABONE_FORM_ALAN_SIRASI, abone_alanlari),
+        ariza_sirasi=_form_onizleme_sirasi(ARIZA_FORM_ALAN_SIRASI, ariza_alanlari),
         tur_etiketleri=_OZEL_ALAN_TUR_ETIKETLERI,
     )
 
@@ -3195,14 +3258,21 @@ def ozel_alan_ayarlari_sil(ozel_alan_id):
     return redirect(url_for("ozel_alan_ayarlari"))
 
 
-@app.route("/admin/ozel-alan-ayarlari/tasi/<int:ozel_alan_id>/<yon>", methods=["POST"])
+@app.route("/admin/ozel-alan-ayarlari/sirala", methods=["POST"])
 @login_required
-def ozel_alan_ayarlari_tasi(ozel_alan_id, yon):
-    if yon not in ("yukari", "asagi"):
-        return redirect(url_for("ozel_alan_ayarlari"))
+def ozel_alan_ayarlari_sirala():
+    """Özel Alan Ayarları'ndaki sürükle-bırak önizlemesi, bir alan bırakıldığında
+    bu uca JSON gövde ile {"tablo": "abone"|"ariza", "sira": [...]} gönderir —
+    "sira" o an ekranda görünen TÜM alanların (sabit + özel, karışık) yukarıdan
+    aşağıya anahtarlarının listesidir."""
+    veri = request.get_json(silent=True) or {}
+    tablo = veri.get("tablo", "")
+    sira_listesi = veri.get("sira", [])
+    if tablo not in ("abone", "ariza") or not isinstance(sira_listesi, list):
+        return jsonify({"hata": "geçersiz istek"}), 400
     db = get_db()
-    _ozel_alan_tasi(db, ozel_alan_id, yon)
-    return redirect(url_for("ozel_alan_ayarlari"))
+    _ozel_alan_sirala(db, tablo, [str(a) for a in sira_listesi])
+    return jsonify({"tamam": True})
 
 
 @app.route("/ariza/yeni", methods=["GET", "POST"])
@@ -3222,7 +3292,7 @@ def ariza_yeni():
         ilk_montaj_tarihi="",
         bugun=datetime.now().strftime("%Y-%m-%d"),
         fotograflar=[],
-        ozel_alanlar=_ozel_alanlari_getir(db, "ariza"),
+        ozel_alan_harita=_ozel_alan_harita(_ozel_alanlari_getir(db, "ariza")),
     )
 
 
@@ -3272,7 +3342,7 @@ def ariza_duzenle(ariza_id):
         ilk_montaj_tarihi=ilk_montaj_tarihi,
         bugun=datetime.now().strftime("%Y-%m-%d"),
         fotograflar=fotograflar,
-        ozel_alanlar=_ozel_alanlari_getir(db, "ariza"),
+        ozel_alan_harita=_ozel_alan_harita(_ozel_alanlari_getir(db, "ariza")),
     )
 
 

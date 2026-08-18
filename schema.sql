@@ -213,3 +213,10 @@ CREATE TABLE IF NOT EXISTS ozel_alan (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ozel_alan_tablo ON ozel_alan(tablo, aktif, sira);
+
+-- "Özel Alan Ayarları" ekranındaki sürükle-bırak önizlemesi, bir özel alanın
+-- formda TAM OLARAK hangi sabit alandan (ör. "baba_adi") hemen SONRA
+-- göründüğünü bu sütuna kaydeder — böylece alan, formdaki iki mevcut alanın
+-- arasına yerleştirilebilir. Boş metin ('') = formun en sonundaki "Özel
+-- Alanlar" kutusu (varsayılan, yeni eklenen her alan önce buraya düşer).
+ALTER TABLE ozel_alan ADD COLUMN IF NOT EXISTS sonra_gelen_alan TEXT NOT NULL DEFAULT '';
