@@ -7,7 +7,7 @@ import math
 import base64
 from datetime import datetime
 from functools import wraps
-from urllib.parse import quote as _url_quote
+from urllib.parse import quote as _url_quote, urlencode as _urlencode
 
 import psycopg2
 import psycopg2.extras
@@ -418,7 +418,7 @@ def _abone_filtreli_kayitlari_getir(db):
                 sql += f" AND {kosul}"
                 params += param_listesi
 
-    sql += " ORDER BY s_no"
+    sql += f" ORDER BY s_no {'DESC' if _sira_yonu_al() == 'desc' else 'ASC'}"
     cur = db.cursor()
     cur.execute(sql, params)
     kayitlar_ham = cur.fetchall()
@@ -440,6 +440,28 @@ def _izgara_satir(n, sutun=4):
     if n <= 0:
         return 1
     return math.ceil(n / sutun)
+
+
+def _sira_yonu_al():
+    """Şu anki istekten (?sira=asc|desc) sıralama yönünü okur. Varsayılan 'asc'
+    (küçükten büyüğe / eskiden yeniye) — mevcut davranışla aynı, geriye dönük
+    uyumlu. Sadece 'desc' değeri özel olarak tersine sıralama yapar."""
+    return "desc" if request.args.get("sira") == "desc" else "asc"
+
+
+def _sira_toggle_qs():
+    """Şu anki tüm filtre/arama parametrelerini (çoklu seçim kutuları dahil)
+    koruyarak sadece 'sira' parametresini ters çevrilmiş haliyle döndürür.
+    Liste sayfalarındaki "S.No: Küçükten Büyüğe / Büyükten Küçüğe" bağlantısı
+    bunu kullanır."""
+    args = request.args.to_dict(flat=False)
+    yeni = "asc" if _sira_yonu_al() == "desc" else "desc"
+    args["sira"] = [yeni]
+    ciftler = []
+    for anahtar, degerler in args.items():
+        for deger in degerler:
+            ciftler.append((anahtar, deger))
+    return _urlencode(ciftler)
 
 # Arıza formundaki onay kutusu listeleri artık koddan değil, "form_secenegi"
 # tablosundan (bkz. schema.sql) okunuyor — bu sayede Ayarlar > Onay Kutusu
@@ -1368,6 +1390,30 @@ def abone_ara():
     return jsonify(sonuc)
 
 
+@app.route("/api/kolon-secenekleri")
+@login_required
+def kolon_secenekleri_api():
+    """Liste sayfalarındaki (Abone Listesi, Arıza Takip vb.) sütun filtre
+    kutuları artık sayfa ilk açıldığında TÜM sütunlar için seçenekleri
+    hesaplamıyor (bu, 30 sütunlu bir sayfada 30 ayrı sorgu demekti ve asıl
+    yavaşlığın kaynağıydı) — bunun yerine kullanıcı bir sütunun filtre
+    kutusunu AÇTIĞINDA, sadece o tek sütun için bu uç nokta üzerinden
+    (JavaScript ile) seçenekler istenir."""
+    tablo = request.args.get("tablo", "").strip()
+    anahtar = request.args.get("anahtar", "").strip()
+    if tablo == "abone":
+        bilgi_sozlugu = KOLON_BILGI
+    elif tablo == "ariza":
+        bilgi_sozlugu = ARIZA_KOLON_BILGI
+    else:
+        return jsonify({"hata": "geçersiz tablo"}), 400
+    if anahtar not in bilgi_sozlugu:
+        return jsonify({"hata": "geçersiz sütun"}), 400
+    db = get_db()
+    secenekler = _kolon_secenekleri(db, anahtar, tablo, bilgi_sozlugu)
+    return jsonify({"secenekler": secenekler})
+
+
 @app.route("/api/ariza-gecmisi")
 @login_required
 def ariza_gecmisi():
@@ -1379,7 +1425,7 @@ def ariza_gecmisi():
     db = get_db()
     cur = db.cursor()
     cur.execute(
-        "SELECT gelis_tarihi, takilan_tarih, tespit_edilen_ariza, yapilan_islemler, "
+        "SELECT id, gelis_tarihi, takilan_tarih, tespit_edilen_ariza, yapilan_islemler, "
         "ariza_ucret, alinan_ucret FROM ariza WHERE seri_no = %s ORDER BY id DESC",
         (seri_no,),
     )
@@ -1390,6 +1436,8 @@ def ariza_gecmisi():
     for s in satirlar:
         kalan = (s["ariza_ucret"] or 0) - (s["alinan_ucret"] or 0)
         kayitlar.append({
+            "id": s["id"],
+            "duzenle_url": url_for("ariza_duzenle", ariza_id=s["id"]),
             "gelis_tarihi": _gg_aa_yyyy(s["gelis_tarihi"]),
             "takilan_tarih": _gg_aa_yyyy(s["takilan_tarih"]),
             "tespit_edilen_ariza": s["tespit_edilen_ariza"] or "",
@@ -1458,7 +1506,7 @@ def abone_listesi():
                 sql += f" AND {kosul}"
                 params += param_listesi
 
-    sql += " ORDER BY s_no"
+    sql += f" ORDER BY s_no {'DESC' if _sira_yonu_al() == 'desc' else 'ASC'}"
 
     cur = db.cursor()
     cur.execute(sql, params)
@@ -1497,20 +1545,22 @@ def abone_listesi():
 
     satirlar = [_abone_satir_sozlugu(k) for k in kayitlar_ham]
 
-    deger_secenekleri = {}
-    for anahtar, _ in DISPLAY_KOLONLARI:
-        deger_secenekleri[anahtar] = _kolon_secenekleri(db, anahtar, "abone", KOLON_BILGI)
+    # Sütun filtre kutularının seçenekleri artık burada TÜM sütunlar için
+    # tek tek sorgulanmıyor (30 ayrı SELECT DISTINCT — sayfanın yavaş
+    # açılmasının asıl sebebiydi). Kullanıcı bir sütunun filtre kutusunu
+    # açtığında /api/kolon-secenekleri ile JavaScript üzerinden anlık istenir.
     cur.close()
 
     return render_template(
         "abone_list.html", satirlar=satirlar, koyler=koyler, q=q, secili_koy=koy,
         secili_alanlar=alanlar_secili, alan_listesi=alan_listesi,
         kolon_listesi=DISPLAY_KOLONLARI, deger_secili=deger_secili,
-        deger_secenekleri=deger_secenekleri, sayisal_kolonlar=SAYISAL_KOLONLAR,
+        sayisal_kolonlar=SAYISAL_KOLONLAR,
         arama_satir=_izgara_satir(len(alan_listesi)),
         arama_satir_2=_izgara_satir(len(alan_listesi), 2),
         filtreli_kayit=len(satirlar), toplam_kayit=toplam_kayit,
         odeme_hatirlatmalari=odeme_hatirlatmalari,
+        sira=_sira_yonu_al(), sira_toggle_qs=_sira_toggle_qs(),
     )
 
 
@@ -2016,13 +2066,15 @@ def koy_abone_listesi():
         except (TypeError, ValueError):
             return (s["koy_adi"], 1, s["sira_no"])
 
-    satirlar.sort(key=_siralama_anahtari)
+    sira = _sira_yonu_al()
+    satirlar.sort(key=_siralama_anahtari, reverse=(sira == "desc"))
 
     return render_template(
         "koy_abone_listesi.html", satirlar=satirlar, koyler=koyler,
         q=q, secili_koy=koy,
         filtreli_kayit=len(satirlar), toplam_kayit=toplam_kayit,
         secili_koy_toplam=secili_koy_toplam,
+        sira=sira, sira_toggle_qs=_sira_toggle_qs(),
     )
 
 
@@ -2605,7 +2657,7 @@ def _tahsilat_ciktisi_satirlar():
             if kosul:
                 sql += f" AND {kosul}"
                 params += param_listesi
-    sql += " ORDER BY s_no"
+    sql += f" ORDER BY s_no {'DESC' if _sira_yonu_al() == 'desc' else 'ASC'}"
     cur = db.cursor()
     cur.execute(sql, params)
     kayitlar_ham = cur.fetchall()
@@ -2629,10 +2681,7 @@ def tahsilat_ciktisi():
     for anahtar in goster_kolonlari:
         deger_secili[anahtar] = request.args.getlist(f"deger_{anahtar}")
 
-    deger_secenekleri = {}
-    for anahtar in goster_kolonlari:
-        deger_secenekleri[anahtar] = _kolon_secenekleri(db, anahtar, "abone", KOLON_BILGI)
-
+    # Sütun filtre seçenekleri artık tembel yükleniyor, bkz. abone_listesi().
     cur = db.cursor()
     cur.execute("SELECT COUNT(*) AS c FROM abone")
     toplam_kayit = cur.fetchone()["c"]
@@ -2644,11 +2693,12 @@ def tahsilat_ciktisi():
         kolon_listesi=DISPLAY_KOLONLARI, goster_kolonlari=goster_kolonlari,
         kolon_secim_listesi=DISPLAY_KOLONLARI_ALFABETIK,
         secili_kolonlar=kolonlar_secili,
-        deger_secili=deger_secili, deger_secenekleri=deger_secenekleri,
+        deger_secili=deger_secili,
         sayisal_kolonlar=SAYISAL_KOLONLAR,
         kolon_satir=_izgara_satir(len(DISPLAY_KOLONLARI_ALFABETIK)),
         kolon_satir_2=_izgara_satir(len(DISPLAY_KOLONLARI_ALFABETIK), 2),
         filtreli_kayit=len(satirlar), toplam_kayit=toplam_kayit,
+        sira=_sira_yonu_al(), sira_toggle_qs=_sira_toggle_qs(),
     )
 
 
@@ -3084,7 +3134,7 @@ def ariza_listesi():
             if kosul:
                 sql += f" AND {kosul}"
                 params += param_listesi
-    sql += " ORDER BY s_no"
+    sql += f" ORDER BY s_no {'DESC' if _sira_yonu_al() == 'desc' else 'ASC'}"
 
     cur = db.cursor()
     cur.execute(sql, params)
@@ -3099,15 +3149,13 @@ def ariza_listesi():
     tahsil_edilen_ucret = sum(float(k["alinan_ucret"] or 0) for k in kayitlar_ham)
     kalan_bakiye = toplam_ariza_ucreti - tahsil_edilen_ucret
 
-    deger_secenekleri = {}
-    for anahtar, _ in ARIZA_DISPLAY_KOLONLARI:
-        deger_secenekleri[anahtar] = _kolon_secenekleri(db, anahtar, "ariza", ARIZA_KOLON_BILGI)
+    # Sütun filtre seçenekleri artık tembel yükleniyor, bkz. abone_listesi().
 
     return render_template(
         "ariza_listesi.html", satirlar=satirlar,
         kolon_listesi=ARIZA_DISPLAY_KOLONLARI,
         q=q, secili_alanlar=alanlar_secili, alan_listesi=alan_listesi,
-        deger_secili=deger_secili, deger_secenekleri=deger_secenekleri,
+        deger_secili=deger_secili,
         sayisal_kolonlar=ARIZA_SAYISAL_KOLONLAR,
         arama_satir=_izgara_satir(len(alan_listesi)),
         arama_satir_2=_izgara_satir(len(alan_listesi), 2),
@@ -3115,6 +3163,7 @@ def ariza_listesi():
         toplam_ariza_ucreti=toplam_ariza_ucreti,
         tahsil_edilen_ucret=tahsil_edilen_ucret,
         kalan_bakiye=kalan_bakiye,
+        sira=_sira_yonu_al(), sira_toggle_qs=_sira_toggle_qs(),
     )
 
 
@@ -3131,7 +3180,7 @@ def _ariza_ciktisi_satirlar():
             if kosul:
                 sql += f" AND {kosul}"
                 params += param_listesi
-    sql += " ORDER BY s_no"
+    sql += f" ORDER BY s_no {'DESC' if _sira_yonu_al() == 'desc' else 'ASC'}"
     cur = db.cursor()
     cur.execute(sql, params)
     kayitlar_ham = cur.fetchall()
@@ -3155,10 +3204,7 @@ def ariza_ciktisi():
     for anahtar in goster_kolonlari:
         deger_secili[anahtar] = request.args.getlist(f"deger_{anahtar}")
 
-    deger_secenekleri = {}
-    for anahtar in goster_kolonlari:
-        deger_secenekleri[anahtar] = _kolon_secenekleri(db, anahtar, "ariza", ARIZA_KOLON_BILGI)
-
+    # Sütun filtre seçenekleri artık tembel yükleniyor, bkz. abone_listesi().
     cur = db.cursor()
     cur.execute("SELECT COUNT(*) AS c FROM ariza")
     toplam_kayit = cur.fetchone()["c"]
@@ -3170,11 +3216,12 @@ def ariza_ciktisi():
         kolon_listesi=ARIZA_DISPLAY_KOLONLARI, goster_kolonlari=goster_kolonlari,
         kolon_secim_listesi=ARIZA_DISPLAY_KOLONLARI_ALFABETIK,
         secili_kolonlar=kolonlar_secili,
-        deger_secili=deger_secili, deger_secenekleri=deger_secenekleri,
+        deger_secili=deger_secili,
         sayisal_kolonlar=ARIZA_SAYISAL_KOLONLAR,
         kolon_satir=_izgara_satir(len(ARIZA_DISPLAY_KOLONLARI_ALFABETIK)),
         kolon_satir_2=_izgara_satir(len(ARIZA_DISPLAY_KOLONLARI_ALFABETIK), 2),
         filtreli_kayit=len(satirlar), toplam_kayit=toplam_kayit,
+        sira=_sira_yonu_al(), sira_toggle_qs=_sira_toggle_qs(),
     )
 
 
