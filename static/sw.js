@@ -3,17 +3,24 @@
 // Amaç: uygulamanın tarayıcı tarafından "kurulabilir" (installable) PWA
 // olarak tanınması. Sayfalar (giriş gerektiren, sürekli değişen veriler)
 // KASITLI OLARAK önbelleğe alınmıyor — bayat/yanlış veri gösterme riskini
-// önlemek için. Statik dosyalar (ikonlar, style.css) "network-first"
-// (önce ağdan, olmazsa önbellekten) stratejisiyle sunulur — bu sayede
-// yeni bir güncelleme yayınlandığında (style.css, ikonlar vb. değiştiğinde)
-// kullanıcılar eski/bayat sürümü görmeye devam etmez; internet yokken de
-// (offline) en son önbelleğe alınmış sürüm gösterilir.
+// önlemek için. Statik dosyalar (ikonlar, style.css) "stale-while-revalidate"
+// (önce önbellekten ANINDA göster, aynı anda arka planda ağdan güncelini
+// çekip bir sonraki ziyaret için önbelleğe yaz) stratejisiyle sunulur.
+//
+// ÖNCEKİ SÜRÜM "network-first" (önce ağ, olmazsa önbellek) kullanıyordu —
+// bu, her sayfa geçişinde CSS/ikon gibi dosyaların ağdan yeniden alınmasını
+// gerektiriyordu; ağda çok kısa bir aksama (anlık WiFi kesintisi, tam bir
+// yeni dağıtımın yayına alındığı an gibi) olduğunda ve dosya önbellekte de
+// yoksa istek tamamen başarısız oluyor, sayfa CSS'siz/"çıplak" görünüyordu.
+// Yeni strateji bu riski ortadan kaldırıyor: dosya önbellekteyse sayfa HİÇBİR
+// ZAMAN ağa bağımlı kalmadan anında düzgün görünür; güncel sürüm en son bir
+// önceki ziyarette zaten arka planda alınmış olur.
 //
 // ÖNEMLİ: CACHE_ADI ileride başka bir statik dosya değişikliği yapılırsa
 // (ör. yeni bir ikon, yeni bir CSS değişikliği) yine artırılmalı — bu,
 // eski tarayıcılardaki önbellek girdilerinin activate aşamasında temizlenip
 // yeni sürümün baştan indirilmesini garanti eder.
-const CACHE_ADI = "algi-statik-v2";
+const CACHE_ADI = "algi-statik-v3";
 const ONBELLEKLENECEKLER = [
   "/static/style.css",
   "/static/manifest.json",
@@ -54,16 +61,27 @@ self.addEventListener("fetch", (event) => {
   }
 
   event.respondWith(
-    fetch(istek)
-      .then((agYaniti) => {
-        const kopya = agYaniti.clone();
-        caches.open(CACHE_ADI).then((cache) => cache.put(istek, kopya));
-        return agYaniti;
+    caches.open(CACHE_ADI).then((cache) =>
+      cache.match(istek).then((onbellekYaniti) => {
+        // Ağdan güncel sürümü çekip önbelleği güncelleyen istek — bu HER
+        // ZAMAN başlatılır (bir sonraki ziyarette güncel dosya hazır olsun
+        // diye), ama sayfanın şu anki yüklemesini bu isteğin bitmesi
+        // BEKLETMEZ (önbellekte bir sürüm varsa).
+        const agdanGuncelle = fetch(istek)
+          .then((agYaniti) => {
+            if (agYaniti && agYaniti.ok) {
+              cache.put(istek, agYaniti.clone());
+            }
+            return agYaniti;
+          })
+          .catch(() => null);
+
+        // Önbellekte bir sürüm varsa ANINDA onu döndür (sayfa hiçbir zaman
+        // ağa/ağ hızına bağımlı kalmaz, kısa bir aksamada bile CSS'siz
+        // görünmez). Önbellekte hiç yoksa (ör. ilk ziyaret) ağ isteğinin
+        // bitmesini bekle.
+        return onbellekYaniti || agdanGuncelle;
       })
-      .catch(() => {
-        // Ağ isteği başarısız oldu (ör. internet yok) — elimizdeki en son
-        // önbelleklenmiş sürümü göster, o da yoksa hata olduğu gibi geçsin.
-        return caches.match(istek);
-      })
+    )
   );
 });
