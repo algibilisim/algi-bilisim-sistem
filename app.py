@@ -658,6 +658,80 @@ def _sira_toggle_qs():
             ciftler.append((anahtar, deger))
     return _urlencode(ciftler)
 
+
+# Büyük listelerin (Abone Listesi, Arıza Takip, Tahsilat Çıktısı, Arıza Takip
+# Çıktısı, Köy Abone Listeleri) tek seferde binlerce kaydı tek sayfada
+# göndermesi, sayfaların çok ağır/yavaş açılmasına sebep oluyordu (ölçümlerle
+# doğrulandı). Bu sayfalar artık burada tanımlı sabit boyutta ("sayfa" başına
+# kayıt) parçalara bölünüp gösteriliyor; arama/filtreler ve toplamlar yine TÜM
+# eşleşen kayıtlar üzerinden hesaplanıyor, sadece EKRANA BASILAN satır sayısı
+# sınırlanıyor. Excel/CSV dışa aktarma bundan etkilenmiyor, o hep tam veriyi
+# içerir.
+SAYFA_BOYUTU = 100
+
+
+def _sayfa_no_al():
+    """Şu anki istekten (?sayfa=N) sayfa numarasını okur. Geçersiz/eksikse 1
+    döner; asla 1'den küçük olmaz (üst sınır, çağıran yerde toplam sayfa
+    sayısına göre ayrıca sınırlanır)."""
+    try:
+        sayfa = int(request.args.get("sayfa", "1"))
+    except (TypeError, ValueError):
+        sayfa = 1
+    return max(1, sayfa)
+
+
+def _sayfalama_qs(sayfa):
+    """Şu anki tüm filtre/arama/sıralama parametrelerini koruyarak sadece
+    'sayfa' parametresini verilen değere ayarlanmış haliyle döndürür.
+    Sayfalama bağlantıları (İlk/Önceki/Sonraki/Son, sayfa numaraları) bunu
+    kullanır."""
+    args = request.args.to_dict(flat=False)
+    args["sayfa"] = [str(sayfa)]
+    ciftler = []
+    for anahtar, degerler in args.items():
+        for deger in degerler:
+            ciftler.append((anahtar, deger))
+    return _urlencode(ciftler)
+
+
+def _sayfala(satirlar):
+    """Zaten filtrelenip sıralanmış TAM satır listesini alır; şu anki istekten
+    okunan sayfa numarasına göre sadece o sayfaya denk gelen dilimi döndürür.
+    Dönen değer: (o_sayfanin_satirlari, toplam_bulunan, sayfa, toplam_sayfa).
+    toplam_bulunan HER ZAMAN sayfalama öncesi TÜM eşleşen kayıt sayısıdır —
+    "FİLTRELİ KAYIT" gibi toplamlar hep bunu kullanmalı, dilimlenmiş listenin
+    uzunluğunu değil.
+
+    ?tumu=1 parametresi sayfalamayı tamamen atlar — Tahsilat Çıktısı / Arıza
+    Takip Çıktısı gibi "Yazdır" butonu olan sayfalarda, filtrelenmiş TÜM
+    kayıtları tek seferde yazdırabilmek için gerekli (aksi halde sadece o an
+    ekranda görünen sayfa yazdırılırdı)."""
+    toplam_bulunan = len(satirlar)
+    if request.args.get("tumu") == "1":
+        return satirlar, toplam_bulunan, 1, 1
+    toplam_sayfa = max(1, math.ceil(toplam_bulunan / SAYFA_BOYUTU))
+    sayfa = min(_sayfa_no_al(), toplam_sayfa)
+    baslangic = (sayfa - 1) * SAYFA_BOYUTU
+    return satirlar[baslangic:baslangic + SAYFA_BOYUTU], toplam_bulunan, sayfa, toplam_sayfa
+
+
+def _tumunu_goster_qs():
+    """Şu anki tüm filtre/arama parametrelerini koruyarak 'tumu=1' ekler (ve
+    anlamsız kalacağı için 'sayfa' parametresini kaldırır). Tahsilat Çıktısı /
+    Arıza Takip Çıktısı gibi "Yazdır" butonu olan sayfalardaki "Tümünü Göster
+    (Yazdır İçin)" bağlantısı bunu kullanır — aksi halde yazdırma sadece o an
+    ekranda görünen tek sayfayı kapsardı."""
+    args = request.args.to_dict(flat=False)
+    args.pop("sayfa", None)
+    args["tumu"] = ["1"]
+    ciftler = []
+    for anahtar, degerler in args.items():
+        for deger in degerler:
+            ciftler.append((anahtar, deger))
+    return _urlencode(ciftler)
+
+
 # Arıza formundaki onay kutusu listeleri artık koddan değil, "form_secenegi"
 # tablosundan (bkz. schema.sql) okunuyor — bu sayede Ayarlar > Onay Kutusu
 # Ayarları ekranından, koda dokunmadan yeni seçenek eklenip çıkarılabiliyor.
@@ -1813,6 +1887,12 @@ def abone_listesi():
     # açtığında /api/kolon-secenekleri ile JavaScript üzerinden anlık istenir.
     cur.close()
 
+    # Sayfalama: ekrana basılan satır sayısı sınırlanıyor (bkz. _sayfala
+    # tanımı) — arama/filtre sonucundaki TÜM kayıt sayısı filtreli_kayit'te
+    # korunuyor, sadece görüntülenen satırlar bir sayfaya (SAYFA_BOYUTU)
+    # bölünüyor.
+    satirlar, filtreli_kayit, sayfa, toplam_sayfa = _sayfala(satirlar)
+
     return render_template(
         "abone_list.html", satirlar=satirlar, koyler=koyler, q=q, secili_koy=koy,
         secili_alanlar=alanlar_secili, alan_listesi=alan_listesi,
@@ -1820,9 +1900,10 @@ def abone_listesi():
         sayisal_kolonlar=sayisal_kolonlar,
         arama_satir=_izgara_satir(len(alan_listesi)),
         arama_satir_2=_izgara_satir(len(alan_listesi), 2),
-        filtreli_kayit=len(satirlar), toplam_kayit=toplam_kayit,
+        filtreli_kayit=filtreli_kayit, toplam_kayit=toplam_kayit,
         odeme_hatirlatmalari=odeme_hatirlatmalari,
         sira=_sira_yonu_al(), sira_toggle_qs=_sira_toggle_qs(),
+        sayfa=sayfa, toplam_sayfa=toplam_sayfa, sayfalama_qs=_sayfalama_qs,
     )
 
 
@@ -2331,12 +2412,15 @@ def koy_abone_listesi():
     sira = _sira_yonu_al()
     satirlar.sort(key=_siralama_anahtari, reverse=(sira == "desc"))
 
+    satirlar, filtreli_kayit, sayfa, toplam_sayfa = _sayfala(satirlar)
+
     return render_template(
         "koy_abone_listesi.html", satirlar=satirlar, koyler=koyler,
         q=q, secili_koy=koy,
-        filtreli_kayit=len(satirlar), toplam_kayit=toplam_kayit,
+        filtreli_kayit=filtreli_kayit, toplam_kayit=toplam_kayit,
         secili_koy_toplam=secili_koy_toplam,
         sira=sira, sira_toggle_qs=_sira_toggle_qs(),
+        sayfa=sayfa, toplam_sayfa=toplam_sayfa, sayfalama_qs=_sayfalama_qs,
     )
 
 
@@ -2987,6 +3071,10 @@ def tahsilat_ciktisi():
     toplam_kayit = cur.fetchone()["c"]
     cur.close()
 
+    # Excel çıktısı (tahsilat_ciktisi_excel) TÜM satırları kullanmaya devam
+    # ediyor — sadece bu HTML görünümü sayfalanıyor.
+    satirlar, filtreli_kayit, sayfa, toplam_sayfa = _sayfala(satirlar)
+
     return render_template(
         "tahsilat_ciktisi.html",
         satirlar=satirlar,
@@ -2997,8 +3085,10 @@ def tahsilat_ciktisi():
         sayisal_kolonlar=sayisal_kolonlar,
         kolon_satir=_izgara_satir(len(kolon_secim_listesi)),
         kolon_satir_2=_izgara_satir(len(kolon_secim_listesi), 2),
-        filtreli_kayit=len(satirlar), toplam_kayit=toplam_kayit,
+        filtreli_kayit=filtreli_kayit, toplam_kayit=toplam_kayit,
         sira=_sira_yonu_al(), sira_toggle_qs=_sira_toggle_qs(),
+        sayfa=sayfa, toplam_sayfa=toplam_sayfa, sayfalama_qs=_sayfalama_qs,
+        tumunu_goster_qs=_tumunu_goster_qs(),
     )
 
 
@@ -3512,11 +3602,16 @@ def ariza_listesi():
 
     satirlar = [_ariza_satir_sozlugu(k, ozel_alanlar) for k in kayitlar_ham]
 
+    # NOT: bu toplamlar (ücret vb.) her zaman TÜM filtrelenmiş kayıtlar
+    # üzerinden hesaplanır — aşağıdaki sayfalama sadece EKRANA basılan satır
+    # sayısını sınırlar, bu toplamları etkilemez.
     toplam_ariza_ucreti = sum(float(k["ariza_ucret"] or 0) for k in kayitlar_ham)
     tahsil_edilen_ucret = sum(float(k["alinan_ucret"] or 0) for k in kayitlar_ham)
     kalan_bakiye = toplam_ariza_ucreti - tahsil_edilen_ucret
 
     # Sütun filtre seçenekleri artık tembel yükleniyor, bkz. abone_listesi().
+
+    satirlar, filtreli_kayit, sayfa, toplam_sayfa = _sayfala(satirlar)
 
     return render_template(
         "ariza_listesi.html", satirlar=satirlar,
@@ -3526,11 +3621,12 @@ def ariza_listesi():
         sayisal_kolonlar=sayisal_kolonlar,
         arama_satir=_izgara_satir(len(alan_listesi)),
         arama_satir_2=_izgara_satir(len(alan_listesi), 2),
-        filtreli_kayit=len(satirlar), toplam_kayit=toplam_kayit,
+        filtreli_kayit=filtreli_kayit, toplam_kayit=toplam_kayit,
         toplam_ariza_ucreti=toplam_ariza_ucreti,
         tahsil_edilen_ucret=tahsil_edilen_ucret,
         kalan_bakiye=kalan_bakiye,
         sira=_sira_yonu_al(), sira_toggle_qs=_sira_toggle_qs(),
+        sayfa=sayfa, toplam_sayfa=toplam_sayfa, sayfalama_qs=_sayfalama_qs,
     )
 
 
@@ -3583,6 +3679,10 @@ def ariza_ciktisi():
     toplam_kayit = cur.fetchone()["c"]
     cur.close()
 
+    # Excel çıktısı (ariza_ciktisi_excel) TÜM satırları kullanmaya devam
+    # ediyor — sadece bu HTML görünümü sayfalanıyor.
+    satirlar, filtreli_kayit, sayfa, toplam_sayfa = _sayfala(satirlar)
+
     return render_template(
         "ariza_ciktisi.html",
         satirlar=satirlar,
@@ -3593,8 +3693,10 @@ def ariza_ciktisi():
         sayisal_kolonlar=sayisal_kolonlar,
         kolon_satir=_izgara_satir(len(kolon_secim_listesi)),
         kolon_satir_2=_izgara_satir(len(kolon_secim_listesi), 2),
-        filtreli_kayit=len(satirlar), toplam_kayit=toplam_kayit,
+        filtreli_kayit=filtreli_kayit, toplam_kayit=toplam_kayit,
         sira=_sira_yonu_al(), sira_toggle_qs=_sira_toggle_qs(),
+        sayfa=sayfa, toplam_sayfa=toplam_sayfa, sayfalama_qs=_sayfalama_qs,
+        tumunu_goster_qs=_tumunu_goster_qs(),
     )
 
 
