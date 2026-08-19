@@ -1,0 +1,22 @@
+{# Ortak sayfalama (pagination) kontrolü — Abone Listesi, Arıza Takip,
+   Tahsilat Çıktısı, Arıza Takip Çıktısı ve Köy Abone Listeleri sayfalarında
+   kullanılır. Kullanım: {% import "_sayfalama.html" as sayfalama_araci %}
+   sonra {{ sayfalama_araci.goster(sayfa, toplam_sayfa, sayfalama_qs) }} #}
+{% macro goster(sayfa, toplam_sayfa, sayfalama_qs, tumunu_goster_qs=none) %}
+{% if toplam_sayfa > 1 %}
+<div class="sayfalama no-print">
+    {% if sayfa > 1 %}
+    <a class="btn" href="?{{ sayfalama_qs(1) }}">« İlk</a>
+    <a class="btn" href="?{{ sayfalama_qs(sayfa - 1) }}">‹ Önceki</a>
+    {% endif %}
+    <span class="sayfalama-durum">Sayfa {{ sayfa }} / {{ toplam_sayfa }}</span>
+    {% if sayfa < toplam_sayfa %}
+    <a class="btn" href="?{{ sayfalama_qs(sayfa + 1) }}">Sonraki ›</a>
+    <a class="btn" href="?{{ sayfalama_qs(toplam_sayfa) }}">Son »</a>
+    {% endif %}
+    {% if tumunu_goster_qs %}
+    <a class="btn" href="?{{ tumunu_goster_qs }}" title="Tüm kayıtları tek sayfada göster (yazdırmadan önce kullanın)">Tümünü Göster (Yazdır İçin)</a>
+    {% endif %}
+</div>
+{% endif %}
+{% endmacro %}

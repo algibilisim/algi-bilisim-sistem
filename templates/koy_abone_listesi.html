@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_sayfalama.html" as sayfalama_araci %}
 {% block title %}Köy Abone Listeleri - ALGI BİLİŞİM{% endblock %}
 {% block content %}
 
@@ -40,6 +41,8 @@
     <button type="submit" class="btn btn-kirmizi">"{{ secili_koy }}" Köyünün Tüm Kayıtlarını Sil ({{ secili_koy_toplam }})</button>
 </form>
 {% endif %}
+
+{{ sayfalama_araci.goster(sayfa, toplam_sayfa, sayfalama_qs) }}
 
 <form method="get" id="koy-abone-tablo-form">
 <input type="hidden" name="q" value="{{ q }}">
@@ -85,4 +88,6 @@
 </table>
 </div>
 </form>
+
+{{ sayfalama_araci.goster(sayfa, toplam_sayfa, sayfalama_qs) }}
 {% endblock %}

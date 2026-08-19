@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_sayfalama.html" as sayfalama_araci %}
 {% block title %}Arıza Takip - ALGI BİLİŞİM{% endblock %}
 {% block content %}
 
@@ -49,6 +50,8 @@
     <button type="button" class="btn" onclick="filtreTemizle('sutun')">Sütun Filtrelerini Temizle</button>
     <button type="button" class="btn" onclick="filtreTemizle('tumu')">Tüm Filtreleri Temizle</button>
 </div>
+
+{{ sayfalama_araci.goster(sayfa, toplam_sayfa, sayfalama_qs) }}
 
 <form method="get" id="kolon-filtre-form">
     <input type="hidden" name="q" value="{{ q }}">
@@ -110,4 +113,6 @@
     </table>
     </div>
 </form>
+
+{{ sayfalama_araci.goster(sayfa, toplam_sayfa, sayfalama_qs) }}
 {% endblock %}

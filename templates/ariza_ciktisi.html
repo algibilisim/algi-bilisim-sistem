@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_sayfalama.html" as sayfalama_araci %}
 {% block title %}Arıza Takip Çıktısı - ALGI BİLİŞİM{% endblock %}
 {% block content %}
 
@@ -16,6 +17,8 @@
         <button type="button" class="btn btn-yesil" onclick="window.print()">Yazdır</button>
     </div>
 </div>
+
+{{ sayfalama_araci.goster(sayfa, toplam_sayfa, sayfalama_qs, tumunu_goster_qs) }}
 
 <form method="get">
     <div class="no-print onay-kutu-grid" style="--satir-sayisi: {{ kolon_satir }}; --satir-sayisi-2: {{ kolon_satir_2 }};">
@@ -87,4 +90,6 @@
     </table>
     </div>
 </form>
+
+{{ sayfalama_araci.goster(sayfa, toplam_sayfa, sayfalama_qs, tumunu_goster_qs) }}
 {% endblock %}
