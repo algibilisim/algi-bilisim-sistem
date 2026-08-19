@@ -17,6 +17,7 @@
 </div>
 
 <form method="post" enctype="multipart/form-data" class="abone-form" style="max-width:520px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="form-grid">
         <div class="tam-genislik">
             <label>Köy Adı *</label>

@@ -22,10 +22,12 @@
         {% endfor %}
     </div>
     <form method="post" action="{{ url_for('montaj_formu_tasarim_yeni') }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="text" name="ad" placeholder="Yeni tasarımın adı (ör. TEKSAN)" required style="padding:5px 7px; border:1px solid #ccc; border-radius:6px; min-width:220px;">
         <button type="submit" class="btn btn-yesil">+ Yeni Tasarım Ekle</button>
     </form>
     <form method="post" action="{{ url_for('montaj_formu_tasarim_yeniden_adlandir') }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="sablon_id" value="{{ sablon.id }}">
         <input type="text" name="ad" placeholder="Bu tasarımın yeni adı" value="{{ sablon.ad }}" required style="padding:5px 7px; border:1px solid #ccc; border-radius:6px; min-width:220px;">
         <button type="submit" class="btn">Adını Değiştir</button>
@@ -33,6 +35,7 @@
     {% if sablonlar|length > 1 %}
     <form method="post" action="{{ url_for('montaj_formu_tasarim_sil') }}"
           onsubmit="return confirm('\'' + {{ sablon.ad|tojson }} + '\' adlı tasarımı silmek istediğinize emin misiniz? Bu işlem geri alınamaz.');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="sablon_id" value="{{ sablon.id }}">
         <button type="submit" class="btn btn-kirmizi">Bu Tasarımı Sil</button>
     </form>
@@ -74,6 +77,7 @@
         kontrol edip beğenmezseniz Word dosyasını bize gönderip elle inceletebilirsiniz.
     </p>
     <form method="post" action="{{ url_for('montaj_formu_tasarim_word_yukle') }}" enctype="multipart/form-data" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="sablon_id" value="{{ sablon.id }}">
         <input type="file" name="sablon_word" accept=".docx" required>
         <button type="submit" class="btn btn-yesil">Word Belgesini Yükle</button>
@@ -88,6 +92,7 @@
         gerek yok.
     </p>
     <form method="post" action="{{ url_for('montaj_formu_tasarim_dosya_yukle') }}" enctype="multipart/form-data" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="sablon_id" value="{{ sablon.id }}">
         <input type="file" name="sablon_dosyasi" accept=".html,.htm" required>
         <button type="submit" class="btn btn-yesil">Dosyayı Yükle</button>
@@ -95,6 +100,7 @@
 </div>
 
 <form method="post" action="{{ url_for('montaj_formu_tasarim') }}" class="no-print" style="max-width:900px; margin-top:16px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="sablon_id" value="{{ sablon.id }}">
     <div class="ayirici">Tasarımı Kutu İçinde Görüntüle / Düzenle (isteğe bağlı)</div>
     <textarea name="icerik" rows="26" style="width:100%; font-family:monospace; font-size:12.5px; padding:10px; border:1px solid #ccc; border-radius:6px;">{{ icerik }}</textarea>
@@ -105,6 +111,7 @@
 
 <form method="post" action="{{ url_for('montaj_formu_tasarim_sifirla') }}" class="no-print" style="max-width:900px; margin-top:8px;"
       onsubmit="return confirm('\'' + {{ sablon.ad|tojson }} + '\' tasarımını programın güncel varsayılan tasarımına sıfırlamak istediğinize emin misiniz? Kaydettiğiniz özel tasarım kaybolacaktır.');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="sablon_id" value="{{ sablon.id }}">
     <button type="submit" class="btn">Varsayılana Döndür</button>
 </form>

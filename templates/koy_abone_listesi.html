@@ -37,6 +37,7 @@
 {% if secili_koy %}
 <form method="post" action="{{ url_for('koy_abone_koy_sil') }}" class="no-print" style="margin:8px 0;"
       onsubmit="return confirm('&quot;{{ secili_koy }}&quot; köyüne ait TÜM kayıtları ({{ secili_koy_toplam }} kayıt) silmek istediğinize emin misiniz? Bu işlem geri alınamaz.');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="koy_adi" value="{{ secili_koy }}">
     <button type="submit" class="btn btn-kirmizi">"{{ secili_koy }}" Köyünün Tüm Kayıtlarını Sil ({{ secili_koy_toplam }})</button>
 </form>
@@ -45,6 +46,7 @@
 {{ sayfalama_araci.goster(sayfa, toplam_sayfa, sayfalama_qs) }}
 
 <form method="get" id="koy-abone-tablo-form">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <input type="hidden" name="q" value="{{ q }}">
 <input type="hidden" name="koy" value="{{ secili_koy }}">
 <div class="tablo-kaydirici">

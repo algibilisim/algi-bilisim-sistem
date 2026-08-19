@@ -33,6 +33,7 @@
             <span class="alan-tur-etiket">{{ tur_etiketleri.get(oge.tur, oge.tur) }}</span>
             <form method="post" action="{{ url_for('ozel_alan_ayarlari_sil', ozel_alan_id=oge.id) }}" class="alan-sil-form"
                   onsubmit="return confirm('Bu alanı kaldırmak istediğinize emin misiniz? (Daha önce girilmiş veriler kaybolmaz.)');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-kirmizi">Kaldır</button>
             </form>
         </div>
@@ -46,6 +47,7 @@
     </div>
 
     <form method="post" action="{{ url_for('ozel_alan_ayarlari_ekle') }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="tablo" value="{{ tablo }}">
         <input type="text" name="etiket" placeholder="Yeni alan adı (ör. Montaj Tarihi)..." required style="flex:1; min-width:200px; padding:8px; border:1px solid #ccc; border-radius:6px;">
         <select name="tur" style="padding:8px; border:1px solid #ccc; border-radius:6px;">
@@ -93,7 +95,7 @@
             durumGoster('Kaydediliyor...', true);
             fetch("{{ url_for('ozel_alan_ayarlari_sirala') }}", {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': {{ csrf_token()|tojson }} },
                 body: JSON.stringify({ tablo: tablo, sira: anahtarlar }),
             })
                 .then(function(r) { return r.json(); })

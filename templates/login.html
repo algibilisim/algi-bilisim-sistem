@@ -5,6 +5,7 @@
     <h1>ALGI BİLİŞİM</h1>
     <p class="alt-baslik">Malzeme Alacak Takip Sistemi</p>
     <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label>Kullanıcı Adı</label>
         <input type="text" name="kullanici_adi" autocomplete="username" required autofocus>
 

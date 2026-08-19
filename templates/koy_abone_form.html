@@ -5,6 +5,7 @@
 <h2>{{ 'Köy Abone Kaydı Düzenle' if kayit else 'Yeni Köy Abone Kaydı' }}</h2>
 
 <form method="post" class="abone-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="form-grid">
         <div>
             <label>Köy Adı *</label>

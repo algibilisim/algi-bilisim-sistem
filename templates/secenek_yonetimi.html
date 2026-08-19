@@ -29,11 +29,13 @@
         <div class="alan-satiri ozel-alan-satiri" data-secenek-id="{{ secenek.id }}">
             <span class="surukle-tutamac" title="Sürükleyerek taşı">⠿</span>
             <form method="post" action="{{ url_for('secenek_yonetimi_duzenle', secenek_id=secenek.id) }}" style="display:flex; gap:6px; margin:0; flex:1; align-items:center;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="text" name="deger" value="{{ secenek.deger }}" style="flex:1; padding:5px 7px; border:1px solid #ccc; border-radius:5px; font-size:12px;">
                 <button type="submit" class="btn" style="padding:5px 10px; font-size:12px;">Kaydet</button>
             </form>
             <form method="post" action="{{ url_for('secenek_yonetimi_sil', secenek_id=secenek.id) }}" style="margin:0;"
                   onsubmit="return confirm('Bu seçeneği silmek istediğinize emin misiniz?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-kirmizi">Sil</button>
             </form>
         </div>
@@ -43,6 +45,7 @@
     </div>
 
     <form method="post" action="{{ url_for('secenek_yonetimi_ekle') }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="grup" value="{{ grup }}">
         <input type="text" name="deger" placeholder="Yeni seçenek adı..." required style="flex:1; min-width:200px; padding:8px; border:1px solid #ccc; border-radius:6px;">
         <button type="submit" class="btn btn-yesil">+ Ekle</button>
@@ -85,7 +88,7 @@
             durumGoster('Kaydediliyor...', true);
             fetch("{{ url_for('secenek_yonetimi_sirala') }}", {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': {{ csrf_token()|tojson }} },
                 body: JSON.stringify({ grup: grup, sira: idler }),
             })
                 .then(function(r) { return r.json(); })

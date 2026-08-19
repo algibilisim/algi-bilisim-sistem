@@ -17,6 +17,7 @@
 </div>
 
 <form method="post" class="abone-form" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="form-kaydirici">
     <div class="form-grid">
         <div>

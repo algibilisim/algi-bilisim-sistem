@@ -16,6 +16,7 @@
     </p>
 
     <form method="post" style="display:flex; flex-direction:column; gap:10px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label>
             Kullanıcı Adı
             <input type="text" name="yeni_kullanici_adi" value="{{ kullanici.kullanici_adi if kullanici else '' }}" required
@@ -58,6 +59,7 @@
         (enlem, boylam) kopyalayıp aşağıya yapıştırın.
     </p>
     <form method="post" action="{{ url_for('hesap_ayarlari_ofis_konumu') }}" style="display:flex; flex-direction:column; gap:10px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label>
             Enlem (Latitude)
             <input type="text" name="ofis_enlem" value="{{ ofis_enlem or '' }}" placeholder="ör. 39.966431" required

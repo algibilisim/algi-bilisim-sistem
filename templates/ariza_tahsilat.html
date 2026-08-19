@@ -25,6 +25,7 @@
 
 <h3>Yeni Tahsilat Ekle</h3>
 <form method="post" class="abone-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="form-grid">
         <div>
             <label>Tutar *</label>
@@ -79,6 +80,7 @@
                 <a href="{{ url_for('ariza_tahsilat_makbuz', tahsilat_id=t['id']) }}">Makbuz</a>
                 <form method="post" action="{{ url_for('ariza_tahsilat_sil', tahsilat_id=t['id']) }}"
                       onsubmit="return confirm('Bu tahsilat kaydını silmek istediğinize emin misiniz?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="link-buton">Sil</button>
                 </form>
             </td>

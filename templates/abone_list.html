@@ -66,6 +66,7 @@
 {{ sayfalama_araci.goster(sayfa, toplam_sayfa, sayfalama_qs) }}
 
 <form method="get" id="kolon-filtre-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="q" value="{{ q }}">
     <input type="hidden" name="koy" value="{{ secili_koy }}">
     {% for anahtar in secili_alanlar %}<input type="hidden" name="alan" value="{{ anahtar }}">{% endfor %}

@@ -14,6 +14,7 @@
 <h2>{{ 'Abone Düzenle' if kayit else 'Yeni Abone' }}</h2>
 
 <form method="post" class="abone-form" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {% if geri %}<input type="hidden" name="geri" value="{{ geri }}">{% endif %}
     <div class="form-kaydirici">
     <div class="form-grid">
