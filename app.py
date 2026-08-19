@@ -4,7 +4,11 @@ import re
 import csv
 import gzip
 import math
+import time
 import base64
+import hmac
+import secrets
+import threading
 from datetime import datetime
 from functools import wraps
 from urllib.parse import quote as _url_quote, urlencode as _urlencode
@@ -12,11 +16,13 @@ from urllib.parse import quote as _url_quote, urlencode as _urlencode
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
+from jinja2.sandbox import SandboxedEnvironment
 from flask import (
     Flask, render_template, request, redirect,
     url_for, session, g, flash, jsonify, Response, send_from_directory
 )
 from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 try:
     import mammoth
@@ -33,10 +39,94 @@ except Exception:
     BeautifulSoup = None
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
-SECRET_KEY = os.environ.get("SECRET_KEY", "gelistirme-icin-degistir")
+SECRET_KEY = os.environ.get("SECRET_KEY")
+if not SECRET_KEY:
+    # ESKİDEN burada GitHub'da herkese açık, sabit bir "yedek" anahtar vardı
+    # ("gelistirme-icin-degistir"). SECRET_KEY oturum çerezlerini imzalamak için
+    # kullanılıyor — bilinen/sabit bir değerle çalışırsa, bu değeri bilen biri
+    # sahte bir oturum çerezi üretip HERHANGİ bir kullanıcı olarak giriş
+    # yapabilirdi. Bu yüzden artık ortam değişkeni tanımlı değilse uygulama
+    # sessizce zayıf bir anahtara düşmek yerine hiç başlamıyor.
+    raise RuntimeError(
+        "SECRET_KEY ortam değişkeni tanımlı değil. Güvenlik nedeniyle uygulama "
+        "bilinen/sabit bir yedek anahtarla çalışmayı reddediyor. DigitalOcean "
+        "panelinde bileşen ayarlarına rastgele, uzun bir SECRET_KEY ortam "
+        "değişkeni ekleyip yeniden deploy edin."
+    )
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
+
+# DigitalOcean App Platform, uygulamanın önünde kendi ters vekil (reverse
+# proxy) sunucusunu çalıştırıyor — yani gerçek ziyaretçi IP'si doğrudan
+# request.remote_addr'da değil, proxy'nin eklediği X-Forwarded-For başlığında
+# gelir. ProxyFix, Werkzeug'a TEK bir güvenilir vekil katmanının arkasında
+# olduğumuzu (x_for=1) söyleyip request.remote_addr'ı bu başlıktan doğru
+# şekilde dolduruyor — aksi halde aşağıdaki giriş deneme sınırlaması (IP'ye
+# göre) herkesi aynı (proxy'nin) IP'siymiş gibi görüp ya hep birlikte kilitler
+# ya da hiç işe yaramaz.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
+
+# Oturum çerezi (session cookie) güvenlik ayarları — önceden hiç ayarlanmamıştı,
+# yani Flask'ın varsayılanları geçerliydi (SESSION_COOKIE_SECURE=False). Bunları
+# açıkça ayarlıyoruz:
+#   - HTTPONLY: JavaScript'in çerezi okumasını engeller (zaten Flask varsayılanı
+#     True'dur, ama açıkça belirtmek daha güvenli/okunaklı).
+#   - SAMESITE=Lax: çerezin başka sitelerden yapılan (form gönderimi gibi)
+#     isteklerle otomatik gönderilmesini engeller — CSRF riskini azaltır.
+#   - SECURE: çerezin sadece HTTPS üzerinden gönderilmesini zorunlu kılar.
+#     Geliştirme (FLASK_DEBUG=1, yerel http://localhost) sırasında kapalı
+#     kalır, aksi halde yerel testte oturum hiç açılmaz; DigitalOcean'daki
+#     canlı ortam zaten HTTPS olduğu için üretimde bu her zaman True olur.
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("FLASK_DEBUG", "0") != "1"
+
+# --- CSRF (siteler arası istek sahteciliği) koruması ------------------------
+# Üçüncü parti bir pakete bağımlı olmadan, oturuma (session) bağlı bir "eşleşen
+# token" deseni kullanılıyor: her oturum için rastgele, tahmin edilemez bir
+# token üretilip session'da saklanır (generate_csrf/csrf_token). Veri
+# değiştiren (POST/PUT/PATCH/DELETE) her istekte, formdan (ya da JSON
+# isteklerde X-CSRFToken başlığından) gelen token bununla karşılaştırılır;
+# eşleşmezse istek reddedilir. Bu, başka bir sitedeki kötü niyetli bir sayfanın
+# ya da bir bağlantının, oturumu açık bir kullanıcının tarayıcısını kullanarak
+# onun adına habersizce POST isteği göndermesini (CSRF) engeller — ör. giriş
+# yapmış birine gönderilen sahte bir linke tıklanması sonucu istemeden veri
+# silinmesi/değiştirilmesi gibi.
+
+
+def generate_csrf():
+    """Oturum için CSRF token'ı döner; oturumda henüz yoksa yeni, rastgele bir
+    tane üretip session'a kaydeder. Şablonlarda {{ csrf_token() }} olarak
+    çağrılabilmesi için aşağıda Jinja global'i olarak da kaydediliyor."""
+    if "csrf_token" not in session:
+        session["csrf_token"] = secrets.token_hex(32)
+    return session["csrf_token"]
+
+
+app.jinja_env.globals["csrf_token"] = generate_csrf
+
+
+@app.before_request
+def _csrf_dogrula():
+    if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+        return None
+    beklenen = session.get("csrf_token")
+    gelen = (
+        request.form.get("csrf_token")
+        or request.headers.get("X-CSRFToken")
+        or request.headers.get("X-CSRF-Token")
+    )
+    if not beklenen or not gelen or not hmac.compare_digest(beklenen, gelen):
+        return (
+            "Güvenlik doğrulaması başarısız oldu (sayfa çok uzun süre açık "
+            "kalmış ya da oturum yenilenmiş olabilir). Lütfen sayfayı "
+            "yenileyip işlemi tekrar deneyin.",
+            400,
+        )
+    return None
+
+
 # Yanlışlıkla (veya kötü niyetle) çok büyük dosya yüklenip sunucunun
 # yorulmasını önlemek için tüm istekler için üst sınır (fotoğraf/video
 # yükleme özelliği eklenince gerekli oldu). Birden fazla video aynı anda
@@ -1235,12 +1325,23 @@ def _montaj_formu_veri(satir):
     }
 
 
+_MONTAJ_FORMU_SANDBOX = SandboxedEnvironment()
+
+
 def _montaj_formu_render_tek(sablon_icerik, satir):
     """Şablonu tek bir abone verisiyle render eder. Hata olursa (bozuk Jinja/HTML)
-    (None, hata_metni) döner; başarılıysa (render_edilmis_html, None) döner."""
+    (None, hata_metni) döner; başarılıysa (render_edilmis_html, None) döner.
+
+    Kullanıcının kendi yapıştırdığı/yüklediği (Word dahil) tasarım içeriği burada
+    render ediliyor — yani bu içerik GÜVENİLMEZ (kullanıcı girdisi). Uygulamanın
+    normal app.jinja_env'i yerine bilerek AYRI, kum havuzlu (sandboxed) bir Jinja
+    ortamı (_MONTAJ_FORMU_SANDBOX) kullanılıyor: bu, "{{ ''.__class__.__mro__[1]
+    .__subclasses__() }}" tarzı gadget zincirleriyle sunucuda kod çalıştırmayı
+    (RCE) engeller, ama {{ adi }} / {% if telefon2 %} gibi normal şablon
+    kullanımını olduğu gibi çalışır bırakır."""
     veri = _montaj_formu_veri(satir)
     try:
-        return app.jinja_env.from_string(sablon_icerik).render(**veri), None
+        return _MONTAJ_FORMU_SANDBOX.from_string(sablon_icerik).render(**veri), None
     except Exception as e:
         return None, str(e)
 
@@ -1437,9 +1538,61 @@ def login_required(view):
     return wrapped
 
 
+# --- Giriş denemesi sınırlaması (brute-force / şifre tahmin saldırılarına
+# karşı) --------------------------------------------------------------------
+# Şifreyi otomatik olarak defalarca deneyen bir betiğin (script) hesabı ele
+# geçirmesini zorlaştırmak için IP başına başarısız giriş denemesi sayılıyor;
+# üst üste çok fazla başarısız denemeden sonra o IP birkaç dakikalığına
+# kilitleniyor. Uygulama gunicorn'da TEK worker (--workers 1, --worker-class
+# gthread ile çoklu thread) olarak çalıştığı için, bellek-içi (in-memory) bu
+# basit sözlük tüm istekler arasında güvenle paylaşılabiliyor — ayrı bir
+# Redis/veritabanı gerekmiyor. (İleride worker sayısı 1'in üzerine çıkarılırsa
+# bu sayaç worker'lar arasında paylaşılmaz, o durumda paylaşılan bir depoya
+# taşınması gerekir.)
+_GIRIS_DENEME_KILIDI = threading.Lock()
+_GIRIS_BASARISIZ_DENEMELER = {}  # ip -> (basarisiz_sayisi, son_deneme_zamani)
+_GIRIS_MAKS_DENEME = 5
+_GIRIS_KILIT_SURESI_SN = 5 * 60  # 5 dakika
+
+
+def _giris_kilitli_mi(ip):
+    with _GIRIS_DENEME_KILIDI:
+        kayit = _GIRIS_BASARISIZ_DENEMELER.get(ip)
+        if not kayit:
+            return False, 0
+        sayi, son_zaman = kayit
+        if sayi < _GIRIS_MAKS_DENEME:
+            return False, 0
+        kalan = _GIRIS_KILIT_SURESI_SN - (time.time() - son_zaman)
+        if kalan <= 0:
+            del _GIRIS_BASARISIZ_DENEMELER[ip]
+            return False, 0
+        return True, kalan
+
+
+def _giris_basarisiz_kaydet(ip):
+    with _GIRIS_DENEME_KILIDI:
+        sayi, _ = _GIRIS_BASARISIZ_DENEMELER.get(ip, (0, 0))
+        _GIRIS_BASARISIZ_DENEMELER[ip] = (sayi + 1, time.time())
+
+
+def _giris_basarili_temizle(ip):
+    with _GIRIS_DENEME_KILIDI:
+        _GIRIS_BASARISIZ_DENEMELER.pop(ip, None)
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
+        istemci_ip = request.remote_addr or "bilinmiyor"
+        kilitli, kalan_sn = _giris_kilitli_mi(istemci_ip)
+        if kilitli:
+            flash(
+                f"Çok fazla başarısız giriş denemesi yapıldı. Lütfen "
+                f"{math.ceil(kalan_sn / 60)} dakika sonra tekrar deneyin."
+            )
+            return render_template("login.html")
+
         kullanici_adi = request.form.get("kullanici_adi", "").strip()
         sifre = request.form.get("sifre", "")
 
@@ -1450,11 +1603,13 @@ def login():
         cur.close()
 
         if user and check_password_hash(user["sifre_hash"], sifre):
+            _giris_basarili_temizle(istemci_ip)
             session.clear()
             session["user_id"] = user["id"]
             session["kullanici_adi"] = user["kullanici_adi"]
             return redirect(url_for("abone_listesi"))
 
+        _giris_basarisiz_kaydet(istemci_ip)
         flash("Kullanıcı adı veya şifre hatalı.")
 
     return render_template("login.html")
@@ -1486,8 +1641,8 @@ def hesap_ayarlari():
             flash("Kullanıcı adı boş olamaz.")
         elif yeni_sifre and yeni_sifre != yeni_sifre_tekrar:
             flash("Yeni şifre ile tekrarı birbirini tutmuyor.")
-        elif yeni_sifre and len(yeni_sifre) < 4:
-            flash("Yeni şifre en az 4 karakter olmalı.")
+        elif yeni_sifre and len(yeni_sifre) < 8:
+            flash("Yeni şifre en az 8 karakter olmalı.")
         else:
             cur.execute(
                 "SELECT id FROM kullanici WHERE kullanici_adi = %s AND id != %s",
@@ -2723,7 +2878,12 @@ def abone_fotograf_goster(foto_id):
     cur.close()
     if foto is None:
         return "Fotoğraf bulunamadı.", 404
-    return Response(bytes(foto["icerik"]), mimetype=foto["content_type"] or "application/octet-stream")
+    yanit = Response(bytes(foto["icerik"]), mimetype=foto["content_type"] or "application/octet-stream")
+    # Tarayıcının, gerçek içerik resim/video olmadığı halde (ör. eski kayıtlarda)
+    # dosyayı "koklayıp" (MIME sniffing) HTML/script olarak yorumlamasını engeller —
+    # depolanan (stored) XSS riskine karşı ek bir savunma katmanı.
+    yanit.headers["X-Content-Type-Options"] = "nosniff"
+    return yanit
 
 
 @app.route("/abone-fotograf/<int:foto_id>/sil", methods=["POST"])
@@ -3214,6 +3374,51 @@ def _ariza_kaydet(ariza_id):
 # sayıda/uzun video biriktirmek veritabanı boyutunu belirgin şekilde büyütür.
 _FOTOGRAF_MAKS_BOYUT = 60 * 1024 * 1024  # 60 MB (tek dosya)
 
+# Yüklenen dosyanın "video" olduğunu, dosyanın kendi baytlarındaki (tarayıcının
+# gönderdiği Content-Type başlığına değil) bilinen konteyner imzalarına bakarak
+# doğrulamak için kullanılıyor. (offset, imza_baytlari) çiftleri.
+_VIDEO_IMZALARI = (
+    (4, b"ftyp"),              # MP4 / MOV / M4V / 3GP (ISO base media)
+    (0, b"\x1A\x45\xDF\xA3"),  # WebM / MKV (EBML)
+    (0, b"RIFF"),              # AVI (RIFF....AVI  — AVI etiketi ayrıca kontrol ediliyor)
+    (0, b"\x00\x00\x00\x0C\x6A\x50"),  # bazı eski/mobil MOV varyantları
+)
+
+_RESIM_FORMAT_MIME_HARITASI = {
+    "JPEG": "image/jpeg", "PNG": "image/png", "GIF": "image/gif",
+    "WEBP": "image/webp", "BMP": "image/bmp", "HEIF": "image/heif", "TIFF": "image/tiff",
+}
+
+
+def _dosya_gercek_turu_dogrula(icerik, beyan_edilen_tur):
+    """Yüklenen dosyanın GERÇEKTEN bir resim/video olup olmadığını dosyanın kendi
+    baytlarına bakarak doğrular. Tarayıcının form ile birlikte gönderdiği
+    Content-Type başlığı (beyan_edilen_tur) istemci tarafından kolayca
+    sahtelenebilir — ör. içine <script> gömülü bir SVG dosyası "image/jpeg" diye
+    işaretlenip yüklenebilir, sonra "fotoğrafı görüntüle" linkiyle açıldığında
+    tarayıcıda çalışıp oturum çalabilirdi (depolanan/stored XSS). Bu yüzden
+    depolamadan önce gerçek türü burada bağımsızca tespit ediyoruz; doğrulanmış,
+    güvenli bir MIME türü döner, dosya resim/video olarak doğrulanamazsa None
+    döner (ör. SVG, HTML, veya bozuk/tanınmayan dosyalar burada elenir)."""
+    if beyan_edilen_tur.startswith("image/"):
+        try:
+            from PIL import Image
+            with Image.open(io.BytesIO(icerik)) as img:
+                img.verify()
+            # verify() sonrası aynı akışı tekrar açmak gerekiyor (verify tek kullanımlık)
+            with Image.open(io.BytesIO(icerik)) as img2:
+                return _RESIM_FORMAT_MIME_HARITASI.get(img2.format)
+        except Exception:
+            return None
+    if beyan_edilen_tur.startswith("video/"):
+        for konum, imza in _VIDEO_IMZALARI:
+            if icerik[konum:konum + len(imza)] == imza:
+                if imza == b"RIFF" and icerik[8:12] != b"AVI ":
+                    continue
+                return beyan_edilen_tur if beyan_edilen_tur.startswith("video/") else "video/mp4"
+        return None
+    return None
+
 
 def _medya_kaydet(db, tablo, sahip_kolonu, sahip_id, dosyalar):
     """Arıza ve abone kayıtlarındaki fotoğraf/video yükleme kutuları aynı mantığı
@@ -3234,9 +3439,13 @@ def _medya_kaydet(db, tablo, sahip_kolonu, sahip_id, dosyalar):
         if not (tur.startswith("image/") or tur.startswith("video/")):
             flash(f'"{dosya.filename}" bir resim/video dosyası gibi görünmüyor, yüklenmedi.')
             continue
+        dogrulanmis_tur = _dosya_gercek_turu_dogrula(icerik, tur)
+        if not dogrulanmis_tur:
+            flash(f'"{dosya.filename}" dosyasının içeriği bir resim/video ile eşleşmiyor, yüklenmedi.')
+            continue
         cur.execute(
             f"INSERT INTO {tablo} ({sahip_kolonu}, dosya_adi, content_type, icerik) VALUES (%s, %s, %s, %s)",
-            (sahip_id, dosya.filename, tur, psycopg2.Binary(icerik)),
+            (sahip_id, dosya.filename, dogrulanmis_tur, psycopg2.Binary(icerik)),
         )
     db.commit()
     cur.close()
@@ -3518,7 +3727,12 @@ def ariza_fotograf_goster(foto_id):
     cur.close()
     if foto is None:
         return "Fotoğraf bulunamadı.", 404
-    return Response(bytes(foto["icerik"]), mimetype=foto["content_type"] or "application/octet-stream")
+    yanit = Response(bytes(foto["icerik"]), mimetype=foto["content_type"] or "application/octet-stream")
+    # Tarayıcının, gerçek içerik resim/video olmadığı halde (ör. eski kayıtlarda)
+    # dosyayı "koklayıp" (MIME sniffing) HTML/script olarak yorumlamasını engeller —
+    # depolanan (stored) XSS riskine karşı ek bir savunma katmanı.
+    yanit.headers["X-Content-Type-Options"] = "nosniff"
+    return yanit
 
 
 @app.route("/ariza-fotograf/<int:foto_id>/sil", methods=["POST"])
@@ -3806,7 +4020,7 @@ def ariza_tahsilat_makbuz(tahsilat_id):
     )
 
 
-@app.route("/admin/toplu-abone-yukle")
+@app.route("/admin/toplu-abone-yukle", methods=["GET", "POST"])
 @login_required
 def toplu_abone_yukle():
     veri_dosyasi = os.path.join(os.path.dirname(os.path.abspath(__file__)), "abone_toplu_veri.b64")
@@ -3827,8 +4041,14 @@ def toplu_abone_yukle():
     cur.execute("SELECT COUNT(*) AS c FROM abone")
     mevcut_sayi = cur.fetchone()["c"]
 
-    onay = request.args.get("onayla") == "1"
-    zorla = request.args.get("zorla") == "1"
+    # Bu işlem veritabanına toplu kayıt ekliyor — bu yüzden SADECE POST (gerçek
+    # bir <form> gönderimiyle, CSRF token doğrulamasından geçerek) tetiklenebilir.
+    # Eskiden bir GET linkine (?onayla=1) tıklamak yeterliydi; bu, oturumu açık
+    # birine gönderilen sahte bir linkin (ör. e-postadaki gizli bir <img>) fark
+    # ettirmeden binlerce kaydı tekrar eklemesine (CSRF) izin verebilirdi.
+    onay = request.method == "POST" and request.form.get("onayla") == "1"
+    zorla = request.method == "POST" and request.form.get("zorla") == "1"
+    _csrf_gizli_alan = f'<input type="hidden" name="csrf_token" value="{generate_csrf()}">'
 
     if not onay:
         if mevcut_sayi > 50:
@@ -3836,13 +4056,19 @@ def toplu_abone_yukle():
                 f"<p style='color:#b00;font-weight:bold'>Dikkat: tabloda hâlihazırda {mevcut_sayi} kayıt var. "
                 f"Bu işlem mevcut kayıtları SİLMEZ, üzerine {len(satirlar)} yeni kayıt EKLER. "
                 f"Bu veriyi daha önce yüklediyseniz tekrar yüklemeyin, kayıtlar çiftlenir.</p>"
-                f"<p><a href='?onayla=1&zorla=1' style='font-size:20px;color:#b00'>"
-                f"Yine de devam et ve {len(satirlar)} kaydı ekle</a></p>"
+                f"<form method='post'>{_csrf_gizli_alan}"
+                f"<input type='hidden' name='onayla' value='1'><input type='hidden' name='zorla' value='1'>"
+                f"<button type='submit' style='font-size:20px;color:#b00;background:none;border:none;"
+                f"text-decoration:underline;cursor:pointer;padding:0;'>"
+                f"Yine de devam et ve {len(satirlar)} kaydı ekle</button></form>"
             )
         else:
             aksiyon = (
-                f"<p><a href='?onayla=1' style='font-size:20px'>"
-                f"Evet, {len(satirlar)} kaydı içe aktar</a></p>"
+                f"<form method='post'>{_csrf_gizli_alan}"
+                f"<input type='hidden' name='onayla' value='1'>"
+                f"<button type='submit' style='font-size:20px;background:none;border:none;"
+                f"text-decoration:underline;cursor:pointer;padding:0;'>"
+                f"Evet, {len(satirlar)} kaydı içe aktar</button></form>"
             )
         cur.close()
         return f"""
@@ -3912,7 +4138,7 @@ def toplu_abone_yukle():
     """
 
 
-@app.route("/admin/toplu-ariza-yukle")
+@app.route("/admin/toplu-ariza-yukle", methods=["GET", "POST"])
 @login_required
 def toplu_ariza_yukle():
     veri_dosyasi = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ariza_toplu_veri.b64")
@@ -3933,8 +4159,12 @@ def toplu_ariza_yukle():
     cur.execute("SELECT COUNT(*) AS c FROM ariza")
     mevcut_sayi = cur.fetchone()["c"]
 
-    onay = request.args.get("onayla") == "1"
-    zorla = request.args.get("zorla") == "1"
+    # bkz. toplu_abone_yukle() içindeki aynı konudaki not — SADECE POST (CSRF
+    # token doğrulamasıyla) tetiklenebilir, artık bir GET linkine tıklamak
+    # yeterli değil.
+    onay = request.method == "POST" and request.form.get("onayla") == "1"
+    zorla = request.method == "POST" and request.form.get("zorla") == "1"
+    _csrf_gizli_alan = f'<input type="hidden" name="csrf_token" value="{generate_csrf()}">'
 
     if not onay:
         if mevcut_sayi > 50:
@@ -3942,13 +4172,19 @@ def toplu_ariza_yukle():
                 f"<p style='color:#b00;font-weight:bold'>Dikkat: tabloda hâlihazırda {mevcut_sayi} kayıt var. "
                 f"Bu işlem mevcut kayıtları SİLMEZ, üzerine {len(satirlar)} yeni kayıt EKLER. "
                 f"Bu veriyi daha önce yüklediyseniz tekrar yüklemeyin, kayıtlar çiftlenir.</p>"
-                f"<p><a href='?onayla=1&zorla=1' style='font-size:20px;color:#b00'>"
-                f"Yine de devam et ve {len(satirlar)} kaydı ekle</a></p>"
+                f"<form method='post'>{_csrf_gizli_alan}"
+                f"<input type='hidden' name='onayla' value='1'><input type='hidden' name='zorla' value='1'>"
+                f"<button type='submit' style='font-size:20px;color:#b00;background:none;border:none;"
+                f"text-decoration:underline;cursor:pointer;padding:0;'>"
+                f"Yine de devam et ve {len(satirlar)} kaydı ekle</button></form>"
             )
         else:
             aksiyon = (
-                f"<p><a href='?onayla=1' style='font-size:20px'>"
-                f"Evet, {len(satirlar)} kaydı içe aktar</a></p>"
+                f"<form method='post'>{_csrf_gizli_alan}"
+                f"<input type='hidden' name='onayla' value='1'>"
+                f"<button type='submit' style='font-size:20px;background:none;border:none;"
+                f"text-decoration:underline;cursor:pointer;padding:0;'>"
+                f"Evet, {len(satirlar)} kaydı içe aktar</button></form>"
             )
         cur.close()
         return f"""
@@ -4013,10 +4249,12 @@ def toplu_ariza_yukle():
     """
 
 
-@app.route("/admin/tarih-formati-duzelt")
+@app.route("/admin/tarih-formati-duzelt", methods=["GET", "POST"])
 @login_required
 def tarih_formati_duzelt():
-    onay = request.args.get("onayla") == "1"
+    # bkz. toplu_abone_yukle() içindeki aynı konudaki not — SADECE POST (CSRF
+    # token doğrulamasıyla) tetiklenebilir.
+    onay = request.method == "POST" and request.form.get("onayla") == "1"
     db = get_db()
     cur = db.cursor()
 
@@ -4050,7 +4288,12 @@ def tarih_formati_duzelt():
         <p><b>{len(bulunanlar)}</b> tarih alanı, aktarım sırasında GG.AA.YYYY metin formatında kaydedilmiş.
         Bu işlem bunları veritabanının beklediği YYYY-AA-GG formatına çevirecek. Görünen tarihler
         (GG.AA.YYYY) değişmeyecek, sadece arka plandaki kayıt biçimi düzelecek.</p>
-        <p><a href="?onayla=1" style="font-size:20px">Evet, {len(bulunanlar)} tarihi düzelt</a></p>
+        <form method="post">
+        <input type="hidden" name="csrf_token" value="{generate_csrf()}">
+        <input type="hidden" name="onayla" value="1">
+        <button type="submit" style="font-size:20px;background:none;border:none;text-decoration:underline;cursor:pointer;padding:0;">
+        Evet, {len(bulunanlar)} tarihi düzelt</button>
+        </form>
         </body></html>
         """
 
