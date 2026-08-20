@@ -94,6 +94,7 @@ function tumFiltreKutulariniKapat() {
         k.classList.remove('acik');
         k.style.maxHeight = '';
     });
+    _acikFiltreButonu = null;
 }
 
 // Sütun filtre kutusu seçenekleri (ör. Abone Listesi, Arıza Takip): sayfa
@@ -173,8 +174,52 @@ function filtreSecenekleriniYukle(buton, kutu) {
 // "Filtrele" butonu bazen tarayıcının görünmeyen (adres çubuğunun arkasında
 // kalan) kısmına düşüyor ve kullanıcı butonu hiç göremiyordu. visualViewport
 // API'si gerçekten görünen alanı doğru veriyor; destekleniyorsa onu kullanıyoruz.
+//
+// Bunun da tek başına yetmediği bir durum var: kutu ilk açıldığında arama
+// kutusuna otomatik odaklanılıyor (aşağıda) ve bu, iOS'ta ekran klavyesini
+// AÇILIŞTAN SONRA tetikliyor. Klavye açılınca görünen alan küçülüyor ama
+// kutunun boyu zaten önceden (klavye yokken) hesaplanmış oluyor — bu yüzden
+// "Filtrele" butonu klavyenin arkasında kalabiliyordu. Bunu çözmek için
+// visualViewport'un kendi 'resize' olayını dinleyip, kutu açıkken klavye
+// açılıp/kapandığında konumu ve yüksekliği YENİDEN hesaplıyoruz.
 function _gorunurYukseklik() {
     return (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+}
+
+var _acikFiltreButonu = null;
+
+function _filtreKutusunuKonumlandir(tiklananButon, hedefKutu) {
+    var dikdortgen = tiklananButon.getBoundingClientRect();
+    var genislik = 240;
+    var sol = dikdortgen.left;
+    if (sol + genislik > window.innerWidth - 10) {
+        sol = window.innerWidth - genislik - 10;
+    }
+    if (sol < 10) { sol = 10; }
+    var ust = dikdortgen.bottom + 2;
+    var gorunurYukseklik = _gorunurYukseklik();
+    var kalanYukseklik = gorunurYukseklik - ust - 10;
+    var toplamYukseklik = Math.min(320, kalanYukseklik);
+    if (kalanYukseklik < 180) {
+        toplamYukseklik = Math.min(320, dikdortgen.top - 10);
+        hedefKutu.style.top = 'auto';
+        hedefKutu.style.bottom = (gorunurYukseklik - dikdortgen.top + 2) + 'px';
+        hedefKutu.style.maxHeight = toplamYukseklik + 'px';
+    } else {
+        hedefKutu.style.bottom = 'auto';
+        hedefKutu.style.top = ust + 'px';
+        hedefKutu.style.maxHeight = toplamYukseklik + 'px';
+    }
+    hedefKutu.style.left = sol + 'px';
+    hedefKutu.style.width = genislik + 'px';
+}
+
+if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', function() {
+        if (_acikFiltreButonu && _acikFiltreButonu.kutu.classList.contains('acik')) {
+            _filtreKutusunuKonumlandir(_acikFiltreButonu.buton, _acikFiltreButonu.kutu);
+        }
+    });
 }
 
 document.addEventListener('click', function(e) {
@@ -186,30 +231,9 @@ document.addEventListener('click', function(e) {
         var acikMi = hedefKutu.classList.contains('acik');
         tumFiltreKutulariniKapat();
         if (!acikMi) {
-            var dikdortgen = tiklananButon.getBoundingClientRect();
-            var genislik = 240;
-            var sol = dikdortgen.left;
-            if (sol + genislik > window.innerWidth - 10) {
-                sol = window.innerWidth - genislik - 10;
-            }
-            if (sol < 10) { sol = 10; }
-            var ust = dikdortgen.bottom + 2;
-            var gorunurYukseklik = _gorunurYukseklik();
-            var kalanYukseklik = gorunurYukseklik - ust - 10;
-            var toplamYukseklik = Math.min(320, kalanYukseklik);
-            if (kalanYukseklik < 180) {
-                toplamYukseklik = Math.min(320, dikdortgen.top - 10);
-                hedefKutu.style.top = 'auto';
-                hedefKutu.style.bottom = (gorunurYukseklik - dikdortgen.top + 2) + 'px';
-                hedefKutu.style.maxHeight = toplamYukseklik + 'px';
-            } else {
-                hedefKutu.style.bottom = 'auto';
-                hedefKutu.style.top = ust + 'px';
-                hedefKutu.style.maxHeight = toplamYukseklik + 'px';
-            }
-            hedefKutu.style.left = sol + 'px';
-            hedefKutu.style.width = genislik + 'px';
+            _filtreKutusunuKonumlandir(tiklananButon, hedefKutu);
             hedefKutu.classList.add('acik');
+            _acikFiltreButonu = { buton: tiklananButon, kutu: hedefKutu };
             filtreSecenekleriniYukle(tiklananButon, hedefKutu);
             var aramaKutusu = hedefKutu.querySelector('.filtre-arama-kutusu input');
             if (aramaKutusu) {
