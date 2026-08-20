@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Fatura #{{ fatura['id'] }} - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi">
+    <h2>Fatura #{{ fatura['id'] }}</h2>
+    <a class="btn" href="{{ url_for('fatura_listesi') }}">Faturalarım'a Dön</a>
+    {% if fatura['kaynak_tur'] == 'abone' %}
+    <a class="btn" href="{{ url_for('abone_duzenle', abone_id=fatura['kaynak_id']) }}">Abone Kaydına Git</a>
+    {% else %}
+    <a class="btn" href="{{ url_for('ariza_duzenle', ariza_id=fatura['kaynak_id']) }}">Arıza Kaydına Git</a>
+    {% endif %}
+</div>
+
+{% if fatura['durum'] == 'basarili' %}
+<div class="seri-uyari-kutu tam-genislik" style="border-color:#2e7d32;">
+    <h4 style="color:#2e7d32;">✓ Fatura başarıyla kesildi</h4>
+    <p style="margin:0 0 10px; font-size:12.5px;">
+        Fatura Hızlı Bilişim üzerinden başarıyla gönderildi. Aşağıdan PDF'ini
+        görüntüleyebilir/indirebilirsiniz.
+    </p>
+    <a class="btn btn-yesil" href="{{ url_for('fatura_pdf_goster', fatura_id=fatura['id']) }}" target="_blank">PDF'i Görüntüle</a>
+</div>
+{% elif fatura['durum'] == 'hata' %}
+<div class="seri-uyari-kutu tam-genislik">
+    <h4>✗ Fatura kesilemedi</h4>
+    <p style="margin:0 0 10px; font-size:12.5px;">
+        Hızlı Bilişim'den dönen hata mesajı:
+    </p>
+    <p style="margin:0; font-size:12.5px; background:#fff; padding:10px; border-radius:6px; white-space:pre-wrap;">{{ fatura['hata_mesaji'] or 'Bilinmeyen hata.' }}</p>
+</div>
+{% else %}
+<div class="seri-uyari-kutu tam-genislik">
+    <h4>Fatura işleniyor...</h4>
+    <p style="margin:0; font-size:12.5px;">
+        Fatura henüz "beklemede" durumunda görünüyor. Sayfayı yenileyerek
+        durumu tekrar kontrol edebilirsiniz.
+    </p>
+</div>
+{% endif %}
+
+<div style="background:#fff;padding:16px;border-radius:8px;">
+    <table>
+        <tbody>
+            <tr><td><strong>Durum</strong></td><td>{{ fatura['durum'] }}</td></tr>
+            <tr><td><strong>Fatura Türü</strong></td><td>{{ 'e-Arşiv Fatura' if fatura['fatura_turu'] == 'earsiv' else 'e-Fatura' }}</td></tr>
+            <tr><td><strong>Kaynak</strong></td><td>{{ 'Abone Kaydı' if fatura['kaynak_tur'] == 'abone' else 'Arıza Kaydı' }} (#{{ fatura['kaynak_id'] }})</td></tr>
+            <tr><td><strong>Kalemler</strong></td><td>{{ fatura['kalemler'] }}</td></tr>
+            {% if fatura['tutar_kdv_haric'] is not none %}
+            <tr><td><strong>KDV Hariç Tutar</strong></td><td class="sayi">{{ fatura['tutar_kdv_haric']|tl }} TL</td></tr>
+            <tr><td><strong>KDV Tutarı</strong></td><td class="sayi">{{ fatura['kdv_tutari']|tl }} TL</td></tr>
+            <tr><td><strong>KDV Dahil Tutar</strong></td><td class="sayi"><strong>{{ fatura['tutar_kdv_dahil']|tl }} TL</strong></td></tr>
+            {% endif %}
+            {% if fatura['fatura_uuid'] %}
+            <tr><td><strong>Fatura UUID</strong></td><td>{{ fatura['fatura_uuid'] }}</td></tr>
+            {% endif %}
+            <tr><td><strong>Kesen Kullanıcı</strong></td><td>{{ fatura['olusturan_kullanici'] }}</td></tr>
+            <tr><td><strong>Tarih</strong></td><td>{{ fatura['created_at'].strftime('%d.%m.%Y %H:%M') if fatura['created_at'] else '' }}</td></tr>
+        </tbody>
+    </table>
+</div>
+
+{% endblock %}

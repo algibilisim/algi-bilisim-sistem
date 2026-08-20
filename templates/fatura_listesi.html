@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Faturalarım - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi">
+    <h2>Faturalarım</h2>
+    <a class="btn" href="{{ url_for('abone_listesi') }}">Abone Listesi'ne Dön</a>
+</div>
+
+<p style="font-size:12.5px; color:#888; margin:0 0 14px;">
+    Abone ve Arıza kayıtlarından "Fatura Kes" ile kesilen (veya kesilmeye
+    çalışılıp hata alan) son 500 fatura, en yeniden eskiye sıralı.
+</p>
+
+<div class="tablo-kaydirici">
+<table>
+    <thead>
+        <tr>
+            <th>Tarih</th>
+            <th>Kaynak</th>
+            <th>Fatura Türü</th>
+            <th>Kalemler</th>
+            <th>KDV Dahil Tutar</th>
+            <th>Durum</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for f in faturalar %}
+        <tr>
+            <td>{{ f['created_at'].strftime('%d.%m.%Y %H:%M') if f['created_at'] else '' }}</td>
+            <td>{{ 'Abone' if f['kaynak_tur'] == 'abone' else 'Arıza' }} #{{ f['kaynak_id'] }}</td>
+            <td>{{ 'e-Arşiv' if f['fatura_turu'] == 'earsiv' else 'e-Fatura' }}</td>
+            <td>{{ f['kalemler'] }}</td>
+            <td class="sayi">{{ f['tutar_kdv_dahil']|tl if f['tutar_kdv_dahil'] is not none else '-' }}</td>
+            <td>
+                {% if f['durum'] == 'basarili' %}<span style="color:#2e7d32;">✓ Başarılı</span>
+                {% elif f['durum'] == 'hata' %}<span style="color:#a13a2e;">✗ Hata</span>
+                {% else %}<span style="color:#888;">Beklemede</span>
+                {% endif %}
+            </td>
+            <td><a href="{{ url_for('fatura_goruntule', fatura_id=f['id']) }}">Görüntüle</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7">Henüz kesilmiş bir fatura yok.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+{% endblock %}

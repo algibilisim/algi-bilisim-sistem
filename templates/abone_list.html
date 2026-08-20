@@ -141,6 +141,7 @@
                 <td class="islem-hucre sabit-sutun">
                     <a href="{{ url_for('abone_duzenle', abone_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}">Düzenle</a>
                     <a href="{{ url_for('abone_tahsilat', abone_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}">Tahsilat</a>
+                    <a href="{{ url_for('abone_fatura_kes', abone_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}">Fatura Kes</a>
                     <a href="#" class="mform-ac" data-abone-id="{{ s['id'] }}">M.Form</a>
                     <button type="submit" class="link-buton"
                             formaction="{{ url_for('abone_sil', abone_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}"

@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Fatura Kes - {{ kaynak_ad }} - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi">
+    <h2>Fatura Kes - {{ kaynak_ad }}</h2>
+    <a class="btn" href="{{ url_for('abone_listesi') if kaynak_tur == 'abone' else url_for('ariza_listesi') }}">Listeye Dön</a>
+</div>
+
+{% if not hizli_ayarli_mi %}
+<div class="seri-uyari-kutu tam-genislik">
+    <h4>Fatura kesme ayarları henüz tamamlanmadı</h4>
+    <p style="margin:0; font-size:12.5px;">
+        API anahtarları (HIZLI_SECRET_KEY / HIZLI_API_KEY / HIZLI_KULLANICI_ADI / HIZLI_SIFRE)
+        henüz DigitalOcean'da tanımlanmamış. Yine de deneyebilirsiniz — ama işlem
+        "hata" olarak kaydedilecek, gerçek bir fatura kesilmeyecektir.
+    </p>
+</div>
+{% endif %}
+
+{% if not kaynak['kimlik_no'] or not kaynak['adres'] %}
+<div class="seri-uyari-kutu tam-genislik">
+    <h4>Eksik bilgi: TC Kimlik No/Vergi No ve Adres gerekli</h4>
+    <p style="margin:0 0 10px; font-size:12.5px;">
+        Fatura kesebilmek için bu kayıtta TC Kimlik No/Vergi No ve Adres bilgilerinin
+        dolu olması gerekiyor. Önce kaydı düzenleyip bu bilgileri girin.
+    </p>
+    <a class="btn btn-yesil" href="{{ duzenle_url }}">Kaydı Düzenle</a>
+</div>
+{% else %}
+
+<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:20px;">
+    <strong>Ad Soyad:</strong> {{ kaynak_ad }} &nbsp;|&nbsp;
+    <strong>TC Kimlik No/Vergi No:</strong> {{ kaynak['kimlik_no'] }} &nbsp;|&nbsp;
+    <strong>Adres:</strong> {{ kaynak['adres'] }}
+    {% if kaynak['vergi_dairesi'] %}&nbsp;|&nbsp;<strong>Vergi Dairesi:</strong> {{ kaynak['vergi_dairesi'] }}{% endif %}
+</div>
+
+{% if not onizleme %}
+<div class="seri-uyari-kutu tam-genislik">
+    <h4>Faturalanacak bir tutar yok</h4>
+    <p style="margin:0; font-size:12.5px;">
+        Bu kayıtta {{ 'Sayaç Tutarı ve Malzeme Tutarı' if kaynak_tur == 'abone' else 'Arıza Ücreti' }}
+        sıfır görünüyor, faturalanacak bir kalem bulunamadı.
+    </p>
+</div>
+{% else %}
+
+<form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if geri %}<input type="hidden" name="geri" value="{{ geri }}">{% endif %}
+
+    <div class="form-grid" style="max-width:400px;">
+        <div>
+            <label>Fatura Türü *</label>
+            <select name="fatura_turu" required>
+                <option value="earsiv" {% if onerilen_tur == 'earsiv' %}selected{% endif %}>e-Arşiv Fatura (bireysel alıcı)</option>
+                <option value="efatura" {% if onerilen_tur == 'efatura' %}selected{% endif %}>e-Fatura (kurumsal/mükellef alıcı)</option>
+            </select>
+        </div>
+    </div>
+    {% if onerilen_tur %}
+    <p style="font-size:12px; color:#888; margin:4px 0 16px;">
+        Kimlik No'nun uzunluğuna göre "{{ 'e-Arşiv Fatura' if onerilen_tur == 'earsiv' else 'e-Fatura' }}" önerildi, gerekirse değiştirebilirsiniz.
+    </p>
+    {% else %}
+    <p style="font-size:12px; color:#a13a2e; margin:4px 0 16px;">
+        Kimlik No'nun uzunluğundan (TCKN=11, VKN=10 hane) tür belirlenemedi, lütfen elle seçin.
+    </p>
+    {% endif %}
+
+    <h3>Fatura Kalemleri</h3>
+    <div class="tablo-kaydirici">
+    <table>
+        <thead>
+            <tr>
+                <th>Açıklama</th>
+                <th>Birim</th>
+                <th>KDV Hariç Tutar</th>
+                <th>KDV (%20)</th>
+                <th>KDV Dahil Tutar</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for k in onizleme %}
+            <tr>
+                <td>{{ k['aciklama'] }}</td>
+                <td>1 Adet</td>
+                <td class="sayi">{{ k['tutar_kdv_haric']|tl }}</td>
+                <td class="sayi">{{ k['kdv_tutari']|tl }}</td>
+                <td class="sayi"><strong>{{ k['tutar_kdv_dahil']|tl }}</strong></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="3"></td>
+                <td class="sayi"><strong>Toplam KDV</strong></td>
+                <td class="sayi"><strong>{{ toplam_kdv|tl }}</strong></td>
+            </tr>
+            <tr>
+                <td colspan="3"></td>
+                <td class="sayi"><strong>Genel Toplam</strong></td>
+                <td class="sayi"><strong>{{ toplam_dahil|tl }}</strong></td>
+            </tr>
+        </tfoot>
+    </table>
+    </div>
+
+    <div class="form-butonlar" style="margin-top:16px;">
+        <button type="submit" class="btn btn-yesil" onclick="return confirm('Fatura kesilecek, emin misiniz? Bu işlem geri alınamaz.');">Fatura Kes</button>
+    </div>
+</form>
+
+{% endif %}
+{% endif %}
+{% endblock %}

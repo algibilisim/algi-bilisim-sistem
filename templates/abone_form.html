@@ -67,6 +67,29 @@
         </div>
         {{ ozel_alanlari_bas('telefon2') }}
 
+        <div class="ayirici">Fatura Bilgileri (e-Fatura/e-Arşiv kesebilmek için)</div>
+
+        <div>
+            <label>TC Kimlik No / Vergi No</label>
+            <input type="text" name="kimlik_no" placeholder="11 haneli TCKN ya da 10 haneli VKN" value="{{ kayit['kimlik_no'] if kayit and kayit['kimlik_no'] is not none else '' }}">
+        </div>
+        {{ ozel_alanlari_bas('kimlik_no') }}
+        <div>
+            <label>Vergi Dairesi</label>
+            <input type="text" name="vergi_dairesi" value="{{ kayit['vergi_dairesi'] if kayit and kayit['vergi_dairesi'] is not none else '' }}">
+        </div>
+        {{ ozel_alanlari_bas('vergi_dairesi') }}
+        <div>
+            <label>Adres</label>
+            <input type="text" name="adres" value="{{ kayit['adres'] if kayit and kayit['adres'] is not none else '' }}">
+        </div>
+        {{ ozel_alanlari_bas('adres') }}
+        <div>
+            <label>E-posta</label>
+            <input type="email" name="eposta" value="{{ kayit['eposta'] if kayit and kayit['eposta'] is not none else '' }}">
+        </div>
+        {{ ozel_alanlari_bas('eposta') }}
+
         {% if not kayit %}
         <div id="sayac-uyari-kutu" class="seri-uyari-kutu tam-genislik" style="display:none;">
             <h4>Dikkat: Bu sayaç no başka abonelerde de kayıtlı</h4>

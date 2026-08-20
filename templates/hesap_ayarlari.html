@@ -97,4 +97,75 @@
         </div>
     </form>
 </div>
+
+<div class="seri-uyari-kutu no-print" style="max-width:520px;">
+    <h4 style="margin:0 0 6px;">Fatura Ayarları (Hızlı Bilişim e-Connect)</h4>
+    <p style="margin:0 0 10px; font-size:12.5px;">
+        Abone Listesi ve Arıza Takip'ten e-Fatura/e-Arşiv Fatura kesebilmek için
+        gereken ayarlar. API anahtarları (ApiKey, SecretKey, kullanıcı adı, şifre)
+        güvenlik nedeniyle burada DEĞİL, DigitalOcean'daki ortam değişkenlerinde
+        saklanır — burada sadece faturada "satıcı" (ALGI BİLİŞİM) olarak görünecek
+        sabit bilgiler girilir.
+    </p>
+    {% if hizli_ayarli_mi %}
+    <p style="margin:0 0 10px; font-size:12px; color:#2e7d32;">
+        ✓ API anahtarları tanımlı ({{ 'canlı' if hizli_ortam == 'prod' else 'test/deneme' }} ortamı kullanılıyor).
+    </p>
+    {% else %}
+    <p style="margin:0 0 10px; font-size:12px; color:#a13a2e;">
+        ✗ API anahtarları (HIZLI_SECRET_KEY / HIZLI_API_KEY / HIZLI_KULLANICI_ADI / HIZLI_SIFRE)
+        henüz DigitalOcean'da tanımlanmamış — tanımlanana kadar fatura kesilemez.
+    </p>
+    {% endif %}
+    <form method="post" action="{{ url_for('hesap_ayarlari_fatura_ayarlari') }}" style="display:flex; flex-direction:column; gap:10px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>
+            TC Kimlik No / Vergi No
+            <input type="text" name="fatura_satici_kimlik_no" value="{{ fatura_satici.fatura_satici_kimlik_no }}"
+                   style="width:100%; padding:6px 8px; border:1px solid #ccc; border-radius:6px; margin-top:3px;">
+        </label>
+        <label>
+            Vergi Dairesi
+            <input type="text" name="fatura_satici_vergi_dairesi" value="{{ fatura_satici.fatura_satici_vergi_dairesi }}"
+                   style="width:100%; padding:6px 8px; border:1px solid #ccc; border-radius:6px; margin-top:3px;">
+        </label>
+        <label>
+            Ticari Unvan
+            <input type="text" name="fatura_satici_unvan" value="{{ fatura_satici.fatura_satici_unvan }}"
+                   style="width:100%; padding:6px 8px; border:1px solid #ccc; border-radius:6px; margin-top:3px;">
+        </label>
+        <label>
+            Ad (şahıs firmasıysa kayıtlı kişinin adı)
+            <input type="text" name="fatura_satici_ad" value="{{ fatura_satici.fatura_satici_ad }}"
+                   style="width:100%; padding:6px 8px; border:1px solid #ccc; border-radius:6px; margin-top:3px;">
+        </label>
+        <label>
+            Soyad
+            <input type="text" name="fatura_satici_soyad" value="{{ fatura_satici.fatura_satici_soyad }}"
+                   style="width:100%; padding:6px 8px; border:1px solid #ccc; border-radius:6px; margin-top:3px;">
+        </label>
+        <label>
+            Adres
+            <input type="text" name="fatura_satici_adres" value="{{ fatura_satici.fatura_satici_adres }}"
+                   style="width:100%; padding:6px 8px; border:1px solid #ccc; border-radius:6px; margin-top:3px;">
+        </label>
+        <label>
+            E-posta
+            <input type="email" name="fatura_satici_eposta" value="{{ fatura_satici.fatura_satici_eposta }}"
+                   style="width:100%; padding:6px 8px; border:1px solid #ccc; border-radius:6px; margin-top:3px;">
+        </label>
+        <label>
+            Telefon
+            <input type="text" name="fatura_satici_telefon" value="{{ fatura_satici.fatura_satici_telefon }}"
+                   style="width:100%; padding:6px 8px; border:1px solid #ccc; border-radius:6px; margin-top:3px;">
+        </label>
+        <div class="form-butonlar">
+            <button type="submit" class="btn btn-yesil">Kaydet</button>
+        </div>
+    </form>
+    <form method="post" action="{{ url_for('hesap_ayarlari_fatura_baglanti_testi') }}" style="margin-top:10px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn">Bağlantıyı Test Et</button>
+    </form>
+</div>
 {% endblock %}
