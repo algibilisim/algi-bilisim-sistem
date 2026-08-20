@@ -229,7 +229,18 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-window.addEventListener('resize', tumFiltreKutulariniKapat);
+// Not: sadece 'resize' olayına bakıp filtre kutularını kapatmak, mobilde
+// ekran klavyesi açıldığında da (pencere yüksekliği değiştiği için) tetiklenir
+// ve az önce açılan filtre kutusunu anında kapatırdı. Bunu önlemek için
+// sadece gerçek bir döndürme/yeniden boyutlandırmada (genişlik değiştiğinde)
+// kapatıyoruz; klavye açılıp kapanması genelde sadece yüksekliği değiştirir.
+var _sonPencereGenisligi = window.innerWidth;
+window.addEventListener('resize', function() {
+    if (window.innerWidth !== _sonPencereGenisligi) {
+        _sonPencereGenisligi = window.innerWidth;
+        tumFiltreKutulariniKapat();
+    }
+});
 
 // Filtreleri temizleme butonları
 function filtreTemizle(tip) {

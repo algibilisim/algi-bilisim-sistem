@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}İsim Tutarlılık Kontrolü - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi no-print">
+    <h2>İsim Tutarlılık Kontrolü</h2>
+    <a class="btn" href="{{ url_for('abone_listesi') }}">Abone Listesi'ne Dön</a>
+</div>
+
+<div class="seri-uyari-kutu no-print" style="max-width:900px;">
+    <p style="margin:0; font-size:12.5px;">
+        Bu liste, Abone Listesi, Köy Abone Listesi ve Arıza Takip içinde
+        AYNI köy adına ve AYNI sayaç/cihaz numarasına sahip olduğu halde
+        adı/soyadı yazılışı birbirinden farklı olan kayıt gruplarını
+        gösterir (ör. eksik harf, "i" yerine "ı" yazılması gibi). Hangi
+        yazılışın doğru olduğuna program karar vermez — siz aşağıdaki
+        "Düzenle" bağlantılarından ilgili kaydı açıp doğru yazılışla
+        güncelleyebilirsiniz. Taranan toplam kayıt: {{ taranan_kayit_sayisi }}.
+    </p>
+</div>
+
+{% if not gruplar %}
+<div class="seri-uyari-kutu no-print" style="max-width:900px;">
+    <p style="margin:0; font-size:13px; color:#2f7a3d;">
+        Şu anda tutarsız bir isim yazılışı bulunamadı.
+    </p>
+</div>
+{% endif %}
+
+{% for grup in gruplar %}
+<div class="seri-uyari-kutu no-print" style="max-width:900px;">
+    <h4 style="margin:0 0 8px;">
+        {{ grup.koy_adi }} — No: {{ grup.no }}
+    </h4>
+    <div class="tablo-kaydirici">
+    <table>
+        <thead>
+            <tr>
+                <th>Kaynak</th>
+                <th>{{ grup.kayitlar[0].no_etiket if grup.kayitlar else '' }}</th>
+                <th>Adı</th>
+                <th>Soyadı</th>
+                <th class="sabit-sutun"></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for k in grup.kayitlar %}
+            <tr>
+                <td>{{ k.kaynak_etiket }}</td>
+                <td>{{ k.no_etiket }}: {{ k.no }}</td>
+                <td><strong>{{ k.adi }}</strong></td>
+                <td><strong>{{ k.soyadi }}</strong></td>
+                <td class="islem-hucre sabit-sutun">
+                    {% if k.kaynak == 'abone' %}
+                    <a href="{{ url_for('abone_duzenle', abone_id=k.id) }}">Düzenle</a>
+                    {% elif k.kaynak == 'koy_abone' %}
+                    <a href="{{ url_for('koy_abone_duzenle', kayit_id=k.id) }}">Düzenle</a>
+                    {% elif k.kaynak == 'ariza' %}
+                    <a href="{{ url_for('ariza_duzenle', ariza_id=k.id) }}">Düzenle</a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+{% endfor %}
+
+{% endblock %}

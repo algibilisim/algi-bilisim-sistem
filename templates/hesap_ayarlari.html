@@ -75,4 +75,26 @@
         </div>
     </form>
 </div>
+
+<div class="seri-uyari-kutu no-print" style="max-width:520px;">
+    <h4 style="margin:0 0 6px;">Yedek Al E-postası</h4>
+    <p style="margin:0 0 10px; font-size:12.5px;">
+        Buraya bir adres girerseniz, "Yedek Al" butonuna her basıldığında yedek
+        dosyası her zamanki gibi bilgisayarınıza/telefonunuza indirilmeye EK
+        OLARAK bu adrese de e-posta ile gönderilir. Boş bırakırsanız sadece
+        indirme devam eder, e-posta gönderilmez.
+    </p>
+    <form method="post" action="{{ url_for('hesap_ayarlari_yedek_eposta') }}" style="display:flex; flex-direction:column; gap:10px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>
+            Yedek Alıcı E-posta
+            <input type="email" name="yedek_alici_eposta" value="{{ yedek_alici_eposta or '' }}"
+                   placeholder="ör. yedek@ornek.com"
+                   style="width:100%; padding:6px 8px; border:1px solid #ccc; border-radius:6px; margin-top:3px;">
+        </label>
+        <div class="form-butonlar">
+            <button type="submit" class="btn btn-yesil">Kaydet</button>
+        </div>
+    </form>
+</div>
 {% endblock %}
