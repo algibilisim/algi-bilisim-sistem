@@ -916,20 +916,43 @@ def _tarih_iso_hale_getir(t):
     return _ddmmyyyy_to_iso(t) or ""
 
 
-def _kolon_secenekleri(db, anahtar, tablo, bilgi_sozlugu):
+_KOLON_BOS_DEGER = "__BOS__"  # sütun filtre listesinde "(Boş)" seçeneğini temsil eden özel değer
+
+
+def _kolon_secenekleri(db, anahtar, tablo, bilgi_sozlugu, ekstra_kosul=None, ekstra_params=None):
+    """Bir sütun filtre kutusunun seçenek listesini üretir.
+
+    ekstra_kosul/ekstra_params verilirse (ör. o an sayfada uygulanmış olan arama,
+    köy veya DİĞER sütun filtreleri), seçenekler sadece o filtrelere uyan
+    kayıtlardan hesaplanır — aksi halde (verilmezse) tüm tablo taranır. Ayrıca bu
+    filtrelenmiş alt kümede o sütunu boş/NULL olan en az bir kayıt varsa, listeye
+    en başa "(Boş)" seçeneği eklenir."""
     ifade, tur = bilgi_sozlugu[anahtar]
+    ekstra_kosul_sql = f" AND {ekstra_kosul}" if ekstra_kosul else ""
+    ekstra_params = list(ekstra_params or [])
     cur = db.cursor()
     if tur == "sayi":
         cur.execute(
-            f"SELECT DISTINCT deger FROM (SELECT ROUND(CAST({ifade} AS NUMERIC), 2) AS deger FROM {tablo}) t WHERE deger IS NOT NULL ORDER BY deger"
+            f"SELECT DISTINCT deger FROM (SELECT ROUND(CAST({ifade} AS NUMERIC), 2) AS deger FROM {tablo} WHERE 1=1{ekstra_kosul_sql}) t WHERE deger IS NOT NULL ORDER BY deger",
+            ekstra_params,
         )
     else:
         cur.execute(
-            f"SELECT DISTINCT {ifade} AS deger FROM {tablo} WHERE {ifade} IS NOT NULL AND {ifade} != '' ORDER BY deger"
+            f"SELECT DISTINCT {ifade} AS deger FROM {tablo} WHERE {ifade} IS NOT NULL AND {ifade} != ''{ekstra_kosul_sql} ORDER BY deger",
+            ekstra_params,
         )
     satirlar = cur.fetchall()
+
+    if tur == "sayi":
+        cur.execute(f"SELECT EXISTS (SELECT 1 FROM {tablo} WHERE {ifade} IS NULL{ekstra_kosul_sql}) AS var", ekstra_params)
+    else:
+        cur.execute(f"SELECT EXISTS (SELECT 1 FROM {tablo} WHERE ({ifade} IS NULL OR {ifade} = ''){ekstra_kosul_sql}) AS var", ekstra_params)
+    bos_var = cur.fetchone()["var"]
     cur.close()
+
     secenekler = []
+    if bos_var:
+        secenekler.append((_KOLON_BOS_DEGER, "(Boş)"))
     for s in satirlar:
         ham = s["deger"]
         if ham is None:
@@ -946,19 +969,130 @@ def _kolon_secenekleri(db, anahtar, tablo, bilgi_sozlugu):
 
 def _kolon_kosul_coklu(anahtar, deger_listesi, bilgi_sozlugu):
     ifade, tur = bilgi_sozlugu[anahtar]
+    bos_secili = _KOLON_BOS_DEGER in deger_listesi
+    diger_degerler = [d for d in deger_listesi if d != _KOLON_BOS_DEGER]
+    parcalar = []
+    params = []
     if tur == "sayi":
         sayilar = []
-        for d in deger_listesi:
+        for d in diger_degerler:
             try:
                 sayilar.append(round(float(str(d).replace(",", ".")), 2))
             except ValueError:
                 pass
-        if not sayilar:
-            return None, []
-        yer_tutucular = ", ".join(["%s"] * len(sayilar))
-        return f"ROUND(CAST({ifade} AS NUMERIC), 2) IN ({yer_tutucular})", sayilar
-    yer_tutucular = ", ".join(["%s"] * len(deger_listesi))
-    return f"{ifade} IN ({yer_tutucular})", deger_listesi
+        if sayilar:
+            yer_tutucular = ", ".join(["%s"] * len(sayilar))
+            parcalar.append(f"ROUND(CAST({ifade} AS NUMERIC), 2) IN ({yer_tutucular})")
+            params += sayilar
+        if bos_secili:
+            parcalar.append(f"{ifade} IS NULL")
+    else:
+        if diger_degerler:
+            yer_tutucular = ", ".join(["%s"] * len(diger_degerler))
+            parcalar.append(f"{ifade} IN ({yer_tutucular})")
+            params += diger_degerler
+        if bos_secili:
+            parcalar.append(f"({ifade} IS NULL OR {ifade} = '')")
+    if not parcalar:
+        return None, []
+    return "(" + " OR ".join(parcalar) + ")", params
+
+
+def _abone_filtre_kosulu_olustur(disari_anahtar, kolon_bilgi):
+    """abone_listesi() sayfasında o an uygulanmış olan TÜM filtreleri (arama
+    kutusu, köy seçimi ve sütun filtreleri) tek bir SQL koşuluna çevirir —
+    /api/kolon-secenekleri ucu, bir sütunun seçenek listesini hesaplarken diğer
+    aktif filtreleri de hesaba katsın diye kullanılır. disari_anahtar verilirse
+    o sütunun KENDİ filtresi bilerek dışarıda bırakılır (yoksa zaten seçili
+    olmayan seçenekler hiç görünmez hale gelirdi)."""
+    kosul = "1=1"
+    params = []
+    q = request.args.get("q", "").strip()
+    koy = request.args.get("koy", "").strip()
+    alanlar_secili = request.args.getlist("alan")
+    if q:
+        secili = alanlar_secili if alanlar_secili else [k for k, *_ in _ABONE_ALAN_TANIMLARI]
+        q_sayi = None
+        q_temiz = q.replace(",", ".").strip()
+        try:
+            q_sayi = float(q_temiz)
+        except ValueError:
+            q_sayi = None
+        kosul_listesi = []
+        kosul_params = []
+        for s in secili:
+            if s in _ABONE_ALAN_HARITASI:
+                kolon, sayisal = _ABONE_ALAN_HARITASI[s]
+                if sayisal and q_sayi is not None:
+                    kosul_listesi.append(f"ROUND(CAST({kolon} AS NUMERIC), 2) = %s")
+                    kosul_params.append(round(q_sayi, 2))
+                elif sayisal:
+                    kosul_listesi.append(f"{_turkce_esle_kosul(f'CAST({kolon} AS TEXT)')} LIKE %s")
+                    kosul_params.append(_turkce_normallestir(f"%{q}%"))
+                else:
+                    kosul_listesi.append(f"{_turkce_esle_kosul(kolon)} LIKE %s")
+                    kosul_params.append(_turkce_normallestir(f"%{q}%"))
+        if kosul_listesi:
+            kosul += " AND (" + " OR ".join(kosul_listesi) + ")"
+            params += kosul_params
+    if koy:
+        kosul += " AND koy_adi = %s"
+        params.append(koy)
+    for anahtar in kolon_bilgi.keys():
+        if anahtar == disari_anahtar:
+            continue
+        secilenler = request.args.getlist(f"deger_{anahtar}")
+        if secilenler:
+            alt_kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, kolon_bilgi)
+            if alt_kosul:
+                kosul += f" AND {alt_kosul}"
+                params += param_listesi
+    return kosul, params
+
+
+def _ariza_filtre_kosulu_olustur(disari_anahtar, kolon_bilgi):
+    """ariza_listesi() / ariza_ciktisi() sayfalarında o an uygulanmış olan
+    filtreleri tek bir SQL koşuluna çevirir — bkz. _abone_filtre_kosulu_olustur."""
+    kosul = "1=1"
+    params = []
+    ARIZA_ALAN_HARITASI = {k: (kolon, sayisal) for k, _, kolon, sayisal in ARIZA_ALAN_TANIMLARI}
+    q = request.args.get("q", "").strip()
+    alanlar_secili = request.args.getlist("alan")
+    if q:
+        secili = alanlar_secili if alanlar_secili else [k for k, *_ in ARIZA_ALAN_TANIMLARI]
+        q_sayi = None
+        q_temiz = q.replace(",", ".").strip()
+        try:
+            q_sayi = float(q_temiz)
+        except ValueError:
+            q_sayi = None
+        kosul_listesi = []
+        kosul_params = []
+        for s in secili:
+            if s in ARIZA_ALAN_HARITASI:
+                kolon, sayisal = ARIZA_ALAN_HARITASI[s]
+                if sayisal and q_sayi is not None:
+                    kosul_listesi.append(f"ROUND(CAST({kolon} AS NUMERIC), 2) = %s")
+                    kosul_params.append(round(q_sayi, 2))
+                elif sayisal:
+                    kosul_listesi.append(f"{_turkce_esle_kosul(f'CAST({kolon} AS TEXT)')} LIKE %s")
+                    kosul_params.append(_turkce_normallestir(f"%{q}%"))
+                else:
+                    kosul_listesi.append(f"{_turkce_esle_kosul(kolon)} LIKE %s")
+                    kosul_params.append(_turkce_normallestir(f"%{q}%"))
+        if kosul_listesi:
+            kosul += " AND (" + " OR ".join(kosul_listesi) + ")"
+            params += kosul_params
+    for anahtar in kolon_bilgi.keys():
+        if anahtar == disari_anahtar:
+            continue
+        secilenler = request.args.getlist(f"deger_{anahtar}")
+        if secilenler:
+            alt_kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, kolon_bilgi)
+            if alt_kosul:
+                kosul += f" AND {alt_kosul}"
+                params += param_listesi
+    return kosul, params
 
 
 def _abone_satir_sozlugu(k, ozel_alanlar=None):
@@ -1995,7 +2129,11 @@ def kolon_secenekleri_api():
         _kolon_listesi, bilgi_sozlugu, _sayisal, _ozel = _ariza_kolon_takimi(db)
     if anahtar not in bilgi_sozlugu:
         return jsonify({"hata": "geçersiz sütun"}), 400
-    secenekler = _kolon_secenekleri(db, anahtar, tablo, bilgi_sozlugu)
+    if tablo == "abone":
+        ekstra_kosul, ekstra_params = _abone_filtre_kosulu_olustur(anahtar, bilgi_sozlugu)
+    else:
+        ekstra_kosul, ekstra_params = _ariza_filtre_kosulu_olustur(anahtar, bilgi_sozlugu)
+    secenekler = _kolon_secenekleri(db, anahtar, tablo, bilgi_sozlugu, ekstra_kosul, ekstra_params)
     return jsonify({"secenekler": secenekler})
 
 
