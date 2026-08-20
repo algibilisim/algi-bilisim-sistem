@@ -166,6 +166,17 @@ function filtreSecenekleriniYukle(buton, kutu) {
         });
 }
 
+// iOS Safari'de window.innerHeight, adres çubuğu/alt araç çubuğu henüz
+// daralmamışken sayfanın GERÇEKTEN görünen yüksekliğinden daha büyük bir
+// değer döndürebiliyor (Android'de bu fark yok). Sütun filtre kutusunun
+// yüksekliği bu değere göre hesaplandığı için, kutunun en altındaki
+// "Filtrele" butonu bazen tarayıcının görünmeyen (adres çubuğunun arkasında
+// kalan) kısmına düşüyor ve kullanıcı butonu hiç göremiyordu. visualViewport
+// API'si gerçekten görünen alanı doğru veriyor; destekleniyorsa onu kullanıyoruz.
+function _gorunurYukseklik() {
+    return (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+}
+
 document.addEventListener('click', function(e) {
     var tiklananButon = e.target.closest('.filtre-ac-buton');
     var tiklananKutu = e.target.closest('.filtre-kutu');
@@ -183,12 +194,13 @@ document.addEventListener('click', function(e) {
             }
             if (sol < 10) { sol = 10; }
             var ust = dikdortgen.bottom + 2;
-            var kalanYukseklik = window.innerHeight - ust - 10;
+            var gorunurYukseklik = _gorunurYukseklik();
+            var kalanYukseklik = gorunurYukseklik - ust - 10;
             var toplamYukseklik = Math.min(320, kalanYukseklik);
             if (kalanYukseklik < 180) {
                 toplamYukseklik = Math.min(320, dikdortgen.top - 10);
                 hedefKutu.style.top = 'auto';
-                hedefKutu.style.bottom = (window.innerHeight - dikdortgen.top + 2) + 'px';
+                hedefKutu.style.bottom = (gorunurYukseklik - dikdortgen.top + 2) + 'px';
                 hedefKutu.style.maxHeight = toplamYukseklik + 'px';
             } else {
                 hedefKutu.style.bottom = 'auto';
