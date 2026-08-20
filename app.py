@@ -9,6 +9,8 @@ import base64
 import hmac
 import secrets
 import threading
+import smtplib
+from email.message import EmailMessage
 from datetime import datetime
 from functools import wraps
 from urllib.parse import quote as _url_quote, urlencode as _urlencode
@@ -1673,6 +1675,7 @@ def hesap_ayarlari():
         "hesap_ayarlari.html", kullanici=kullanici,
         ofis_enlem=_ayar_getir(db, "ofis_enlem"),
         ofis_boylam=_ayar_getir(db, "ofis_boylam"),
+        yedek_alici_eposta=_ayar_getir(db, "yedek_alici_eposta"),
     )
 
 
@@ -1691,6 +1694,26 @@ def hesap_ayarlari_ofis_konumu():
     _ayar_kaydet(db, "ofis_enlem", str(enlem))
     _ayar_kaydet(db, "ofis_boylam", str(boylam))
     flash("Ofis konumu kaydedildi.")
+    return redirect(url_for("hesap_ayarlari"))
+
+
+@app.route("/hesap-ayarlari/yedek-eposta", methods=["POST"])
+@login_required
+def hesap_ayarlari_yedek_eposta():
+    """Hesap Ayarları'ndaki 'Yedek Al E-postası' kutusunun kaydet düğmesi.
+    Buraya girilen adres, 'Yedek Al' butonuna her basıldığında indirmeye EK
+    OLARAK yedek dosyasının gönderileceği adrestir. Boş bırakılıp
+    kaydedilirse e-posta gönderimi kapatılır, sadece indirme devam eder."""
+    eposta = request.form.get("yedek_alici_eposta", "").strip()
+    if eposta and ("@" not in eposta or "." not in eposta.split("@")[-1]):
+        flash("Geçerli bir e-posta adresi girin.")
+        return redirect(url_for("hesap_ayarlari"))
+    db = get_db()
+    _ayar_kaydet(db, "yedek_alici_eposta", eposta)
+    if eposta:
+        flash("Yedek al e-postası kaydedildi — bundan sonra 'Yedek Al' basıldığında dosya bu adrese de gönderilecek.")
+    else:
+        flash("Yedek al e-postası kaldırıldı — yedekler artık sadece indirme olarak alınacak.")
     return redirect(url_for("hesap_ayarlari"))
 
 
@@ -1728,6 +1751,65 @@ def service_worker():
     return yanit
 
 
+def _yedek_eposta_gonder(icerik_bytes, dosya_adi, alici_eposta):
+    """Yedek dosyasını, DigitalOcean ortam değişkenlerinde tanımlı bir SMTP
+    hesabı üzerinden alıcıya e-posta eki olarak gönderir. Sağlayıcıdan
+    bağımsız çalışsın diye (kullanıcı henüz Gmail mi yoksa kendi
+    alan adı/cPanel e-postası mı kullanacağına karar vermedi) sadece
+    Python'ın standart kütüphanesini (smtplib) kullanır; ekstra bir paket
+    kurulumu gerektirmez. Gerekli ortam değişkenleri:
+      SMTP_HOST      - sunucu adresi (ör. smtp.gmail.com veya mail.alanadiniz.com)
+      SMTP_PORT      - port (465 = SSL, 587 = STARTTLS; belirtilmezse 587 varsayılır)
+      SMTP_KULLANICI - SMTP kullanıcı adı (genelde gönderen e-posta adresinin kendisi)
+      SMTP_SIFRE     - SMTP şifresi (Gmail için "uygulama şifresi" olmalı)
+      SMTP_GONDEREN  - (isteğe bağlı) "Kimden" alanında görünecek adres; boşsa
+                       SMTP_KULLANICI kullanılır.
+    Döndürdüğü değer: (basarili: bool, hata_mesaji: str veya None)."""
+    smtp_sunucu = os.environ.get("SMTP_HOST")
+    smtp_kullanici = os.environ.get("SMTP_KULLANICI")
+    smtp_sifre = os.environ.get("SMTP_SIFRE")
+    smtp_gonderen = os.environ.get("SMTP_GONDEREN") or smtp_kullanici
+
+    if not smtp_sunucu or not smtp_kullanici or not smtp_sifre:
+        return False, (
+            "SMTP ayarları (SMTP_HOST / SMTP_KULLANICI / SMTP_SIFRE ortam "
+            "değişkenleri) henüz tanımlanmamış, bu yüzden yedek e-posta ile "
+            "gönderilemedi."
+        )
+
+    try:
+        smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    except (TypeError, ValueError):
+        smtp_port = 587
+
+    mesaj = EmailMessage()
+    mesaj["Subject"] = f"ALGI BİLİŞİM Yedek - {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+    mesaj["From"] = smtp_gonderen
+    mesaj["To"] = alici_eposta
+    mesaj.set_content(
+        "ALGI BİLİŞİM sisteminin veritabanı yedeği ektedir.\n\n"
+        "Bu e-posta, sistemdeki 'Yedek Al' butonuna basıldığında otomatik "
+        "olarak gönderilmiştir."
+    )
+    mesaj.add_attachment(icerik_bytes, maintype="text", subtype="plain", filename=dosya_adi)
+
+    try:
+        if smtp_port == 465:
+            with smtplib.SMTP_SSL(smtp_sunucu, smtp_port, timeout=20) as sunucu:
+                sunucu.login(smtp_kullanici, smtp_sifre)
+                sunucu.send_message(mesaj)
+        else:
+            with smtplib.SMTP(smtp_sunucu, smtp_port, timeout=20) as sunucu:
+                sunucu.ehlo()
+                sunucu.starttls()
+                sunucu.ehlo()
+                sunucu.login(smtp_kullanici, smtp_sifre)
+                sunucu.send_message(mesaj)
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
 @app.route("/yedek-al")
 @login_required
 def yedek_al():
@@ -1741,10 +1823,23 @@ def yedek_al():
     cur.close()
     icerik = "\n".join(parcalar)
     tarih = datetime.now().strftime("%d_%m_%Y")
+    dosya_adi = f"algi_bilisim_yedek_{tarih}.sql"
+
+    # E-posta gönderimi, indirmeye EK OLARAK yapılır — indirme her durumda
+    # gerçekleşir; alıcı adresi tanımlı değilse veya gönderim başarısız
+    # olursa sadece bir uyarı gösterilir, indirme engellenmez.
+    alici_eposta = _ayar_getir(db, "yedek_alici_eposta")
+    if alici_eposta:
+        basarili, hata = _yedek_eposta_gonder(icerik.encode("utf-8"), dosya_adi, alici_eposta)
+        if basarili:
+            flash(f"Yedek dosyası ayrıca {alici_eposta} adresine e-posta ile gönderildi.")
+        else:
+            flash(f"Yedek dosyası indirildi, ancak e-posta gönderilemedi: {hata}")
+
     return Response(
         icerik,
         mimetype="text/plain",
-        headers={"Content-Disposition": f"attachment; filename=algi_bilisim_yedek_{tarih}.sql"},
+        headers={"Content-Disposition": f"attachment; filename={dosya_adi}"},
     )
 
 
@@ -3567,6 +3662,105 @@ def secenek_yonetimi_sirala():
     db.commit()
     cur.close()
     return jsonify({"tamam": True})
+
+
+def _isim_normalize(metin):
+    """Karşılaştırma için sadece baştaki/sondaki ve kelimeler arasındaki
+    FAZLA boşlukları temizler. Bilerek küçük/büyük harf ya da 'ı'/'i' gibi
+    Türkçe karakter farklarına DOKUNMAZ — çünkü kullanıcının bulmak istediği
+    hatalar tam olarak bunlar; onları "aynıymış gibi" göstermek amacı
+    boşa çıkarır."""
+    return re.sub(r"\s+", " ", (metin or "")).strip()
+
+
+def _isim_grup_anahtari(metin):
+    """Gruplama anahtarı (köy adı / sayaç no) için ise tam tersine, gereksiz
+    yere ayrı gruplara düşmesinler diye boşluk + büyük/küçük harf farkını
+    yok sayarak normalize eder. Bu, KARŞILAŞTIRILAN şeyi (isim yazılışını)
+    değil, sadece hangi kayıtların birlikte gruplanacağını etkiler."""
+    return re.sub(r"\s+", " ", (metin or "")).strip().upper()
+
+
+@app.route("/admin/isim-tutarlilik")
+@login_required
+def isim_tutarlilik():
+    """Abone Listesi, Köy Abone Listesi ve Arıza Takip'te aynı sayaç/cihaz
+    numarasına ve aynı köy adına sahip olduğu halde adı/soyadı yazılışı
+    farklı (eksik harf, 'i'/'ı' karışıklığı vb.) olan kayıtları bulup
+    listeler — hangi yazılışın doğru olduğuna karışmaz, sadece tutarsızlığı
+    gösterir; düzeltme kullanıcı tarafından ilgili düzenleme sayfasından
+    yapılır."""
+    db = get_db()
+    cur = db.cursor()
+
+    kayitlar = []
+
+    cur.execute("SELECT id, koy_adi, sayac_no, adi, soyadi FROM abone")
+    for r in cur.fetchall():
+        if (r["sayac_no"] or "").strip() and (r["koy_adi"] or "").strip():
+            kayitlar.append({
+                "kaynak": "abone", "kaynak_etiket": "Abone Listesi",
+                "id": r["id"], "koy_adi": r["koy_adi"], "no": r["sayac_no"],
+                "no_etiket": "Sayaç No", "adi": r["adi"], "soyadi": r["soyadi"],
+            })
+
+    cur.execute("SELECT id, koy_adi, cihaz_no, adi, soyadi FROM koy_abone")
+    for r in cur.fetchall():
+        if (r["cihaz_no"] or "").strip() and (r["koy_adi"] or "").strip():
+            kayitlar.append({
+                "kaynak": "koy_abone", "kaynak_etiket": "Köy Abone Listesi",
+                "id": r["id"], "koy_adi": r["koy_adi"], "no": r["cihaz_no"],
+                "no_etiket": "Cihaz No", "adi": r["adi"], "soyadi": r["soyadi"],
+            })
+
+    cur.execute("SELECT id, koy_adi, seri_no, yeni_seri_no, adi, soyadi FROM ariza")
+    for r in cur.fetchall():
+        koy = r["koy_adi"]
+        if not (koy or "").strip():
+            continue
+        # Arızada hem 'Seri No' hem 'Yeni Seri No' ayrı ayrı doldurulabiliyor;
+        # ikisi de sayaç numarası anlamına geldiği için ikisini de ayrı birer
+        # eşleşme adayı olarak ekliyoruz (aynıysa mükerrer eklememek için kontrol).
+        adaylar = []
+        if (r["seri_no"] or "").strip():
+            adaylar.append(("Seri No", r["seri_no"]))
+        if (r["yeni_seri_no"] or "").strip() and r["yeni_seri_no"] != r["seri_no"]:
+            adaylar.append(("Yeni Seri No", r["yeni_seri_no"]))
+        for no_etiket, no_degeri in adaylar:
+            kayitlar.append({
+                "kaynak": "ariza", "kaynak_etiket": "Arıza Takip",
+                "id": r["id"], "koy_adi": koy, "no": no_degeri,
+                "no_etiket": no_etiket, "adi": r["adi"], "soyadi": r["soyadi"],
+            })
+
+    cur.close()
+
+    gruplar = {}
+    for k in kayitlar:
+        anahtar = (_isim_grup_anahtari(k["koy_adi"]), _isim_grup_anahtari(k["no"]))
+        gruplar.setdefault(anahtar, []).append(k)
+
+    tutarsiz_gruplar = []
+    for (koy_anahtar, no_anahtar), grup_kayitlari in gruplar.items():
+        if len(grup_kayitlari) < 2:
+            continue
+        isimler = set()
+        for k in grup_kayitlari:
+            isimler.add(_isim_normalize(k["adi"]) + " " + _isim_normalize(k["soyadi"]))
+        if len(isimler) > 1:
+            tutarsiz_gruplar.append({
+                "koy_adi": grup_kayitlari[0]["koy_adi"],
+                "no": grup_kayitlari[0]["no"],
+                "kayitlar": sorted(grup_kayitlari, key=lambda k: k["kaynak_etiket"]),
+            })
+
+    tutarsiz_gruplar.sort(key=lambda g: (_isim_grup_anahtari(g["koy_adi"]), _isim_grup_anahtari(g["no"])))
+
+    return render_template(
+        "isim_tutarlilik.html",
+        gruplar=tutarsiz_gruplar,
+        taranan_kayit_sayisi=len(kayitlar),
+    )
 
 
 @app.route("/admin/ozel-alan-ayarlari")
