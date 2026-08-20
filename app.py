@@ -2294,6 +2294,13 @@ def abone_listesi():
     cur.execute("SELECT COUNT(*) AS c FROM abone")
     toplam_kayit = cur.fetchone()["c"]
 
+    # NOT: bu toplamlar (ücret vb.) her zaman TÜM filtrelenmiş kayıtlar
+    # üzerinden hesaplanır — aşağıdaki sayfalama sadece EKRANA basılan satır
+    # sayısını sınırlar, bu toplamları etkilemez. (bkz. ariza_listesi())
+    toplam_ucret = sum(float(k["sayac_tutari"] or 0) + float(k["malzeme_tutari"] or 0) for k in kayitlar_ham)
+    tahsil_edilen_ucret = sum(float(k["alinan_tutar"] or 0) + float(k["malzeme_alinan"] or 0) for k in kayitlar_ham)
+    kalan_bakiye = toplam_ucret - tahsil_edilen_ucret
+
     # Ödeme Gün Sözü hatırlatması: sözü verilen tarih bugüne gelmiş/geçmiş VE
     # hâlâ ödenmemiş (toplam kalan borç > 0) olan abonelerin uyarı listesi.
     bugun_iso = datetime.now().strftime("%Y-%m-%d")
@@ -2344,6 +2351,7 @@ def abone_listesi():
         arama_satir_2=_izgara_satir(len(alan_listesi), 2),
         filtreli_kayit=filtreli_kayit, toplam_kayit=toplam_kayit,
         odeme_hatirlatmalari=odeme_hatirlatmalari,
+        toplam_ucret=toplam_ucret, tahsil_edilen_ucret=tahsil_edilen_ucret, kalan_bakiye=kalan_bakiye,
         sira=_sira_yonu_al(), sira_toggle_qs=_sira_toggle_qs(),
         sayfa=sayfa, toplam_sayfa=toplam_sayfa, sayfalama_qs=_sayfalama_qs,
     )
@@ -3488,7 +3496,18 @@ def _tahsilat_ciktisi_satirlar():
     kayitlar_ham = cur.fetchall()
     cur.close()
     satirlar = [_abone_satir_sozlugu(k, ozel_alanlar) for k in kayitlar_ham]
-    return satirlar, goster_kolonlari, kolon_listesi
+
+    # NOT: bu toplamlar her zaman TÜM filtrelenmiş kayıtlar üzerinden
+    # hesaplanır — HTML görünümündeki sayfalama sadece EKRANA basılan satır
+    # sayısını sınırlar, bu toplamları etkilemez. (bkz. abone_listesi())
+    toplam_ucret = sum(float(k["sayac_tutari"] or 0) + float(k["malzeme_tutari"] or 0) for k in kayitlar_ham)
+    tahsil_edilen_ucret = sum(float(k["alinan_tutar"] or 0) + float(k["malzeme_alinan"] or 0) for k in kayitlar_ham)
+    ucret_toplamlari = {
+        "toplam_ucret": toplam_ucret,
+        "tahsil_edilen_ucret": tahsil_edilen_ucret,
+        "kalan_bakiye": toplam_ucret - tahsil_edilen_ucret,
+    }
+    return satirlar, goster_kolonlari, kolon_listesi, ucret_toplamlari
 
 
 @app.route("/tahsilat-ciktisi")
@@ -3498,7 +3517,7 @@ def tahsilat_ciktisi():
     if yonlendirme:
         return yonlendirme
 
-    satirlar, goster_kolonlari, kolon_listesi = _tahsilat_ciktisi_satirlar()
+    satirlar, goster_kolonlari, kolon_listesi, ucret_toplamlari = _tahsilat_ciktisi_satirlar()
     kolonlar_secili = request.args.getlist("kolon")
     db = get_db()
     _kl, _kb, sayisal_kolonlar, _ozel = _abone_kolon_takimi(db)
@@ -3533,6 +3552,9 @@ def tahsilat_ciktisi():
         kolon_satir=_izgara_satir(len(kolon_secim_listesi)),
         kolon_satir_2=_izgara_satir(len(kolon_secim_listesi), 2),
         filtreli_kayit=filtreli_kayit, toplam_kayit=toplam_kayit,
+        toplam_ucret=ucret_toplamlari["toplam_ucret"],
+        tahsil_edilen_ucret=ucret_toplamlari["tahsil_edilen_ucret"],
+        kalan_bakiye=ucret_toplamlari["kalan_bakiye"],
         sira=_sira_yonu_al(), sira_toggle_qs=_sira_toggle_qs(),
         sayfa=sayfa, toplam_sayfa=toplam_sayfa, sayfalama_qs=_sayfalama_qs,
         tumunu_goster_qs=_tumunu_goster_qs(),
@@ -3542,7 +3564,7 @@ def tahsilat_ciktisi():
 @app.route("/tahsilat-ciktisi-excel")
 @login_required
 def tahsilat_ciktisi_excel():
-    satirlar, goster_kolonlari, kolon_listesi = _tahsilat_ciktisi_satirlar()
+    satirlar, goster_kolonlari, kolon_listesi, _ucret_toplamlari = _tahsilat_ciktisi_satirlar()
     tarih = datetime.now().strftime("%d_%m_%Y")
     return _csv_olustur(kolon_listesi, goster_kolonlari, satirlar, f"tahsilat_ciktisi_{tarih}.csv")
 
@@ -4248,7 +4270,18 @@ def _ariza_ciktisi_satirlar():
     kayitlar_ham = cur.fetchall()
     cur.close()
     satirlar = [_ariza_satir_sozlugu(k, ozel_alanlar) for k in kayitlar_ham]
-    return satirlar, goster_kolonlari, kolon_listesi
+
+    # NOT: bu toplamlar her zaman TÜM filtrelenmiş kayıtlar üzerinden
+    # hesaplanır — HTML görünümündeki sayfalama sadece EKRANA basılan satır
+    # sayısını sınırlar, bu toplamları etkilemez. (bkz. ariza_listesi())
+    toplam_ucret = sum(float(k["ariza_ucret"] or 0) for k in kayitlar_ham)
+    tahsil_edilen_ucret = sum(float(k["alinan_ucret"] or 0) for k in kayitlar_ham)
+    ucret_toplamlari = {
+        "toplam_ucret": toplam_ucret,
+        "tahsil_edilen_ucret": tahsil_edilen_ucret,
+        "kalan_bakiye": toplam_ucret - tahsil_edilen_ucret,
+    }
+    return satirlar, goster_kolonlari, kolon_listesi, ucret_toplamlari
 
 
 @app.route("/ariza-ciktisi")
@@ -4258,7 +4291,7 @@ def ariza_ciktisi():
     if yonlendirme:
         return yonlendirme
 
-    satirlar, goster_kolonlari, kolon_listesi = _ariza_ciktisi_satirlar()
+    satirlar, goster_kolonlari, kolon_listesi, ucret_toplamlari = _ariza_ciktisi_satirlar()
     kolonlar_secili = request.args.getlist("kolon")
     db = get_db()
 
@@ -4294,6 +4327,9 @@ def ariza_ciktisi():
         kolon_satir=_izgara_satir(len(kolon_secim_listesi)),
         kolon_satir_2=_izgara_satir(len(kolon_secim_listesi), 2),
         filtreli_kayit=filtreli_kayit, toplam_kayit=toplam_kayit,
+        toplam_ucret=ucret_toplamlari["toplam_ucret"],
+        tahsil_edilen_ucret=ucret_toplamlari["tahsil_edilen_ucret"],
+        kalan_bakiye=ucret_toplamlari["kalan_bakiye"],
         sira=_sira_yonu_al(), sira_toggle_qs=_sira_toggle_qs(),
         sayfa=sayfa, toplam_sayfa=toplam_sayfa, sayfalama_qs=_sayfalama_qs,
         tumunu_goster_qs=_tumunu_goster_qs(),
@@ -4303,7 +4339,7 @@ def ariza_ciktisi():
 @app.route("/ariza-ciktisi-excel")
 @login_required
 def ariza_ciktisi_excel():
-    satirlar, goster_kolonlari, kolon_listesi = _ariza_ciktisi_satirlar()
+    satirlar, goster_kolonlari, kolon_listesi, _ucret_toplamlari = _ariza_ciktisi_satirlar()
     tarih = datetime.now().strftime("%d_%m_%Y")
     return _csv_olustur(kolon_listesi, goster_kolonlari, satirlar, f"ariza_ciktisi_{tarih}.csv")
 
