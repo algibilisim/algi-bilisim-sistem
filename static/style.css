@@ -129,6 +129,11 @@ th.iki-satir { white-space: normal; line-height: 1.2; max-width: 52px; }
 .sayi { text-align: right; }
 .islem-hucre { display: flex; gap: 10px; align-items: center; }
 .islem-hucre a { color: #e8720c; }
+/* Telefon numaraları: tek dokunuşla "Ara / Kopyala" seçeneği çıksın diye tel:
+   bağlantısı olarak gösteriliyor, ama sıradan bir hyperlink gibi mavi/altı
+   çizili görünmesin diye normal metin rengiyle bırakılıyor. */
+.tel-link { color: inherit; text-decoration: none; }
+.tel-link:hover, .tel-link:focus { text-decoration: underline; }
 .sabit-sutun {
     position: sticky;
     right: 0;
