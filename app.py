@@ -695,15 +695,11 @@ def _abone_filtreli_kayitlari_getir(db):
         params.append(koy)
 
     kolon_listesi, kolon_bilgi, _sayisal, _ozel = _abone_kolon_takimi(db)
-    deger_secili = {}
     for anahtar, _ in kolon_listesi:
-        secilenler = request.args.getlist(f"deger_{anahtar}")
-        deger_secili[anahtar] = secilenler
-        if secilenler:
-            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, kolon_bilgi)
-            if kosul:
-                sql += f" AND {kosul}"
-                params += param_listesi
+        kosul, param_listesi = _kolon_secim_kosulu(anahtar, kolon_bilgi)
+        if kosul:
+            sql += f" AND {kosul}"
+            params += param_listesi
 
     sql += f" ORDER BY s_no {'DESC' if _sira_yonu_al() == 'desc' else 'ASC'}"
     cur = db.cursor()
@@ -998,6 +994,68 @@ def _kolon_kosul_coklu(anahtar, deger_listesi, bilgi_sozlugu):
     return "(" + " OR ".join(parcalar) + ")", params
 
 
+def _kolon_kosul_haric(anahtar, haric_deger_listesi, bilgi_sozlugu):
+    """'İşaretli olmayanlar' (dışlanacak/hariç tutulacak değerler) küçük bir
+    küme olduğunda — ör. 2500 telefon numarasından sadece birkaçı işaretsizken
+    — tüm binlerce işaretli değeri tek tek adrese (URL) eklemek yerine sadece
+    o birkaç HARİÇ değeri göndeririz; burada bunu tersine (NOT IN) bir SQL
+    koşuluna çeviririz. Sonuç, kullanıcının ekranda gördüğü seçimle (dahil
+    modunda aynı şeyi tek tek işaretlemiş olsaydı ne görecekse) birebir
+    aynıdır — sadece adres kısa kalır. NULL/boş değerler için 3 değerli SQL
+    mantığının (NOT IN + NULL = NULL, yani satır YANLIŞLIKLA dışarıda kalır)
+    tuzağına düşmemek için boş durumunu ayrıca ele alıyoruz."""
+    ifade, tur = bilgi_sozlugu[anahtar]
+    bos_haric = _KOLON_BOS_DEGER in haric_deger_listesi
+    diger_degerler = [d for d in haric_deger_listesi if d != _KOLON_BOS_DEGER]
+    params = []
+    if tur == "sayi":
+        sayilar = []
+        for d in diger_degerler:
+            try:
+                sayilar.append(round(float(str(d).replace(",", ".")), 2))
+            except ValueError:
+                pass
+        diger_degerler = sayilar
+        deger_ifadesi = f"ROUND(CAST({ifade} AS NUMERIC), 2)"
+        bos_kosulu = f"{ifade} IS NULL"
+    else:
+        deger_ifadesi = ifade
+        bos_kosulu = f"({ifade} IS NULL OR {ifade} = '')"
+    if bos_haric:
+        # Boş değerler de hariç tutulacak: sonuç kümesi hem boş OLMAYAN hem de
+        # dışlanan listede OLMAYAN satırlarla sınırlı.
+        kosul = f"NOT {bos_kosulu}"
+        if diger_degerler:
+            yer_tutucular = ", ".join(["%s"] * len(diger_degerler))
+            kosul += f" AND {deger_ifadesi} NOT IN ({yer_tutucular})"
+            params += diger_degerler
+        return f"({kosul})", params
+    # Boş değerler dahil edilecek (hariç tutulmayacak): NOT IN ifadesi NULL
+    # satırlarda kendiliğinden NULL (yani "yanlış") döneceği için, boş
+    # satırları ayrıca OR ile açıkça geri ekliyoruz.
+    if not diger_degerler:
+        return None, []
+    yer_tutucular = ", ".join(["%s"] * len(diger_degerler))
+    return f"({bos_kosulu} OR {deger_ifadesi} NOT IN ({yer_tutucular}))", diger_degerler
+
+
+def _kolon_secim_kosulu(anahtar, kolon_bilgi):
+    """Tek bir sütun için, o an istekte (request.args) gelen deger_<anahtar>
+    (dahil edilecek değerler) veya haric_<anahtar> (hariç tutulacak değerler —
+    bkz. _kolon_kosul_haric) parametrelerinden SQL koşulu ve parametre
+    listesi üretir. İkisi de yoksa (o sütun için hiç filtre uygulanmamışsa)
+    (None, []) döner. Liste sayfalarındaki (Abone Listesi, Arıza Takip,
+    Montaj Formu toplu oluşturma, çıktılar vb.) TÜM sütun filtreleme
+    noktaları bu tek fonksiyonu kullanır."""
+    haric_secilenler = request.args.getlist(f"haric_{anahtar}")
+    if haric_secilenler:
+        return _kolon_kosul_haric(anahtar, haric_secilenler, kolon_bilgi)
+    secilenler = request.args.getlist(f"deger_{anahtar}")
+    if secilenler:
+        return _kolon_kosul_coklu(anahtar, secilenler, kolon_bilgi)
+    return None, []
+
+
 def _abone_filtre_kosulu_olustur(disari_anahtar, kolon_bilgi):
     """abone_listesi() sayfasında o an uygulanmış olan TÜM filtreleri (arama
     kutusu, köy seçimi ve sütun filtreleri) tek bir SQL koşuluna çevirir —
@@ -1041,12 +1099,10 @@ def _abone_filtre_kosulu_olustur(disari_anahtar, kolon_bilgi):
     for anahtar in kolon_bilgi.keys():
         if anahtar == disari_anahtar:
             continue
-        secilenler = request.args.getlist(f"deger_{anahtar}")
-        if secilenler:
-            alt_kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, kolon_bilgi)
-            if alt_kosul:
-                kosul += f" AND {alt_kosul}"
-                params += param_listesi
+        alt_kosul, param_listesi = _kolon_secim_kosulu(anahtar, kolon_bilgi)
+        if alt_kosul:
+            kosul += f" AND {alt_kosul}"
+            params += param_listesi
     return kosul, params
 
 
@@ -1086,12 +1142,10 @@ def _ariza_filtre_kosulu_olustur(disari_anahtar, kolon_bilgi):
     for anahtar in kolon_bilgi.keys():
         if anahtar == disari_anahtar:
             continue
-        secilenler = request.args.getlist(f"deger_{anahtar}")
-        if secilenler:
-            alt_kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, kolon_bilgi)
-            if alt_kosul:
-                kosul += f" AND {alt_kosul}"
-                params += param_listesi
+        alt_kosul, param_listesi = _kolon_secim_kosulu(anahtar, kolon_bilgi)
+        if alt_kosul:
+            kosul += f" AND {alt_kosul}"
+            params += param_listesi
     return kosul, params
 
 
@@ -2221,14 +2275,14 @@ def abone_listesi():
 
     kolon_listesi, kolon_bilgi, sayisal_kolonlar, ozel_alanlar = _abone_kolon_takimi(db)
     deger_secili = {}
+    haric_secili = {}
     for anahtar, _ in kolon_listesi:
-        secilenler = request.args.getlist(f"deger_{anahtar}")
-        deger_secili[anahtar] = secilenler
-        if secilenler:
-            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, kolon_bilgi)
-            if kosul:
-                sql += f" AND {kosul}"
-                params += param_listesi
+        deger_secili[anahtar] = request.args.getlist(f"deger_{anahtar}")
+        haric_secili[anahtar] = request.args.getlist(f"haric_{anahtar}")
+        kosul, param_listesi = _kolon_secim_kosulu(anahtar, kolon_bilgi)
+        if kosul:
+            sql += f" AND {kosul}"
+            params += param_listesi
 
     sql += f" ORDER BY s_no {'DESC' if _sira_yonu_al() == 'desc' else 'ASC'}"
 
@@ -2284,7 +2338,7 @@ def abone_listesi():
     return render_template(
         "abone_list.html", satirlar=satirlar, koyler=koyler, q=q, secili_koy=koy,
         secili_alanlar=alanlar_secili, alan_listesi=alan_listesi,
-        kolon_listesi=kolon_listesi, deger_secili=deger_secili,
+        kolon_listesi=kolon_listesi, deger_secili=deger_secili, haric_secili=haric_secili,
         sayisal_kolonlar=sayisal_kolonlar,
         arama_satir=_izgara_satir(len(alan_listesi)),
         arama_satir_2=_izgara_satir(len(alan_listesi), 2),
@@ -3424,12 +3478,10 @@ def _tahsilat_ciktisi_satirlar():
     sql = "SELECT * FROM abone WHERE 1=1"
     params = []
     for anahtar in goster_kolonlari:
-        secilenler = request.args.getlist(f"deger_{anahtar}")
-        if secilenler:
-            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, kolon_bilgi)
-            if kosul:
-                sql += f" AND {kosul}"
-                params += param_listesi
+        kosul, param_listesi = _kolon_secim_kosulu(anahtar, kolon_bilgi)
+        if kosul:
+            sql += f" AND {kosul}"
+            params += param_listesi
     sql += f" ORDER BY s_no {'DESC' if _sira_yonu_al() == 'desc' else 'ASC'}"
     cur = db.cursor()
     cur.execute(sql, params)
@@ -3455,8 +3507,10 @@ def tahsilat_ciktisi():
     ]
 
     deger_secili = {}
+    haric_secili = {}
     for anahtar in goster_kolonlari:
         deger_secili[anahtar] = request.args.getlist(f"deger_{anahtar}")
+        haric_secili[anahtar] = request.args.getlist(f"haric_{anahtar}")
 
     # Sütun filtre seçenekleri artık tembel yükleniyor, bkz. abone_listesi().
     cur = db.cursor()
@@ -3474,7 +3528,7 @@ def tahsilat_ciktisi():
         kolon_listesi=kolon_listesi, goster_kolonlari=goster_kolonlari,
         kolon_secim_listesi=kolon_secim_listesi,
         secili_kolonlar=kolonlar_secili,
-        deger_secili=deger_secili,
+        deger_secili=deger_secili, haric_secili=haric_secili,
         sayisal_kolonlar=sayisal_kolonlar,
         kolon_satir=_izgara_satir(len(kolon_secim_listesi)),
         kolon_satir_2=_izgara_satir(len(kolon_secim_listesi), 2),
@@ -4129,14 +4183,14 @@ def ariza_listesi():
 
     kolon_listesi, kolon_bilgi, sayisal_kolonlar, ozel_alanlar = _ariza_kolon_takimi(db)
     deger_secili = {}
+    haric_secili = {}
     for anahtar, _ in kolon_listesi:
-        secilenler = request.args.getlist(f"deger_{anahtar}")
-        deger_secili[anahtar] = secilenler
-        if secilenler:
-            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, kolon_bilgi)
-            if kosul:
-                sql += f" AND {kosul}"
-                params += param_listesi
+        deger_secili[anahtar] = request.args.getlist(f"deger_{anahtar}")
+        haric_secili[anahtar] = request.args.getlist(f"haric_{anahtar}")
+        kosul, param_listesi = _kolon_secim_kosulu(anahtar, kolon_bilgi)
+        if kosul:
+            sql += f" AND {kosul}"
+            params += param_listesi
     sql += f" ORDER BY s_no {'DESC' if _sira_yonu_al() == 'desc' else 'ASC'}"
 
     cur = db.cursor()
@@ -4163,7 +4217,7 @@ def ariza_listesi():
         "ariza_listesi.html", satirlar=satirlar,
         kolon_listesi=kolon_listesi,
         q=q, secili_alanlar=alanlar_secili, alan_listesi=alan_listesi,
-        deger_secili=deger_secili,
+        deger_secili=deger_secili, haric_secili=haric_secili,
         sayisal_kolonlar=sayisal_kolonlar,
         arama_satir=_izgara_satir(len(alan_listesi)),
         arama_satir_2=_izgara_satir(len(alan_listesi), 2),
@@ -4184,12 +4238,10 @@ def _ariza_ciktisi_satirlar():
     sql = "SELECT * FROM ariza WHERE 1=1"
     params = []
     for anahtar in goster_kolonlari:
-        secilenler = request.args.getlist(f"deger_{anahtar}")
-        if secilenler:
-            kosul, param_listesi = _kolon_kosul_coklu(anahtar, secilenler, kolon_bilgi)
-            if kosul:
-                sql += f" AND {kosul}"
-                params += param_listesi
+        kosul, param_listesi = _kolon_secim_kosulu(anahtar, kolon_bilgi)
+        if kosul:
+            sql += f" AND {kosul}"
+            params += param_listesi
     sql += f" ORDER BY s_no {'DESC' if _sira_yonu_al() == 'desc' else 'ASC'}"
     cur = db.cursor()
     cur.execute(sql, params)
@@ -4216,8 +4268,10 @@ def ariza_ciktisi():
     _kl, _kb, sayisal_kolonlar, _ozel = _ariza_kolon_takimi(db)
 
     deger_secili = {}
+    haric_secili = {}
     for anahtar in goster_kolonlari:
         deger_secili[anahtar] = request.args.getlist(f"deger_{anahtar}")
+        haric_secili[anahtar] = request.args.getlist(f"haric_{anahtar}")
 
     # Sütun filtre seçenekleri artık tembel yükleniyor, bkz. abone_listesi().
     cur = db.cursor()
@@ -4235,7 +4289,7 @@ def ariza_ciktisi():
         kolon_listesi=kolon_listesi, goster_kolonlari=goster_kolonlari,
         kolon_secim_listesi=kolon_secim_listesi,
         secili_kolonlar=kolonlar_secili,
-        deger_secili=deger_secili,
+        deger_secili=deger_secili, haric_secili=haric_secili,
         sayisal_kolonlar=sayisal_kolonlar,
         kolon_satir=_izgara_satir(len(kolon_secim_listesi)),
         kolon_satir_2=_izgara_satir(len(kolon_secim_listesi), 2),
