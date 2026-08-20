@@ -113,7 +113,20 @@ function filtreSecenekleriniYukle(buton, kutu) {
     liste.querySelectorAll('.filtre-mevcut-gizli').forEach(function(inp) {
         mevcutSecililer.push(inp.value);
     });
-    fetch('/api/kolon-secenekleri?tablo=' + encodeURIComponent(tablo) + '&anahtar=' + encodeURIComponent(anahtar))
+    // Sayfada o an uygulanmış diğer filtreleri (arama, köy, diğer sütunların
+    // filtreleri) de isteğe ekliyoruz ki seçenek listesi onlara göre daralsın
+    // (ör. bir köy seçiliyken başka bir sütunun filtresi sadece o köydeki
+    // kayıtlarda geçen değerleri göstersin). Sadece bu sütunun KENDİ filtresi
+    // ('deger_' + anahtar) ve sayfalama bilgisi dışarıda bırakılıyor — yoksa az
+    // önce seçilmiş olmayan seçenekler listeden tamamen kaybolurdu.
+    var istekParams = new URLSearchParams();
+    new URLSearchParams(window.location.search).forEach(function(deger, adi) {
+        if (adi === 'deger_' + anahtar || adi === 'sayfa') { return; }
+        istekParams.append(adi, deger);
+    });
+    istekParams.set('tablo', tablo);
+    istekParams.set('anahtar', anahtar);
+    fetch('/api/kolon-secenekleri?' + istekParams.toString())
         .then(function(r) { return r.json(); })
         .then(function(veri) {
             var yukleniyorEtiketi = liste.querySelector('.filtre-yukleniyor');
@@ -186,6 +199,30 @@ document.addEventListener('click', function(e) {
     } else if (!tiklananKutu) {
         tumFiltreKutulariniKapat();
     }
+});
+
+// Bir sütun filtre kutusunda "Tümü" seçiliyse (yani o sütunun sunduğu TÜM
+// seçenekler tek tek işaretliyse), bu seçim mantıken "bu sütuna göre hiç
+// filtreleme yapma" ile aynı anlama gelir. Buna rağmen form GET ile
+// gönderilirken her bir değeri tek tek adrese (URL) eklemeye çalışıyordu —
+// köy gibi çok seçenekli bir sütunda bu, adresin sunucunun kabul ettiği
+// azami uzunluğu aşmasına ve "İstek satırı çok büyük" hatasına yol açıyordu.
+// Bunu önlemek için: form gönderilmeden hemen önce, TÜMÜ işaretli olan
+// kutularda tek tek değerleri göndermek yerine hiçbirini göndermiyoruz —
+// sonuç (filtresiz = hepsi göster) tamamen aynı kalıyor, sadece adres kısalıyor.
+document.addEventListener('submit', function(e) {
+    if (!e.target.querySelector) { return; }
+    var kutular = e.target.querySelectorAll('.filtre-kutu');
+    if (!kutular.length) { return; }
+    kutular.forEach(function(kutu) {
+        var kutucuklar = kutu.querySelectorAll('.filtre-liste input[type=checkbox]:not(.tumu-tik)');
+        if (!kutucuklar.length) { return; }
+        var hepsiSecili = true;
+        kutucuklar.forEach(function(cb) { if (!cb.checked) { hepsiSecili = false; } });
+        if (hepsiSecili) {
+            kutucuklar.forEach(function(cb) { cb.checked = false; });
+        }
+    });
 });
 
 document.addEventListener('change', function(e) {

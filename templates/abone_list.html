@@ -117,7 +117,8 @@
             <tr>
                 {% for anahtar, etiket in kolon_listesi %}
                 <td class="{{ 'sayi' if anahtar in sayisal_kolonlar else '' }} {{ s['_renk'][anahtar] }}">
-                    {% if anahtar in ['toplam_kalan'] %}<strong>{{ s[anahtar] }}</strong>{% else %}{{ s[anahtar] }}{% endif %}
+                    {% if anahtar in ('telefon', 'telefon2') and s[anahtar] %}<a href="tel:{{ s[anahtar]|replace(' ', '') }}" class="tel-link">{{ s[anahtar] }}</a>
+                    {% elif anahtar in ['toplam_kalan'] %}<strong>{{ s[anahtar] }}</strong>{% else %}{{ s[anahtar] }}{% endif %}
                 </td>
                 {% endfor %}
                 <td class="islem-hucre sabit-sutun">

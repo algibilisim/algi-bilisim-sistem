@@ -85,7 +85,7 @@
             <tr>
                 {% for anahtar, etiket in kolon_listesi %}
                 {% if anahtar in goster_kolonlari %}
-                <td class="{{ 'sayi' if anahtar in sayisal_kolonlar else '' }} {{ s['_renk'][anahtar] }}">{{ s[anahtar] }}</td>
+                <td class="{{ 'sayi' if anahtar in sayisal_kolonlar else '' }} {{ s['_renk'][anahtar] }}">{% if anahtar in ('telefon', 'telefon2') and s[anahtar] %}<a href="tel:{{ s[anahtar]|replace(' ', '') }}" class="tel-link">{{ s[anahtar] }}</a>{% else %}{{ s[anahtar] }}{% endif %}</td>
                 {% endif %}
                 {% endfor %}
             </tr>
