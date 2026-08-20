@@ -58,7 +58,7 @@
                 <th class="kolon-filtre-th">
                     <button type="button" class="btn filtre-ac-buton" data-hedef="cfiltre-{{ anahtar }}"
                             data-tablo="abone" data-anahtar="{{ anahtar }}">
-                        {% if deger_secili[anahtar] %}{{ deger_secili[anahtar]|length }} seçili ▾{% else %}Tümü ▾{% endif %}
+                        {% if deger_secili[anahtar] %}{{ deger_secili[anahtar]|length }} seçili ▾{% elif haric_secili[anahtar] %}Tümü, {{ haric_secili[anahtar]|length }} hariç ▾{% else %}Tümü ▾{% endif %}
                     </button>
                     <div id="cfiltre-{{ anahtar }}" class="filtre-kutu">
                         <div class="filtre-arama-kutusu">
@@ -69,6 +69,9 @@
                             <p class="filtre-yukleniyor">Yükleniyor...</p>
                             {% for v in deger_secili[anahtar] %}
                             <input type="hidden" name="deger_{{ anahtar }}" value="{{ v }}" class="filtre-mevcut-gizli">
+                            {% endfor %}
+                            {% for v in haric_secili[anahtar] %}
+                            <input type="hidden" name="haric_{{ anahtar }}" value="{{ v }}" class="filtre-haric-gizli">
                             {% endfor %}
                         </div>
                         <div class="filtre-kutu-alt">

@@ -113,15 +113,23 @@ function filtreSecenekleriniYukle(buton, kutu) {
     liste.querySelectorAll('.filtre-mevcut-gizli').forEach(function(inp) {
         mevcutSecililer.push(inp.value);
     });
+    var haricSecililer = [];
+    liste.querySelectorAll('.filtre-haric-gizli').forEach(function(inp) {
+        haricSecililer.push(inp.value);
+    });
+    // "Tümü, N hariç" modu: bu sütun için işaretli (dahil) değer yok ama
+    // hariç tutulan değerler varsa, seçenekler varsayılan olarak işaretli
+    // gelmeli, sadece hariç listesindekiler işaretsiz kalmalı.
+    var haricModu = mevcutSecililer.length === 0 && haricSecililer.length > 0;
     // Sayfada o an uygulanmış diğer filtreleri (arama, köy, diğer sütunların
     // filtreleri) de isteğe ekliyoruz ki seçenek listesi onlara göre daralsın
     // (ör. bir köy seçiliyken başka bir sütunun filtresi sadece o köydeki
     // kayıtlarda geçen değerleri göstersin). Sadece bu sütunun KENDİ filtresi
-    // ('deger_' + anahtar) ve sayfalama bilgisi dışarıda bırakılıyor — yoksa az
-    // önce seçilmiş olmayan seçenekler listeden tamamen kaybolurdu.
+    // ('deger_' / 'haric_' + anahtar) ve sayfalama bilgisi dışarıda bırakılıyor
+    // — yoksa az önce seçilmiş olmayan seçenekler listeden tamamen kaybolurdu.
     var istekParams = new URLSearchParams();
     new URLSearchParams(window.location.search).forEach(function(deger, adi) {
-        if (adi === 'deger_' + anahtar || adi === 'sayfa') { return; }
+        if (adi === 'deger_' + anahtar || adi === 'haric_' + anahtar || adi === 'sayfa') { return; }
         istekParams.append(adi, deger);
     });
     istekParams.set('tablo', tablo);
@@ -132,6 +140,7 @@ function filtreSecenekleriniYukle(buton, kutu) {
             var yukleniyorEtiketi = liste.querySelector('.filtre-yukleniyor');
             if (yukleniyorEtiketi) { yukleniyorEtiketi.remove(); }
             liste.querySelectorAll('.filtre-mevcut-gizli').forEach(function(inp) { inp.remove(); });
+            liste.querySelectorAll('.filtre-haric-gizli').forEach(function(inp) { inp.remove(); });
             (veri.secenekler || []).forEach(function(cift) {
                 var ham = cift[0];
                 var metin = cift[1];
@@ -140,7 +149,11 @@ function filtreSecenekleriniYukle(buton, kutu) {
                 kutucuk.type = 'checkbox';
                 kutucuk.name = 'deger_' + anahtar;
                 kutucuk.value = ham;
-                if (mevcutSecililer.indexOf(ham) !== -1) { kutucuk.checked = true; }
+                if (haricModu) {
+                    kutucuk.checked = haricSecililer.indexOf(ham) === -1;
+                } else {
+                    kutucuk.checked = mevcutSecililer.indexOf(ham) !== -1;
+                }
                 etiket.appendChild(kutucuk);
                 etiket.appendChild(document.createTextNode(' ' + metin));
                 liste.appendChild(etiket);
@@ -201,27 +214,52 @@ document.addEventListener('click', function(e) {
     }
 });
 
-// Bir sütun filtre kutusunda "Tümü" seçiliyse (yani o sütunun sunduğu TÜM
-// seçenekler tek tek işaretliyse), bu seçim mantıken "bu sütuna göre hiç
-// filtreleme yapma" ile aynı anlama gelir. Buna rağmen form GET ile
-// gönderilirken her bir değeri tek tek adrese (URL) eklemeye çalışıyordu —
-// köy gibi çok seçenekli bir sütunda bu, adresin sunucunun kabul ettiği
-// azami uzunluğu aşmasına ve "İstek satırı çok büyük" hatasına yol açıyordu.
-// Bunu önlemek için: form gönderilmeden hemen önce, TÜMÜ işaretli olan
-// kutularda tek tek değerleri göndermek yerine hiçbirini göndermiyoruz —
-// sonuç (filtresiz = hepsi göster) tamamen aynı kalıyor, sadece adres kısalıyor.
+// Bir sütun filtre kutusunda işaretli (dahil edilecek) ve işaretsiz (hariç
+// tutulacak) değerlerden HANGİSİ SAYICA AZ ise, form gönderilirken adrese
+// (URL) sadece o küçük küme ekleniyor:
+//  - Az sayıda değer işaretliyse (normal "dahil" filtresi): önceden olduğu
+//    gibi deger_<sütun> parametreleriyle gönderilir.
+//  - Çoğu değer işaretli, sadece birkaçı işaretsizse (ör. "Tümü, boş hariç"
+//    ya da telefon gibi neredeyse-benzersiz bir sütunda "birkaçı hariç
+//    hepsi"): işaretsiz kalan azınlık haric_<sütun> parametreleriyle
+//    gönderilir, işaretli çoğunluk hiç gönderilmez — sunucu tarafında bu
+//    "hepsi, şunlar hariç" anlamına gelir.
+//  - Tüm seçenekler işaretliyse zaten filtre yok demektir, hiçbir şey
+//    gönderilmez.
+// Bu mantık olmadan, köy gibi çok seçenekli bir sütunda ya da telefon gibi
+// neredeyse-benzersiz bir sütunda büyük bir seçim, adresin sunucunun kabul
+// ettiği azami uzunluğu aşmasına ve "İstek satırı çok büyük" hatasına yol
+// açıyordu.
 document.addEventListener('submit', function(e) {
     if (!e.target.querySelector) { return; }
     var kutular = e.target.querySelectorAll('.filtre-kutu');
     if (!kutular.length) { return; }
     kutular.forEach(function(kutu) {
-        var kutucuklar = kutu.querySelectorAll('.filtre-liste input[type=checkbox]:not(.tumu-tik)');
+        var kutucuklar = Array.prototype.slice.call(
+            kutu.querySelectorAll('.filtre-liste input[type=checkbox]:not(.tumu-tik)')
+        );
         if (!kutucuklar.length) { return; }
-        var hepsiSecili = true;
-        kutucuklar.forEach(function(cb) { if (!cb.checked) { hepsiSecili = false; } });
-        if (hepsiSecili) {
-            kutucuklar.forEach(function(cb) { cb.checked = false; });
+        var isaretli = kutucuklar.filter(function(cb) { return cb.checked; });
+        var isaretsiz = kutucuklar.filter(function(cb) { return !cb.checked; });
+        if (isaretsiz.length === 0) {
+            // Tümü işaretli: filtresiz ile aynı anlama gelir, hiçbirini gönderme.
+            isaretli.forEach(function(cb) { cb.checked = false; });
+            return;
         }
+        if (isaretli.length === 0) {
+            // Hiçbiri işaretli değil: "hiçbir kayıt gösterme" anlamına gelir,
+            // olduğu gibi (deger_ parametresi hiç gönderilmeden) bırakılıyor.
+            return;
+        }
+        if (isaretsiz.length <= isaretli.length) {
+            var anahtar = kutucuklar[0].name.replace(/^deger_/, '');
+            isaretsiz.forEach(function(cb) {
+                cb.name = 'haric_' + anahtar;
+                cb.checked = true;
+            });
+            isaretli.forEach(function(cb) { cb.checked = false; });
+        }
+        // else: işaretli (dahil) küme zaten daha küçük, olduğu gibi gönderilir.
     });
 });
 
