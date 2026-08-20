@@ -3,6 +3,7 @@ import io
 import re
 import csv
 import gzip
+import json
 import math
 import time
 import base64
@@ -10,6 +11,8 @@ import hmac
 import secrets
 import threading
 import smtplib
+import urllib.request
+import urllib.error
 from email.message import EmailMessage
 from datetime import datetime
 from functools import wraps
@@ -198,6 +201,15 @@ def _telefon_formatla(deger):
     if len(rakamlar) != 11:
         return str(deger).strip()
     return f"{rakamlar[0]} {rakamlar[1:4]} {rakamlar[4:7]} {rakamlar[7:9]} {rakamlar[9:11]}"
+
+
+def _kimlik_no_temizle(deger):
+    """Fatura kesme (Hızlı Bilişim e-Connect) için abone/arıza kaydına girilen
+    TC Kimlik No (11 hane, bireysel) ya da Vergi No (10 hane, kurumsal)
+    alanından rakam olmayan karakterleri (boşluk, tire vb.) temizler.
+    Uzunluğuna bakarak hangisi olduğunu ayırt etmek _fatura_turu_belirle()
+    içinde yapılır."""
+    return "".join(ch for ch in str(deger or "") if ch.isdigit())
 
 
 BIRLER = ["", "Bir", "İki", "Üç", "Dört", "Beş", "Altı", "Yedi", "Sekiz", "Dokuz"]
@@ -1864,7 +1876,46 @@ def hesap_ayarlari():
         ofis_enlem=_ayar_getir(db, "ofis_enlem"),
         ofis_boylam=_ayar_getir(db, "ofis_boylam"),
         yedek_alici_eposta=_ayar_getir(db, "yedek_alici_eposta"),
+        fatura_satici=_hizli_satici_bilgisi(db),
+        hizli_ayarli_mi=_hizli_ayarli_mi(),
+        hizli_ortam=_hizli_ortam(),
     )
+
+
+@app.route("/hesap-ayarlari/fatura-ayarlari", methods=["POST"])
+@login_required
+def hesap_ayarlari_fatura_ayarlari():
+    """Hesap Ayarları'ndaki 'Fatura Ayarları' kutusunun kaydet düğmesi —
+    faturada 'satıcı' (ALGI BİLİŞİM) olarak görünecek sabit bilgileri
+    kaydeder. API anahtarları burada DEĞİL, DigitalOcean ortam
+    değişkenlerinde tutulur (bkz. _hizli_ayarli_mi)."""
+    db = get_db()
+    for anahtar in _HIZLI_SATICI_AYAR_ANAHTARLARI:
+        deger = request.form.get(anahtar, "").strip()
+        if anahtar == "fatura_satici_kimlik_no":
+            deger = "".join(ch for ch in deger if ch.isdigit())
+        _ayar_kaydet(db, anahtar, deger)
+    flash("Fatura ayarları (satıcı bilgileri) kaydedildi.")
+    return redirect(url_for("hesap_ayarlari"))
+
+
+@app.route("/hesap-ayarlari/fatura-baglanti-testi", methods=["POST"])
+@login_required
+def hesap_ayarlari_fatura_baglanti_testi():
+    """'Bağlantıyı Test Et' butonu — gerçek fatura kesmeden, sadece Hızlı
+    Bilişim'e giriş (UtilEncrypt + Login) yapılabiliyor mu diye dener.
+    Böylece API anahtarlarının doğru girildiği, ilk faturayı denemeden,
+    düşük riskle kontrol edilebilir."""
+    db = get_db()
+    if not _hizli_ayarli_mi():
+        flash("API ayarları (HIZLI_SECRET_KEY / HIZLI_API_KEY / HIZLI_KULLANICI_ADI / HIZLI_SIFRE ortam değişkenleri) tanımlanmamış.")
+        return redirect(url_for("hesap_ayarlari"))
+    token, hata = _hizli_token_al(db, zorla_yenile=True)
+    if hata:
+        flash(f"Bağlantı testi BAŞARISIZ ({_hizli_ortam()} ortamı): {hata}")
+    else:
+        flash(f"Bağlantı testi BAŞARILI ({_hizli_ortam()} ortamı) — giriş yapılabildi, token alındı.")
+    return redirect(url_for("hesap_ayarlari"))
 
 
 @app.route("/hesap-ayarlari/ofis-konumu", methods=["POST"])
@@ -1996,6 +2047,475 @@ def _yedek_eposta_gonder(icerik_bytes, dosya_adi, alici_eposta):
         return True, None
     except Exception as e:
         return False, str(e)
+
+
+# ===========================================================================
+# Hızlı Bilişim Teknolojileri e-Connect API entegrasyonu — Abone Listesi ve
+# Arıza Takip'ten e-Fatura / e-Arşiv Fatura kesme.
+#
+# Gerekli ortam değişkenleri (DigitalOcean App Platform ayarlarından, KODA
+# ASLA YAZILMAZ):
+#   HIZLI_SECRET_KEY    - UtilEncrypt için SecretKey
+#   HIZLI_API_KEY       - Login için ApiKey
+#   HIZLI_KULLANICI_ADI - API kullanıcı adı
+#   HIZLI_SIFRE         - API şifresi
+#   HIZLI_ORTAM         - "test" (varsayılan, sanal/deneme ortamı) ya da
+#                         "prod" (canlı) — gerçek anahtarlar elde edildiğinde
+#                         "prod" yapılıp o anahtarlarla değiştirilecek.
+#
+# Akış (Hızlı Bilişim'in kendi dokümantasyonuna göre):
+#   1. UtilEncrypt: kullanıcı adı/şifre BİR KEZ şifrelenir; sonuç tekrar
+#      şifrelenmeden 'ayar' tablosunda saklanıp her login'de yeniden kullanılır.
+#   2. Login: apiKey + şifreli kullanıcı adı/şifre ile 1 gün geçerli bir token
+#      alınır; token da süresi dolana kadar 'ayar' tablosunda saklanır.
+#   3. SendInvoiceModel: token ile asıl fatura kesme isteği gönderilir.
+#
+# ÖNEMLİ NOT: Bu kodun çalıştığı ortamdan Hızlı Bilişim'in sunucularına ağ
+# erişimi YOK — yani SendInvoiceModel'in tam alan/kod listesi (AppType,
+# ProfileID, InvoiceTypeCode gibi değerler) CANLI olarak doğrulanamadı, genel
+# Swagger şemasından çıkarılabilenlerle ve Türkiye'deki standart e-fatura
+# (UBL-TR) alışkanlıklarıyla sınırlı. Aşağıdaki _HIZLI_* sabitleri EN İYİ
+# TAHMİN olarak işaretlendi. İlk gerçek fatura denemesinde Hızlı Bilişim'den
+# bir hata dönerse, o hata hem 'fatura' tablosuna hem ekrana AYNEN yansıtılır
+# — gerekirse bu sabitler o geri bildirime göre hızlıca düzeltilir.
+# ===========================================================================
+
+_HIZLI_TABAN_URL = {
+    "test": "https://econnecttest.hizliteknoloji.com.tr",
+    "prod": "https://econnect.hizliteknoloji.com.tr",
+}
+
+# EN İYİ TAHMİN sabitleri — bkz. yukarıdaki not.
+_HIZLI_APP_TYPE = {"efatura": 1, "earsiv": 2}
+_HIZLI_PROFILE_ID = {"efatura": "TICARIFATURA", "earsiv": "EARSIVFATURA"}
+_HIZLI_INVOICE_TYPE_CODE = "SATIS"
+_HIZLI_KDV_TAX_CODE = "0015"  # GİB genel KDV kodu
+_HIZLI_PARA_BIRIMI = "TRY"
+
+
+def _hizli_ortam():
+    return "prod" if os.environ.get("HIZLI_ORTAM", "test").strip().lower() == "prod" else "test"
+
+
+def _hizli_taban_url():
+    return _HIZLI_TABAN_URL[_hizli_ortam()]
+
+
+def _hizli_ayarli_mi():
+    """API kimlik bilgileri (ortam değişkenleri) tanımlanmış mı — tanımlı
+    değilse fatura kesme butonları kullanıcıya net bir uyarıyla engellenir."""
+    return all([
+        os.environ.get("HIZLI_SECRET_KEY"),
+        os.environ.get("HIZLI_API_KEY"),
+        os.environ.get("HIZLI_KULLANICI_ADI"),
+        os.environ.get("HIZLI_SIFRE"),
+    ])
+
+
+def _hizli_istek(yol, govde=None, token=None, metod="POST", zaman_asimi=20):
+    """Hızlı Bilişim e-Connect API'sine JSON istek gönderir.
+    (basarili: bool, veri_veya_hata_metni) döner."""
+    url = _hizli_taban_url() + yol
+    veri_bytes = json.dumps(govde).encode("utf-8") if govde is not None else None
+    istek = urllib.request.Request(url, data=veri_bytes, method=metod)
+    istek.add_header("Content-Type", "application/json")
+    istek.add_header("Accept", "application/json")
+    if token:
+        istek.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(istek, timeout=zaman_asimi) as yanit:
+            gövde_metni = yanit.read().decode("utf-8")
+            return True, (json.loads(gövde_metni) if gövde_metni else {})
+    except urllib.error.HTTPError as e:
+        hata_govdesi = ""
+        try:
+            hata_govdesi = e.read().decode("utf-8")
+        except Exception:
+            pass
+        return False, f"HTTP {e.code}: {hata_govdesi or e.reason}"
+    except urllib.error.URLError as e:
+        return False, f"Bağlantı hatası: {e.reason}"
+    except Exception as e:
+        return False, str(e)
+
+
+def _hizli_sifreli_kimlik(db):
+    """UtilEncrypt sonucunu ('ayar' tablosunda) önbellekten döner; yoksa
+    Hızlı Bilişim'den bir kez alıp saklar. Başarılıysa
+    ((sifreli_kullanici, sifreli_sifre), None), değilse (None, hata_metni)
+    döner."""
+    onbellek_kullanici = _ayar_getir(db, "hizli_sifreli_kullanici")
+    onbellek_sifre = _ayar_getir(db, "hizli_sifreli_sifre")
+    if onbellek_kullanici and onbellek_sifre:
+        return (onbellek_kullanici, onbellek_sifre), None
+
+    basarili, veri = _hizli_istek(
+        "/HizliApi/RestApi/UtilEncrypt",
+        {
+            "secretKey": os.environ.get("HIZLI_SECRET_KEY", ""),
+            "username": os.environ.get("HIZLI_KULLANICI_ADI", ""),
+            "password": os.environ.get("HIZLI_SIFRE", ""),
+        },
+    )
+    if not basarili:
+        return None, f"Kullanıcı bilgileri şifrelenemedi: {veri}"
+    sifreli_kullanici = veri.get("username") if isinstance(veri, dict) else None
+    sifreli_sifre = veri.get("password") if isinstance(veri, dict) else None
+    if not sifreli_kullanici or not sifreli_sifre:
+        return None, f"Şifreleme yanıtı beklenmedik biçimde geldi: {veri}"
+    _ayar_kaydet(db, "hizli_sifreli_kullanici", sifreli_kullanici)
+    _ayar_kaydet(db, "hizli_sifreli_sifre", sifreli_sifre)
+    return (sifreli_kullanici, sifreli_sifre), None
+
+
+def _hizli_token_al(db, zorla_yenile=False):
+    """Login token'ını ('ayar' tablosunda) önbellekten döner; yoksa ya da
+    süresi dolmuşsa yeniden login olur. (token, hata_metni) döner —
+    başarılıysa hata_metni None'dır."""
+    if not zorla_yenile:
+        onbellek_token = _ayar_getir(db, "hizli_token")
+        onbellek_zaman = _ayar_getir(db, "hizli_token_zaman")
+        if onbellek_token and onbellek_zaman:
+            try:
+                alinma_zamani = datetime.fromisoformat(onbellek_zaman)
+                # Token süresi 1 gün — güvenlik payı bırakmak için 20 saat sonra yenile.
+                if (datetime.now() - alinma_zamani).total_seconds() < 20 * 3600:
+                    return onbellek_token, None
+            except ValueError:
+                pass
+
+    kimlik, hata = _hizli_sifreli_kimlik(db)
+    if hata:
+        return None, hata
+    sifreli_kullanici, sifreli_sifre = kimlik
+
+    basarili, veri = _hizli_istek(
+        "/HizliApi/RestApi/Login",
+        {
+            "apiKey": os.environ.get("HIZLI_API_KEY", ""),
+            "username": sifreli_kullanici,
+            "password": sifreli_sifre,
+        },
+    )
+    if not basarili:
+        return None, f"Hızlı Bilişim'e giriş yapılamadı: {veri}"
+    token = None
+    if isinstance(veri, dict):
+        token = veri.get("token") or veri.get("Token") or veri.get("accessToken")
+    elif isinstance(veri, str):
+        token = veri
+    if not token:
+        return None, f"Giriş yanıtında bir token bulunamadı: {veri}"
+    _ayar_kaydet(db, "hizli_token", token)
+    _ayar_kaydet(db, "hizli_token_zaman", datetime.now().isoformat())
+    return token, None
+
+
+def _hizli_kdv_ayir(tutar_kdv_dahil, kdv_orani=20):
+    """KDV dahil bir tutardan KDV hariç taban ve KDV tutarını ayırır —
+    abone/arıza kayıtlarındaki ücretler zaten KDV dahil olduğu için fatura
+    kalemi oluşturulurken bu kullanılır. (kdv_haric, kdv_tutari) döner,
+    ikisi de 2 ondalık basamağa yuvarlanmış."""
+    tutar_kdv_dahil = float(tutar_kdv_dahil or 0)
+    kdv_haric = round(tutar_kdv_dahil / (1 + kdv_orani / 100), 2)
+    kdv_tutari = round(tutar_kdv_dahil - kdv_haric, 2)
+    return kdv_haric, kdv_tutari
+
+
+def _fatura_turu_belirle(kimlik_no):
+    """kimlik_no'nun uzunluğuna göre fatura türünü ÖNERİR: 11 haneli TC
+    Kimlik No ise 'earsiv' (bireysel alıcı), 10 haneli Vergi No ise
+    'efatura' (kurumsal alıcı) önerilir. Belirsizse (boş, farklı uzunlukta)
+    None döner — kullanıcı fatura kesme ekranında elle seçmeli."""
+    rakamlar = "".join(ch for ch in str(kimlik_no or "") if ch.isdigit())
+    if len(rakamlar) == 11:
+        return "earsiv"
+    if len(rakamlar) == 10:
+        return "efatura"
+    return None
+
+
+# Fatura Ayarları'nda (Hesap Ayarları sayfası) düzenlenebilen, satıcı
+# (ALGI BİLİŞİM) sabit bilgileri — API anahtarları gibi gizli değil, bu
+# yüzden ortam değişkeni değil 'ayar' tablosunda (düzenlenebilir) saklanır.
+_HIZLI_SATICI_AYAR_ANAHTARLARI = [
+    "fatura_satici_kimlik_no", "fatura_satici_vergi_dairesi", "fatura_satici_unvan",
+    "fatura_satici_ad", "fatura_satici_soyad", "fatura_satici_adres",
+    "fatura_satici_eposta", "fatura_satici_telefon",
+]
+
+
+def _hizli_satici_bilgisi(db):
+    return {anahtar: (_ayar_getir(db, anahtar) or "") for anahtar in _HIZLI_SATICI_AYAR_ANAHTARLARI}
+
+
+def _hizli_satici_eksik_mi(satici):
+    """Fatura kesmeden önce satıcı bilgilerinin (en azından kimlik no, unvan,
+    vergi dairesi, adres) dolu olup olmadığını kontrol eder."""
+    zorunlu = ["fatura_satici_kimlik_no", "fatura_satici_unvan",
+               "fatura_satici_vergi_dairesi", "fatura_satici_adres"]
+    return any(not satici.get(a) for a in zorunlu)
+
+
+def _hizli_invoice_model_olustur(satici, alici, kalemler, fatura_turu):
+    """SendInvoiceModel'in beklediği InvoiceModel nesnesini oluşturur.
+    kalemler: [{"aciklama": str, "tutar_kdv_dahil": float}, ...] — sıfır/boş
+    tutarlı kalemler zaten çağıran taraf tarafından elenmiş olmalı.
+    Döndürür: (invoice_model_dict, toplam_kdv_dahil, toplam_kdv_haric, toplam_kdv)."""
+    simdi = datetime.now()
+    invoice_lines = []
+    toplam_kdv_haric = 0.0
+    toplam_kdv = 0.0
+    for i, kalem in enumerate(kalemler, start=1):
+        kdv_haric, kdv_tutari = _hizli_kdv_ayir(kalem["tutar_kdv_dahil"])
+        toplam_kdv_haric += kdv_haric
+        toplam_kdv += kdv_tutari
+        invoice_lines.append({
+            "ID": i,
+            "Item_Name": kalem["aciklama"],
+            "Quantity_Amount": 1,
+            "Quantity_Unit_User": "ADET",
+            "Price_Amount": kdv_haric,
+            "Price_Total": kdv_haric,
+            "lineTaxes": [{
+                "Tax_Code": _HIZLI_KDV_TAX_CODE,
+                "Tax_Name": "KDV",
+                "Tax_Base": kdv_haric,
+                "Tax_Perc": 20,
+                "Tax_Amnt": kdv_tutari,
+            }],
+        })
+    toplam_kdv_haric = round(toplam_kdv_haric, 2)
+    toplam_kdv = round(toplam_kdv, 2)
+    toplam_kdv_dahil = round(toplam_kdv_haric + toplam_kdv, 2)
+
+    alici_kimlik_no = "".join(ch for ch in str(alici.get("kimlik_no") or "") if ch.isdigit())
+    customer = {
+        "IdentificationID": alici_kimlik_no,
+        "PartyName": f"{alici.get('adi', '')} {alici.get('soyadi', '')}".strip(),
+        "Person_FirstName": alici.get("adi", ""),
+        "Person_FamilyName": alici.get("soyadi", ""),
+        "StreetName": alici.get("adres", ""),
+        "CityName": alici.get("koy_adi", ""),
+        "CountryName": "Türkiye",
+        "ElectronicMail": alici.get("eposta", ""),
+        "Telephone": alici.get("telefon", ""),
+    }
+    if alici.get("vergi_dairesi"):
+        customer["TaxSchemeName"] = alici["vergi_dairesi"]
+
+    satici_ad_soyad = f"{satici.get('fatura_satici_ad', '')} {satici.get('fatura_satici_soyad', '')}".strip()
+    supplier = {
+        "IdentificationID": "".join(ch for ch in str(satici.get("fatura_satici_kimlik_no") or "") if ch.isdigit()),
+        "PartyName": satici.get("fatura_satici_unvan", ""),
+        "Person_FirstName": satici.get("fatura_satici_ad", ""),
+        "Person_FamilyName": satici.get("fatura_satici_soyad", ""),
+        "TaxSchemeName": satici.get("fatura_satici_vergi_dairesi", ""),
+        "StreetName": satici.get("fatura_satici_adres", ""),
+        "CountryName": "Türkiye",
+        "ElectronicMail": satici.get("fatura_satici_eposta", ""),
+        "Telephone": satici.get("fatura_satici_telefon", ""),
+    }
+
+    invoice_model = {
+        "invoiceheader": {
+            "ProfileID": _HIZLI_PROFILE_ID[fatura_turu],
+            "InvoiceTypeCode": _HIZLI_INVOICE_TYPE_CODE,
+            "IssueDate": simdi.strftime("%Y-%m-%d"),
+            "IssueTime": simdi.strftime("%H:%M:%S"),
+            "DocumentCurrencyCode": _HIZLI_PARA_BIRIMI,
+            "LineExtensionAmount": toplam_kdv_haric,
+            "TaxInclusiveAmount": toplam_kdv_dahil,
+            "PayableAmount": toplam_kdv_dahil,
+        },
+        "customer": customer,
+        "supplier": supplier,
+        "invoiceLines": invoice_lines,
+    }
+    return invoice_model, toplam_kdv_dahil, toplam_kdv_haric, toplam_kdv
+
+
+def _hizli_fatura_gonder(db, kaynak_tur, kaynak_id, alici, kalemler, fatura_turu, olusturan_kullanici):
+    """Bir abone/arıza kaydı için e-Fatura/e-Arşiv Fatura keser: token alır,
+    InvoiceModel'i oluşturur, SendInvoiceModel'i çağırır, sonucu 'fatura'
+    tablosuna kaydeder. Döndürdüğü değer: eklenen 'fatura' satırının id'si."""
+    satici = _hizli_satici_bilgisi(db)
+    kalem_ozet = ", ".join(f"{k['aciklama']}: {tl_format(k['tutar_kdv_dahil'])} TL" for k in kalemler)
+    yerel_id = f"{kaynak_tur}-{kaynak_id}-{secrets.token_hex(4)}"
+
+    cur = db.cursor()
+
+    if not _hizli_ayarli_mi():
+        cur.execute(
+            "INSERT INTO fatura (kaynak_tur, kaynak_id, fatura_turu, yerel_id, durum, hata_mesaji, kalemler, olusturan_kullanici) "
+            "VALUES (%s, %s, %s, %s, 'hata', %s, %s, %s) RETURNING id",
+            (kaynak_tur, kaynak_id, fatura_turu, yerel_id,
+             "Hızlı Bilişim API ayarları (ortam değişkenleri) henüz tanımlanmamış.",
+             kalem_ozet, olusturan_kullanici),
+        )
+        fatura_id = cur.fetchone()["id"]
+        db.commit()
+        cur.close()
+        return fatura_id
+
+    invoice_model, toplam_dahil, toplam_haric, toplam_kdv = _hizli_invoice_model_olustur(
+        satici, alici, kalemler, fatura_turu
+    )
+
+    cur.execute(
+        "INSERT INTO fatura (kaynak_tur, kaynak_id, fatura_turu, yerel_id, durum, "
+        "tutar_kdv_dahil, tutar_kdv_haric, kdv_tutari, kalemler, olusturan_kullanici) "
+        "VALUES (%s, %s, %s, %s, 'beklemede', %s, %s, %s, %s, %s) RETURNING id",
+        (kaynak_tur, kaynak_id, fatura_turu, yerel_id,
+         toplam_dahil, toplam_haric, toplam_kdv, kalem_ozet, olusturan_kullanici),
+    )
+    fatura_id = cur.fetchone()["id"]
+    db.commit()
+
+    token, hata = _hizli_token_al(db)
+    if hata:
+        cur.execute("UPDATE fatura SET durum = 'hata', hata_mesaji = %s WHERE id = %s", (hata, fatura_id))
+        db.commit()
+        cur.close()
+        return fatura_id
+
+    govde = {
+        "inputDocument": [{
+            "AppType": _HIZLI_APP_TYPE[fatura_turu],
+            "SourceUrn": satici.get("fatura_satici_kimlik_no", ""),
+            "DestinationIdentifier": "".join(ch for ch in str(alici.get("kimlik_no") or "") if ch.isdigit()),
+            "DestinationUrn": "".join(ch for ch in str(alici.get("kimlik_no") or "") if ch.isdigit()),
+            "InvoiceModel": invoice_model,
+            "LocalId": yerel_id,
+            "IsDraft": False,
+        }]
+    }
+    basarili, veri = _hizli_istek("/HizliApi/RestApi/SendInvoiceModel", govde, token=token)
+
+    if not basarili:
+        cur.execute("UPDATE fatura SET durum = 'hata', hata_mesaji = %s WHERE id = %s", (veri, fatura_id))
+        db.commit()
+        cur.close()
+        return fatura_id
+
+    fatura_uuid = None
+    if isinstance(veri, dict):
+        fatura_uuid = veri.get("DocumentUUID") or veri.get("uuid") or veri.get("Uuid")
+    elif isinstance(veri, list) and veri:
+        ilk = veri[0]
+        if isinstance(ilk, dict):
+            fatura_uuid = ilk.get("DocumentUUID") or ilk.get("uuid") or ilk.get("Uuid")
+
+    cur.execute(
+        "UPDATE fatura SET durum = 'basarili', fatura_uuid = %s WHERE id = %s",
+        (fatura_uuid, fatura_id),
+    )
+    db.commit()
+    cur.close()
+    return fatura_id
+
+
+def _hizli_fatura_pdf_al(db, fatura_id):
+    """Daha önce başarıyla kesilmiş bir faturanın PDF içeriğini Hızlı
+    Bilişim'den (GetDocumentFile) çekip 'fatura' tablosuna kaydeder.
+    (basarili, hata_metni) döner."""
+    cur = db.cursor()
+    cur.execute("SELECT * FROM fatura WHERE id = %s", (fatura_id,))
+    kayit = cur.fetchone()
+    if not kayit or kayit["durum"] != "basarili" or not kayit["fatura_uuid"]:
+        cur.close()
+        return False, "Bu fatura henüz başarıyla kesilmemiş, PDF alınamaz."
+
+    token, hata = _hizli_token_al(db)
+    if hata:
+        cur.close()
+        return False, hata
+
+    yol = (
+        f"/HizliApi/RestApi/GetDocumentFile"
+        f"?AppType={_HIZLI_APP_TYPE[kayit['fatura_turu']]}&Uuid={kayit['fatura_uuid']}&Tur=pdf&IsDraft=false"
+    )
+    basarili, veri = _hizli_istek(yol, govde=None, token=token, metod="GET")
+    if not basarili:
+        cur.close()
+        return False, veri
+
+    pdf_base64 = None
+    if isinstance(veri, dict):
+        pdf_base64 = veri.get("FileContent") or veri.get("Content") or veri.get("data")
+    elif isinstance(veri, str):
+        pdf_base64 = veri
+    if not pdf_base64:
+        cur.close()
+        return False, f"PDF yanıtında dosya içeriği bulunamadı: {veri}"
+
+    try:
+        pdf_bytes = base64.b64decode(pdf_base64)
+    except Exception as e:
+        cur.close()
+        return False, f"PDF içeriği çözümlenemedi: {e}"
+
+    cur.execute("UPDATE fatura SET pdf_icerik = %s WHERE id = %s", (psycopg2.Binary(pdf_bytes), fatura_id))
+    db.commit()
+    cur.close()
+    return True, None
+
+
+@app.route("/faturalar")
+@login_required
+def fatura_listesi():
+    """'Faturalarım' sayfası — Hızlı Bilişim üzerinden kesilen (ya da
+    kesilmeye çalışılıp hata alan) tüm faturaların listesi, en yeniden
+    eskiye."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM fatura ORDER BY created_at DESC LIMIT 500")
+    faturalar = cur.fetchall()
+    cur.close()
+    return render_template("fatura_listesi.html", faturalar=faturalar)
+
+
+@app.route("/fatura/<int:fatura_id>")
+@login_required
+def fatura_goruntule(fatura_id):
+    """Tek bir faturanın sonucunu (başarılı/hata) ve varsa PDF bağlantısını
+    gösterir — fatura kesildikten hemen sonra buraya yönlendirilir."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM fatura WHERE id = %s", (fatura_id,))
+    fatura = cur.fetchone()
+    cur.close()
+    if fatura is None:
+        flash("Fatura kaydı bulunamadı.")
+        return redirect(url_for("fatura_listesi"))
+    return render_template("fatura_goster.html", fatura=fatura)
+
+
+@app.route("/fatura/<int:fatura_id>/pdf")
+@login_required
+def fatura_pdf_goster(fatura_id):
+    """Faturanın PDF'ini gösterir — daha önce alınıp veritabanında
+    saklanmamışsa önce Hızlı Bilişim'den (GetDocumentFile) çeker."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM fatura WHERE id = %s", (fatura_id,))
+    fatura = cur.fetchone()
+    cur.close()
+    if fatura is None:
+        flash("Fatura kaydı bulunamadı.")
+        return redirect(url_for("fatura_listesi"))
+
+    if not fatura["pdf_icerik"]:
+        basarili, hata = _hizli_fatura_pdf_al(db, fatura_id)
+        if not basarili:
+            flash(f"Fatura PDF'i alınamadı: {hata}")
+            return redirect(url_for("fatura_goruntule", fatura_id=fatura_id))
+        cur = db.cursor()
+        cur.execute("SELECT pdf_icerik FROM fatura WHERE id = %s", (fatura_id,))
+        fatura = cur.fetchone()
+        cur.close()
+
+    return Response(bytes(fatura["pdf_icerik"]), mimetype="application/pdf")
 
 
 @app.route("/yedek-al")
@@ -3255,6 +3775,10 @@ def _abone_kaydet(abone_id):
         fatura_no=f.get("fatura_no", "").strip(),
         konum_enlem=_konum_sayilastir(f.get("konum_enlem")),
         konum_boylam=_konum_sayilastir(f.get("konum_boylam")),
+        kimlik_no=_kimlik_no_temizle(f.get("kimlik_no", "")),
+        vergi_dairesi=f.get("vergi_dairesi", "").strip(),
+        adres=f.get("adres", "").strip(),
+        eposta=f.get("eposta", "").strip(),
     )
 
     for oa in _ozel_alanlari_getir(db, "abone"):
@@ -3327,6 +3851,71 @@ def abone_tahsilat(abone_id):
     return render_template(
         "abone_tahsilat.html", abone=abone, tahsilatlar=tahsilatlar, geri=geri,
         bugun=datetime.now().strftime("%Y-%m-%d"),
+    )
+
+
+@app.route("/abone/<int:abone_id>/fatura-kes", methods=["GET", "POST"])
+@login_required
+def abone_fatura_kes(abone_id):
+    """Abone kaydındaki Sayaç Tutarı ve Malzeme Tutarı üzerinden e-Fatura/
+    e-Arşiv Fatura keser (kalemler: 'ÖN ÖDEMELİ SU SAYACI', 'FİTTİNGS
+    MALZEMESİ'). GET onay/kalem önizleme ekranını gösterir, POST asıl
+    kesme isteğini Hızlı Bilişim'e gönderir."""
+    db = get_db()
+    geri = request.args.get("geri", "") or request.form.get("geri", "")
+    cur = db.cursor()
+    cur.execute("SELECT * FROM abone WHERE id = %s", (abone_id,))
+    abone = cur.fetchone()
+    cur.close()
+    if abone is None:
+        flash("Kayıt bulunamadı.")
+        return redirect(url_for("abone_listesi"))
+
+    kalemler = []
+    if float(abone["sayac_tutari"] or 0) > 0:
+        kalemler.append({"aciklama": "ÖN ÖDEMELİ SU SAYACI", "tutar_kdv_dahil": float(abone["sayac_tutari"])})
+    if float(abone["malzeme_tutari"] or 0) > 0:
+        kalemler.append({"aciklama": "FİTTİNGS MALZEMESİ", "tutar_kdv_dahil": float(abone["malzeme_tutari"])})
+
+    onerilen_tur = _fatura_turu_belirle(abone["kimlik_no"])
+
+    if request.method == "POST":
+        fatura_turu = request.form.get("fatura_turu")
+        if fatura_turu not in ("earsiv", "efatura"):
+            flash("Geçerli bir fatura türü seçin.")
+            return redirect(url_for("abone_fatura_kes", abone_id=abone_id, geri=geri))
+        if not abone["kimlik_no"] or not abone["adres"]:
+            flash("Fatura kesmeden önce abonenin TC Kimlik No/Vergi No ve Adres bilgilerini doldurun.")
+            return redirect(url_for("abone_duzenle", abone_id=abone_id))
+        if not kalemler:
+            flash("Bu abonede faturalanacak bir tutar yok (Sayaç Tutarı ve Malzeme Tutarı sıfır).")
+            return redirect(url_for("abone_fatura_kes", abone_id=abone_id, geri=geri))
+
+        fatura_id = _hizli_fatura_gonder(
+            db, "abone", abone_id, dict(abone), kalemler, fatura_turu,
+            session.get("kullanici_adi", ""),
+        )
+        hedef = url_for("fatura_goruntule", fatura_id=fatura_id)
+        return redirect(hedef)
+
+    onizleme = []
+    toplam_dahil = 0.0
+    toplam_kdv = 0.0
+    for kalem in kalemler:
+        kdv_haric, kdv_tutari = _hizli_kdv_ayir(kalem["tutar_kdv_dahil"])
+        onizleme.append({
+            "aciklama": kalem["aciklama"], "tutar_kdv_dahil": kalem["tutar_kdv_dahil"],
+            "tutar_kdv_haric": kdv_haric, "kdv_tutari": kdv_tutari,
+        })
+        toplam_dahil += kalem["tutar_kdv_dahil"]
+        toplam_kdv += kdv_tutari
+
+    return render_template(
+        "fatura_kes.html", kaynak=abone, kaynak_tur="abone", kaynak_ad=f"{abone['adi']} {abone['soyadi']}",
+        duzenle_url=url_for("abone_duzenle", abone_id=abone_id),
+        geri_url=url_for("abone_fatura_kes", abone_id=abone_id) + (f"?geri={_url_quote(geri, safe='')}" if geri else ""),
+        onizleme=onizleme, toplam_dahil=round(toplam_dahil, 2), toplam_kdv=round(toplam_kdv, 2),
+        onerilen_tur=onerilen_tur, hizli_ayarli_mi=_hizli_ayarli_mi(), geri=geri,
     )
 
 
@@ -3648,6 +4237,10 @@ def _ariza_kaydet(ariza_id):
         islem_aciklama=f.get("islem_aciklama", "").strip(),
         konum_enlem=_konum_sayilastir(f.get("konum_enlem")),
         konum_boylam=_konum_sayilastir(f.get("konum_boylam")),
+        kimlik_no=_kimlik_no_temizle(f.get("kimlik_no", "")),
+        vergi_dairesi=f.get("vergi_dairesi", "").strip(),
+        adres=f.get("adres", "").strip(),
+        eposta=f.get("eposta", "").strip(),
     )
 
     db = get_db()
@@ -4382,6 +4975,66 @@ def ariza_tahsilat(ariza_id):
     return render_template(
         "ariza_tahsilat.html", kayit=kayit, tahsilatlar=tahsilatlar,
         bugun=datetime.now().strftime("%Y-%m-%d"),
+    )
+
+
+@app.route("/ariza/<int:ariza_id>/fatura-kes", methods=["GET", "POST"])
+@login_required
+def ariza_fatura_kes(ariza_id):
+    """Arıza kaydındaki Arıza Ücreti üzerinden e-Fatura/e-Arşiv Fatura keser
+    (kalem: 'ARIZA TAMİR ÜCRETİ'). GET onay/kalem önizleme ekranını
+    gösterir, POST asıl kesme isteğini Hızlı Bilişim'e gönderir."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM ariza WHERE id = %s", (ariza_id,))
+    ariza = cur.fetchone()
+    cur.close()
+    if ariza is None:
+        flash("Kayıt bulunamadı.")
+        return redirect(url_for("ariza_listesi"))
+
+    kalemler = []
+    if float(ariza["ariza_ucret"] or 0) > 0:
+        kalemler.append({"aciklama": "ARIZA TAMİR ÜCRETİ", "tutar_kdv_dahil": float(ariza["ariza_ucret"])})
+
+    onerilen_tur = _fatura_turu_belirle(ariza["kimlik_no"])
+
+    if request.method == "POST":
+        fatura_turu = request.form.get("fatura_turu")
+        if fatura_turu not in ("earsiv", "efatura"):
+            flash("Geçerli bir fatura türü seçin.")
+            return redirect(url_for("ariza_fatura_kes", ariza_id=ariza_id))
+        if not ariza["kimlik_no"] or not ariza["adres"]:
+            flash("Fatura kesmeden önce arıza kaydının TC Kimlik No/Vergi No ve Adres bilgilerini doldurun.")
+            return redirect(url_for("ariza_duzenle", ariza_id=ariza_id))
+        if not kalemler:
+            flash("Bu arıza kaydında faturalanacak bir tutar yok (Arıza Ücreti sıfır).")
+            return redirect(url_for("ariza_fatura_kes", ariza_id=ariza_id))
+
+        fatura_id = _hizli_fatura_gonder(
+            db, "ariza", ariza_id, dict(ariza), kalemler, fatura_turu,
+            session.get("kullanici_adi", ""),
+        )
+        return redirect(url_for("fatura_goruntule", fatura_id=fatura_id))
+
+    onizleme = []
+    toplam_dahil = 0.0
+    toplam_kdv = 0.0
+    for kalem in kalemler:
+        kdv_haric, kdv_tutari = _hizli_kdv_ayir(kalem["tutar_kdv_dahil"])
+        onizleme.append({
+            "aciklama": kalem["aciklama"], "tutar_kdv_dahil": kalem["tutar_kdv_dahil"],
+            "tutar_kdv_haric": kdv_haric, "kdv_tutari": kdv_tutari,
+        })
+        toplam_dahil += kalem["tutar_kdv_dahil"]
+        toplam_kdv += kdv_tutari
+
+    return render_template(
+        "fatura_kes.html", kaynak=ariza, kaynak_tur="ariza", kaynak_ad=f"{ariza['adi']} {ariza['soyadi']}",
+        duzenle_url=url_for("ariza_duzenle", ariza_id=ariza_id),
+        geri_url=url_for("ariza_fatura_kes", ariza_id=ariza_id),
+        onizleme=onizleme, toplam_dahil=round(toplam_dahil, 2), toplam_kdv=round(toplam_kdv, 2),
+        onerilen_tur=onerilen_tur, hizli_ayarli_mi=_hizli_ayarli_mi(), geri="",
     )
 
 

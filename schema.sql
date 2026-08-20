@@ -231,3 +231,45 @@ CREATE TABLE IF NOT EXISTS ayar (
     anahtar TEXT PRIMARY KEY,
     deger TEXT
 );
+
+-- Hızlı Bilişim Teknolojileri e-Connect API entegrasyonu (e-Fatura/e-Arşiv
+-- Fatura kesme): fatura kesebilmek için GİB'in zorunlu tuttuğu ama daha önce
+-- hiç tutulmayan alıcı kimlik/adres bilgileri — Abone ve Arıza kayıtlarına
+-- ayrı ayrı eklendi (bir arıza kaydı mutlaka bir abone kaydına bağlı
+-- olmayabilir, ikisi de bağımsız fatura kesebilmeli).
+-- "kimlik_no": TC Kimlik No (11 haneli, bireysel abone) ya da Vergi No
+-- (10 haneli, kurumsal abone) — hangisi olduğu uzunluğuna göre koddan
+-- (_fatura_turu_belirle) otomatik anlaşılır.
+ALTER TABLE abone ADD COLUMN IF NOT EXISTS kimlik_no TEXT;
+ALTER TABLE abone ADD COLUMN IF NOT EXISTS vergi_dairesi TEXT;
+ALTER TABLE abone ADD COLUMN IF NOT EXISTS adres TEXT;
+ALTER TABLE abone ADD COLUMN IF NOT EXISTS eposta TEXT;
+
+ALTER TABLE ariza ADD COLUMN IF NOT EXISTS kimlik_no TEXT;
+ALTER TABLE ariza ADD COLUMN IF NOT EXISTS vergi_dairesi TEXT;
+ALTER TABLE ariza ADD COLUMN IF NOT EXISTS adres TEXT;
+ALTER TABLE ariza ADD COLUMN IF NOT EXISTS eposta TEXT;
+
+-- Hızlı Bilişim üzerinden kesilen her e-Fatura/e-Arşiv Fatura'nın kaydı.
+-- PDF içeriği de (ariza_fotograf/abone_fotograf ile aynı sebeple —
+-- DigitalOcean App Platform'un diski kalıcı değil) doğrudan veritabanında
+-- (BYTEA) saklanır, böylece "Faturalarım" sayfasından her zaman erişilebilir.
+CREATE TABLE IF NOT EXISTS fatura (
+    id SERIAL PRIMARY KEY,
+    kaynak_tur TEXT NOT NULL,              -- 'abone' veya 'ariza'
+    kaynak_id INTEGER NOT NULL,
+    fatura_turu TEXT NOT NULL,             -- 'earsiv' veya 'efatura'
+    yerel_id TEXT NOT NULL,                -- bizim ürettiğimiz, API'ye gönderilen benzersiz kimlik (LocalId)
+    fatura_uuid TEXT,                      -- Hızlı Bilişim'in döndürdüğü belge UUID'si (başarılıysa)
+    durum TEXT NOT NULL DEFAULT 'beklemede',  -- 'beklemede' / 'basarili' / 'hata'
+    hata_mesaji TEXT,
+    tutar_kdv_dahil REAL,
+    tutar_kdv_haric REAL,
+    kdv_tutari REAL,
+    kalemler TEXT,                         -- fatura kalemlerinin özeti (ör. "ÖN ÖDEMELİ SU SAYACI: 1.200,00 TL")
+    pdf_icerik BYTEA,
+    olusturan_kullanici TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_fatura_kaynak ON fatura(kaynak_tur, kaynak_id);
