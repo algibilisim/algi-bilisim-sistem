@@ -308,3 +308,57 @@ CREATE TABLE IF NOT EXISTS stok_hareket (
 );
 
 CREATE INDEX IF NOT EXISTS idx_stok_hareket_urun ON stok_hareket(urun_id);
+
+-- FABRİKA / TAMİR MODÜLÜ: arızalı sayaçların üreticiye/fabrikaya tamire
+-- gönderilip geri gelme sürecinin takibi. Bir kayıt oluşturulduğunda
+-- 'beklemede' (henüz gönderilmedi) durumundadır; Fabrika/Tamir listesinden
+-- seçilip "Gönderim Oluştur" ile bir fabrika_gonderim'e ve onun altındaki
+-- (8'erli gruplar halinde otomatik oluşan) fabrika_koli'lere dahil edilince
+-- durum 'gonderildi' olur.
+CREATE TABLE IF NOT EXISTS fabrika_gonderim (
+    id SERIAL PRIMARY KEY,
+    kargo_firmasi TEXT,
+    kargo_takip_no TEXT,
+    urun_tanimi TEXT NOT NULL DEFAULT 'Elektronik Kartlı Ön Ödemeli Su Sayacı',
+    adres TEXT,
+    gonderim_tarihi DATE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS fabrika_koli (
+    id SERIAL PRIMARY KEY,
+    gonderim_id INTEGER NOT NULL REFERENCES fabrika_gonderim(id) ON DELETE CASCADE,
+    koli_no INTEGER NOT NULL,
+    koli_tarihi DATE,           -- genel gönderim tarihinden farklı olabilir (örn. bir koli bir gün sonra kargoya verilmiş olabilir)
+    aciklama TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_fabrika_koli_gonderim ON fabrika_koli(gonderim_id);
+
+CREATE TABLE IF NOT EXISTS fabrika_tamir (
+    id SERIAL PRIMARY KEY,
+    seri_no TEXT NOT NULL,
+    abone_adi TEXT,
+    koy_adi TEXT,
+    telefon TEXT,
+    ilk_montaj_tarihi TEXT,
+    uretim_yili TEXT,
+    tespit_edilen_ariza TEXT,
+    yerine_sayac_takildi BOOLEAN NOT NULL DEFAULT FALSE,
+    takilan_sayac_serisi TEXT,
+    durum TEXT NOT NULL DEFAULT 'beklemede',   -- beklemede / gonderildi / tamirde / tamir_edildi / iade_edildi
+    gonderim_tarihi DATE,
+    donus_tarihi DATE,
+    tamir_ucreti REAL DEFAULT 0,
+    parca_maliyeti REAL DEFAULT 0,
+    odeyen TEXT,
+    koli_id INTEGER REFERENCES fabrika_koli(id) ON DELETE SET NULL,
+    olusturan_kullanici TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_fabrika_tamir_seri_no ON fabrika_tamir(seri_no);
+CREATE INDEX IF NOT EXISTS idx_fabrika_tamir_durum ON fabrika_tamir(durum);
+CREATE INDEX IF NOT EXISTS idx_fabrika_tamir_koli ON fabrika_tamir(koli_id);

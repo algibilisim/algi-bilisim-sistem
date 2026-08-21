@@ -43,6 +43,21 @@ except Exception:
     # aynı mantık: kurulu değilse sadece kenarlık onarma adımı atlanır, uygulama çökmez.
     BeautifulSoup = None
 
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+except Exception:
+    # aynı mantık: kurulu değilse sadece Sayaç Durum Raporu'nun PDF indirme
+    # seçeneği devre dışı kalır (yazdırılabilir HTML görünümü etkilenmez),
+    # uygulamanın geri kalanı çökmez.
+    A4 = mm = colors = SimpleDocTemplate = Table = TableStyle = None
+    Paragraph = Spacer = PageBreak = ParagraphStyle = pdfmetrics = TTFont = None
+
 DATABASE_URL = os.environ.get("DATABASE_URL")
 SECRET_KEY = os.environ.get("SECRET_KEY")
 if not SECRET_KEY:
@@ -898,7 +913,10 @@ GRUP_RENK_PALETI = [
     "#d35400", "#1a7a3c",
 ]
 
-YEDEKLENECEK_TABLOLAR = ["abone", "tahsilat", "ariza", "ariza_tahsilat", "kullanici"]
+YEDEKLENECEK_TABLOLAR = [
+    "abone", "tahsilat", "ariza", "ariza_tahsilat", "kullanici",
+    "fabrika_gonderim", "fabrika_koli", "fabrika_tamir",
+]
 
 
 def _gg_aa_yyyy(t):
@@ -2843,6 +2861,561 @@ def stok_hareket_sil(hareket_id):
     cur.close()
     flash("Hareket silindi, stok miktarı geri alındı.")
     return redirect(url_for("stok_hareketleri", urun_id=urun_id))
+
+
+# ---------------------------------------------------------------------------
+# FABRİKA / TAMİR MODÜLÜ: arızalı sayaçların üreticiye/fabrikaya tamire
+# gönderilip geri gelme sürecinin takibi, kargo/koli (8'erli kutu) yönetimi
+# ve "Sayaç Durum Raporu" (ARIZALI SAYAÇ BİLGİ FORMU) çıktısı.
+# ---------------------------------------------------------------------------
+
+FABRIKA_KOLI_KAPASITESI = 8
+
+FABRIKA_DURUM_ETIKETLERI = {
+    "beklemede": "Beklemede (Gönderilmedi)",
+    "gonderildi": "Gönderildi",
+    "tamirde": "Tamirde",
+    "tamir_edildi": "Tamir Edildi",
+    "iade_edildi": "İade Edildi",
+}
+
+_FABRIKA_FONT_KAYITLI = False
+
+
+def _fabrika_durum_etiketi(durum):
+    return FABRIKA_DURUM_ETIKETLERI.get(durum, durum or "")
+
+
+def _fabrika_font_hazirla():
+    """Sayaç Durum Raporu PDF'inde Türkçe karakterlerin (ş, ğ, ı, İ, ö, ü, ç)
+    her ortamda doğru görünmesi için, sunucudaki yüklü fontlara güvenmek yerine
+    depoya gömülen DejaVuSans fontunu reportlab'a kayıt eder."""
+    global _FABRIKA_FONT_KAYITLI
+    if _FABRIKA_FONT_KAYITLI or pdfmetrics is None:
+        return
+    taban = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "fonts")
+    pdfmetrics.registerFont(TTFont("DejaVuSans", os.path.join(taban, "DejaVuSans.ttf")))
+    pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", os.path.join(taban, "DejaVuSans-Bold.ttf")))
+    _FABRIKA_FONT_KAYITLI = True
+
+
+def _gg_aa_yyyy_veya(deger):
+    """Bir tarih değerini (date/datetime/str/None) GG.AA.YYYY biçimine çevirir;
+    boşsa boş string döner."""
+    if not deger:
+        return ""
+    if isinstance(deger, str):
+        try:
+            deger = datetime.strptime(deger[:10], "%Y-%m-%d").date()
+        except ValueError:
+            return deger
+    try:
+        return deger.strftime("%d.%m.%Y")
+    except Exception:
+        return str(deger)
+
+
+def _fabrika_rapor_pdf_olustur(gonderim, koliler, satici):
+    """Sayaç Durum Raporu'nu (yüklenen 'ARIZALI SAYAÇ BİLGİ FORMU' şablonuyla
+    aynı düzende: ADRES/TARİH/ÜRÜN TANIMI başlığı, S.NO/SERİ NO/ÜRETİM YILI/
+    ARIZA DURUMU/SAYAÇ SAHİBİ tablosu, TOPLAM satırı, imza alanı) reportlab
+    ile PDF olarak üretir. Her koli kendi sayfasıdır."""
+    _fabrika_font_hazirla()
+    arabellek = io.BytesIO()
+    belge = SimpleDocTemplate(
+        arabellek, pagesize=A4,
+        topMargin=14 * mm, bottomMargin=14 * mm, leftMargin=14 * mm, rightMargin=14 * mm,
+    )
+    baslik_stili = ParagraphStyle("fabrika_baslik", fontName="DejaVuSans-Bold", fontSize=13, alignment=1, spaceAfter=10)
+    normal_stil = ParagraphStyle("fabrika_normal", fontName="DejaVuSans", fontSize=9, leading=11)
+    normal_kalin = ParagraphStyle("fabrika_normal_kalin", fontName="DejaVuSans-Bold", fontSize=9, leading=11)
+    hucre_stil = ParagraphStyle("fabrika_hucre", fontName="DejaVuSans", fontSize=8, leading=10)
+    baslik_hucre_stil = ParagraphStyle("fabrika_baslik_hucre", fontName="DejaVuSans-Bold", fontSize=8, leading=10, alignment=1)
+
+    urun_tanimi = gonderim.get("urun_tanimi") or "Elektronik Kartlı Ön Ödemeli Su Sayacı"
+    adres = gonderim.get("adres") or ""
+    kargo_firmasi = gonderim.get("kargo_firmasi") or ""
+    kargo_takip_no = gonderim.get("kargo_takip_no") or ""
+    toplam_koli = len(koliler)
+
+    ogeler = []
+    for sira, koli in enumerate(koliler, start=1):
+        if sira > 1:
+            ogeler.append(PageBreak())
+        ogeler.append(Paragraph("ARIZALI SAYAÇ BİLGİ FORMU", baslik_stili))
+
+        tarih_str = _gg_aa_yyyy_veya(koli.get("koli_tarihi") or gonderim.get("gonderim_tarihi"))
+        ust_bilgi = Table(
+            [
+                [Paragraph("ADRES", normal_kalin), Paragraph(adres, normal_stil),
+                 Paragraph("TARİH", normal_kalin), Paragraph(tarih_str, normal_stil)],
+                [Paragraph("ÜRÜN TANIMI", normal_kalin), Paragraph(urun_tanimi, normal_stil),
+                 Paragraph("KOLİ", normal_kalin), Paragraph(f"{sira} / {toplam_koli}", normal_stil)],
+                [Paragraph("KARGO FİRMASI", normal_kalin), Paragraph(kargo_firmasi, normal_stil),
+                 Paragraph("TAKİP NO", normal_kalin), Paragraph(kargo_takip_no, normal_stil)],
+            ],
+            colWidths=[28 * mm, 70 * mm, 22 * mm, 52 * mm],
+        )
+        ust_bilgi.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke),
+            ("BACKGROUND", (2, 0), (2, -1), colors.whitesmoke),
+        ]))
+        ogeler.append(ust_bilgi)
+        ogeler.append(Spacer(1, 8))
+
+        basliklar = ["S.NO", "SERİ NO", "ÜRETİM\nYILI", "ARIZA DURUMU", "SAYAÇ SAHİBİ"]
+        veri = [[Paragraph(b, baslik_hucre_stil) for b in basliklar]]
+        kayitlar = koli.get("kayitlar") or []
+        for i in range(FABRIKA_KOLI_KAPASITESI):
+            if i < len(kayitlar):
+                k = kayitlar[i]
+                sahip = f"{k.get('koy_adi') or ''}\n{k.get('abone_adi') or ''}".strip()
+                veri.append([
+                    Paragraph(str(i + 1), hucre_stil),
+                    Paragraph(k.get("seri_no") or "", hucre_stil),
+                    Paragraph(k.get("uretim_yili") or "", hucre_stil),
+                    Paragraph(k.get("tespit_edilen_ariza") or "", hucre_stil),
+                    Paragraph(sahip, hucre_stil),
+                ])
+            else:
+                veri.append([Paragraph(str(i + 1), hucre_stil), "", "", "", ""])
+        veri.append([
+            Paragraph("TOPLAM", normal_kalin), "", "",
+            Paragraph(f"{len(kayitlar)} Adet Su Sayacı", normal_kalin), "",
+        ])
+        tablo = Table(veri, colWidths=[12 * mm, 26 * mm, 18 * mm, 82 * mm, 34 * mm], repeatRows=1)
+        tablo.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("BACKGROUND", (0, -1), (-1, -1), colors.whitesmoke),
+            ("SPAN", (0, -1), (2, -1)),
+            ("SPAN", (3, -1), (4, -1)),
+        ]))
+        ogeler.append(tablo)
+        ogeler.append(Spacer(1, 26))
+
+        imza = Table(
+            [
+                [Paragraph("YETKİLİ BAYİİ", normal_kalin),
+                 Paragraph(f"{satici.get('unvan', '')} – {satici.get('yetkili', '')}".strip(" –"), normal_kalin)],
+                [Paragraph("İMZA", normal_stil), Paragraph("İMZA", normal_stil)],
+                [Spacer(1, 24), Spacer(1, 24)],
+            ],
+            colWidths=[86 * mm, 86 * mm],
+        )
+        imza.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+        ogeler.append(imza)
+
+    belge.build(ogeler)
+    return arabellek.getvalue()
+
+
+def _fabrika_rapor_verisi(db, gonderim_id):
+    """Bir gönderime ait kargo/koli/kayıt verilerini ve rapor için gereken
+    satıcı (firma) bilgisini tek seferde toplar — hem yazdırılabilir HTML
+    hem de PDF rapor görünümü bu ortak fonksiyonu kullanır."""
+    cur = db.cursor()
+    cur.execute("SELECT * FROM fabrika_gonderim WHERE id = %s", (gonderim_id,))
+    gonderim = cur.fetchone()
+    if gonderim is None:
+        cur.close()
+        return None, None, None
+    cur.execute("SELECT * FROM fabrika_koli WHERE gonderim_id = %s ORDER BY koli_no", (gonderim_id,))
+    koliler = cur.fetchall()
+    for koli in koliler:
+        cur.execute("SELECT * FROM fabrika_tamir WHERE koli_id = %s ORDER BY id", (koli["id"],))
+        koli["kayitlar"] = cur.fetchall()
+    cur.close()
+    satici_unvan = _ayar_getir(db, "fatura_satici_unvan") or ""
+    satici_ad = _ayar_getir(db, "fatura_satici_ad") or ""
+    satici_soyad = _ayar_getir(db, "fatura_satici_soyad") or ""
+    satici = {"unvan": satici_unvan, "yetkili": f"{satici_ad} {satici_soyad}".strip()}
+    return gonderim, koliler, satici
+
+
+@app.route("/fabrika")
+@login_required
+def fabrika_listesi():
+    """Fabrikaya/üreticiye tamire gönderilen (ya da gönderilmeyi bekleyen)
+    arızalı sayaç kayıtlarını listeler. 'Beklemede' olanlar (henüz bir
+    koliye/gönderime dahil edilmemiş) işaretlenip toplu 'Gönderim Oluştur'
+    ile paketlenebilir."""
+    db = get_db()
+    durum_filtre = request.args.get("durum", "").strip()
+    cur = db.cursor()
+    if durum_filtre and durum_filtre in FABRIKA_DURUM_ETIKETLERI:
+        cur.execute(
+            "SELECT ft.*, fk.koli_no, fk.gonderim_id AS koli_gonderim_id "
+            "FROM fabrika_tamir ft LEFT JOIN fabrika_koli fk ON fk.id = ft.koli_id "
+            "WHERE ft.durum = %s ORDER BY ft.id DESC",
+            (durum_filtre,),
+        )
+    else:
+        cur.execute(
+            "SELECT ft.*, fk.koli_no, fk.gonderim_id AS koli_gonderim_id "
+            "FROM fabrika_tamir ft LEFT JOIN fabrika_koli fk ON fk.id = ft.koli_id "
+            "ORDER BY ft.id DESC"
+        )
+    kayitlar = cur.fetchall()
+    cur.close()
+    return render_template(
+        "fabrika_listesi.html", kayitlar=kayitlar, durum_filtre=durum_filtre,
+        durum_etiketleri=FABRIKA_DURUM_ETIKETLERI,
+    )
+
+
+@app.route("/fabrika/yeni", methods=["GET", "POST"])
+@login_required
+def fabrika_yeni():
+    """Yeni bir arızalı sayaç / tamir kaydı oluşturur (henüz 'beklemede' —
+    bir gönderime/koliye dahil edilene kadar fabrikaya gönderilmiş sayılmaz)."""
+    if request.method == "POST":
+        seri_no = request.form.get("seri_no", "").strip()
+        if not seri_no:
+            flash("Seri No zorunludur.")
+            return redirect(url_for("fabrika_yeni"))
+        yerine_takildi = request.form.get("yerine_sayac_takildi") == "takildi"
+        db = get_db()
+        cur = db.cursor()
+        cur.execute(
+            "INSERT INTO fabrika_tamir "
+            "(seri_no, abone_adi, koy_adi, telefon, ilk_montaj_tarihi, uretim_yili, "
+            "tespit_edilen_ariza, yerine_sayac_takildi, takilan_sayac_serisi, "
+            "tamir_ucreti, parca_maliyeti, odeyen, olusturan_kullanici) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (
+                seri_no,
+                request.form.get("abone_adi", "").strip(),
+                request.form.get("koy_adi", "").strip(),
+                request.form.get("telefon", "").strip(),
+                request.form.get("ilk_montaj_tarihi", "").strip() or None,
+                request.form.get("uretim_yili", "").strip(),
+                request.form.get("tespit_edilen_ariza", "").strip(),
+                yerine_takildi,
+                request.form.get("takilan_sayac_serisi", "").strip() if yerine_takildi else "",
+                _sayi_veya(request.form.get("tamir_ucreti"), 0),
+                _sayi_veya(request.form.get("parca_maliyeti"), 0),
+                request.form.get("odeyen", "").strip(),
+                session.get("kullanici_adi", ""),
+            ),
+        )
+        db.commit()
+        cur.close()
+        flash("Tamir kaydı eklendi (Beklemede). Gönderime dahil etmek için Fabrika/Tamir listesinden seçip "
+              "'Gönderim Oluştur' deyin.")
+        return redirect(url_for("fabrika_listesi"))
+    return render_template("fabrika_form.html", kayit=None)
+
+
+@app.route("/fabrika/<int:kayit_id>/duzenle", methods=["GET", "POST"])
+@login_required
+def fabrika_duzenle(kayit_id):
+    """Bir tamir kaydını düzenler. Kayıt bir koliye/gönderime dahil edildikten
+    sonra durum (Tamirde/Tamir Edildi/İade Edildi), dönüş tarihi, tamir
+    ücreti/parça maliyeti gibi alanlar güncellenebilir. 'Beklemede' durumundan
+    'Gönderildi' durumuna geçiş SADECE 'Gönderim Oluştur' akışıyla olur —
+    burada elle değiştirilemez."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM fabrika_tamir WHERE id = %s", (kayit_id,))
+    kayit = cur.fetchone()
+    cur.close()
+    if kayit is None:
+        flash("Tamir kaydı bulunamadı.")
+        return redirect(url_for("fabrika_listesi"))
+
+    if request.method == "POST":
+        seri_no = request.form.get("seri_no", "").strip()
+        if not seri_no:
+            flash("Seri No zorunludur.")
+            return redirect(url_for("fabrika_duzenle", kayit_id=kayit_id))
+        yerine_takildi = request.form.get("yerine_sayac_takildi") == "takildi"
+
+        yeni_durum = kayit["durum"]
+        if kayit["koli_id"] is not None:
+            secilen_durum = request.form.get("durum", "").strip()
+            if secilen_durum in ("gonderildi", "tamirde", "tamir_edildi", "iade_edildi"):
+                yeni_durum = secilen_durum
+
+        cur = db.cursor()
+        cur.execute(
+            "UPDATE fabrika_tamir SET seri_no=%s, abone_adi=%s, koy_adi=%s, telefon=%s, "
+            "ilk_montaj_tarihi=%s, uretim_yili=%s, tespit_edilen_ariza=%s, "
+            "yerine_sayac_takildi=%s, takilan_sayac_serisi=%s, durum=%s, donus_tarihi=%s, "
+            "tamir_ucreti=%s, parca_maliyeti=%s, odeyen=%s, updated_at=NOW() WHERE id=%s",
+            (
+                seri_no,
+                request.form.get("abone_adi", "").strip(),
+                request.form.get("koy_adi", "").strip(),
+                request.form.get("telefon", "").strip(),
+                request.form.get("ilk_montaj_tarihi", "").strip() or None,
+                request.form.get("uretim_yili", "").strip(),
+                request.form.get("tespit_edilen_ariza", "").strip(),
+                yerine_takildi,
+                request.form.get("takilan_sayac_serisi", "").strip() if yerine_takildi else "",
+                yeni_durum,
+                request.form.get("donus_tarihi", "").strip() or None,
+                _sayi_veya(request.form.get("tamir_ucreti"), 0),
+                _sayi_veya(request.form.get("parca_maliyeti"), 0),
+                request.form.get("odeyen", "").strip(),
+                kayit_id,
+            ),
+        )
+        db.commit()
+        cur.close()
+        flash("Tamir kaydı güncellendi.")
+        return redirect(url_for("fabrika_listesi"))
+
+    koli_bilgi = None
+    if kayit["koli_id"] is not None:
+        cur = db.cursor()
+        cur.execute(
+            "SELECT fk.koli_no, fk.gonderim_id, fg.kargo_firmasi, fg.kargo_takip_no "
+            "FROM fabrika_koli fk JOIN fabrika_gonderim fg ON fg.id = fk.gonderim_id "
+            "WHERE fk.id = %s", (kayit["koli_id"],),
+        )
+        koli_bilgi = cur.fetchone()
+        cur.close()
+    return render_template(
+        "fabrika_form.html", kayit=kayit, koli_bilgi=koli_bilgi,
+        durum_etiketleri=FABRIKA_DURUM_ETIKETLERI,
+    )
+
+
+@app.route("/fabrika/<int:kayit_id>/sil", methods=["POST"])
+@login_required
+def fabrika_sil(kayit_id):
+    """Bir tamir kaydını siler."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM fabrika_tamir WHERE id = %s", (kayit_id,))
+    db.commit()
+    cur.close()
+    flash("Tamir kaydı silindi.")
+    return redirect(url_for("fabrika_listesi"))
+
+
+@app.route("/fabrika/gonderim-olustur", methods=["POST"])
+@login_required
+def fabrika_gonderim_olustur():
+    """1. adım: Fabrika/Tamir listesinden işaretlenen (henüz 'beklemede'
+    olan) kayıtları alır, kaç koli oluşacağını hesaplar ve kargo bilgisi
+    girilecek onay ekranını gösterir."""
+    secili_idler = request.form.getlist("secili_id")
+    if not secili_idler:
+        flash("Gönderim oluşturmak için en az bir kayıt seçmelisiniz.")
+        return redirect(url_for("fabrika_listesi"))
+    try:
+        id_listesi = sorted({int(x) for x in secili_idler})
+    except ValueError:
+        flash("Geçersiz kayıt seçimi.")
+        return redirect(url_for("fabrika_listesi"))
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT * FROM fabrika_tamir WHERE id = ANY(%s) AND durum = 'beklemede' AND koli_id IS NULL "
+        "ORDER BY id", (id_listesi,),
+    )
+    kayitlar = cur.fetchall()
+    cur.close()
+    if not kayitlar:
+        flash("Seçilen kayıtlar artık 'Beklemede' durumunda değil (belki başka bir gönderime dahil edildi). "
+              "Lütfen listeyi yenileyip tekrar deneyin.")
+        return redirect(url_for("fabrika_listesi"))
+
+    koli_sayisi = math.ceil(len(kayitlar) / FABRIKA_KOLI_KAPASITESI)
+    varsayilan_adres = _ayar_getir(db, "fatura_satici_adres") or ""
+    return render_template(
+        "fabrika_gonderim_onay.html", kayitlar=kayitlar, koli_sayisi=koli_sayisi,
+        koli_kapasitesi=FABRIKA_KOLI_KAPASITESI, varsayilan_adres=varsayilan_adres,
+        bugun=datetime.now().strftime("%Y-%m-%d"),
+    )
+
+
+@app.route("/fabrika/gonderim-kaydet", methods=["POST"])
+@login_required
+def fabrika_gonderim_kaydet():
+    """2. adım: Onay ekranından gelen kargo bilgisiyle birlikte gönderimi ve
+    içindeki koli'leri (8'erli gruplar halinde) veritabanına kaydeder."""
+    secili_idler = request.form.getlist("secili_id")
+    if not secili_idler:
+        flash("Gönderim oluşturmak için en az bir kayıt seçmelisiniz.")
+        return redirect(url_for("fabrika_listesi"))
+    try:
+        id_listesi = sorted({int(x) for x in secili_idler})
+    except ValueError:
+        flash("Geçersiz kayıt seçimi.")
+        return redirect(url_for("fabrika_listesi"))
+
+    gonderim_tarihi = request.form.get("gonderim_tarihi", "").strip() or datetime.now().strftime("%Y-%m-%d")
+    kargo_firmasi = request.form.get("kargo_firmasi", "").strip()
+    kargo_takip_no = request.form.get("kargo_takip_no", "").strip()
+    urun_tanimi = request.form.get("urun_tanimi", "").strip() or "Elektronik Kartlı Ön Ödemeli Su Sayacı"
+    adres = request.form.get("adres", "").strip()
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT id FROM fabrika_tamir WHERE id = ANY(%s) AND durum = 'beklemede' AND koli_id IS NULL "
+        "ORDER BY id", (id_listesi,),
+    )
+    gecerli_idler = [r["id"] for r in cur.fetchall()]
+    if not gecerli_idler:
+        cur.close()
+        flash("Seçilen kayıtlar artık 'Beklemede' durumunda değil. Lütfen listeyi yenileyip tekrar deneyin.")
+        return redirect(url_for("fabrika_listesi"))
+
+    cur.execute(
+        "INSERT INTO fabrika_gonderim (kargo_firmasi, kargo_takip_no, urun_tanimi, adres, gonderim_tarihi) "
+        "VALUES (%s, %s, %s, %s, %s) RETURNING id",
+        (kargo_firmasi, kargo_takip_no, urun_tanimi, adres, gonderim_tarihi),
+    )
+    gonderim_id = cur.fetchone()["id"]
+
+    koli_no = 0
+    for i in range(0, len(gecerli_idler), FABRIKA_KOLI_KAPASITESI):
+        koli_no += 1
+        parca = gecerli_idler[i:i + FABRIKA_KOLI_KAPASITESI]
+        cur.execute(
+            "INSERT INTO fabrika_koli (gonderim_id, koli_no, koli_tarihi) VALUES (%s, %s, %s) RETURNING id",
+            (gonderim_id, koli_no, gonderim_tarihi),
+        )
+        koli_id = cur.fetchone()["id"]
+        cur.execute(
+            "UPDATE fabrika_tamir SET koli_id=%s, durum='gonderildi', gonderim_tarihi=%s, updated_at=NOW() "
+            "WHERE id = ANY(%s)",
+            (koli_id, gonderim_tarihi, parca),
+        )
+    db.commit()
+    cur.close()
+    flash(f"Gönderim oluşturuldu: {len(gecerli_idler)} sayaç, {koli_no} koli halinde paketlendi.")
+    return redirect(url_for("fabrika_gonderim_detay", gonderim_id=gonderim_id))
+
+
+@app.route("/fabrika/gonderimler")
+@login_required
+def fabrika_gonderim_listesi():
+    """Tüm gönderimleri (kargo bilgisi, koli/sayaç sayısı) listeler — Sayaç
+    Durum Raporu'na buradan ulaşılır."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT fg.*, "
+        "(SELECT COUNT(*) FROM fabrika_koli fk WHERE fk.gonderim_id = fg.id) AS koli_sayisi, "
+        "(SELECT COUNT(*) FROM fabrika_tamir ft JOIN fabrika_koli fk ON fk.id = ft.koli_id "
+        " WHERE fk.gonderim_id = fg.id) AS sayac_sayisi "
+        "FROM fabrika_gonderim fg ORDER BY fg.id DESC"
+    )
+    gonderimler = cur.fetchall()
+    cur.close()
+    return render_template("fabrika_gonderim_listesi.html", gonderimler=gonderimler)
+
+
+@app.route("/fabrika/gonderim/<int:gonderim_id>", methods=["GET", "POST"])
+@login_required
+def fabrika_gonderim_detay(gonderim_id):
+    """Bir gönderimin kargo bilgisini gösterir/düzenler ve içindeki koli'leri,
+    her koliye ait sayaç kayıtlarıyla birlikte listeler."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM fabrika_gonderim WHERE id = %s", (gonderim_id,))
+    gonderim = cur.fetchone()
+    if gonderim is None:
+        cur.close()
+        flash("Gönderim bulunamadı.")
+        return redirect(url_for("fabrika_gonderim_listesi"))
+
+    if request.method == "POST":
+        cur.execute(
+            "UPDATE fabrika_gonderim SET kargo_firmasi=%s, kargo_takip_no=%s, urun_tanimi=%s, adres=%s WHERE id=%s",
+            (
+                request.form.get("kargo_firmasi", "").strip(),
+                request.form.get("kargo_takip_no", "").strip(),
+                request.form.get("urun_tanimi", "").strip() or "Elektronik Kartlı Ön Ödemeli Su Sayacı",
+                request.form.get("adres", "").strip(),
+                gonderim_id,
+            ),
+        )
+        db.commit()
+        cur.close()
+        flash("Gönderim/kargo bilgisi güncellendi.")
+        return redirect(url_for("fabrika_gonderim_detay", gonderim_id=gonderim_id))
+
+    cur.execute("SELECT * FROM fabrika_koli WHERE gonderim_id = %s ORDER BY koli_no", (gonderim_id,))
+    koliler = cur.fetchall()
+    for koli in koliler:
+        cur.execute("SELECT * FROM fabrika_tamir WHERE koli_id = %s ORDER BY id", (koli["id"],))
+        koli["kayitlar"] = cur.fetchall()
+    cur.close()
+    return render_template("fabrika_gonderim_detay.html", gonderim=gonderim, koliler=koliler)
+
+
+@app.route("/fabrika/koli/<int:koli_id>/duzenle", methods=["POST"])
+@login_required
+def fabrika_koli_duzenle(koli_id):
+    """Bir kolinin kendi tarihini ve notunu (genel gönderim tarihinden farklı
+    olabilir — örn. bir koli bir gün sonra kargoya verilmiş olabilir) günceller."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT gonderim_id FROM fabrika_koli WHERE id = %s", (koli_id,))
+    koli = cur.fetchone()
+    if koli is None:
+        cur.close()
+        flash("Koli bulunamadı.")
+        return redirect(url_for("fabrika_gonderim_listesi"))
+    cur.execute(
+        "UPDATE fabrika_koli SET koli_tarihi=%s, aciklama=%s WHERE id=%s",
+        (
+            request.form.get("koli_tarihi", "").strip() or None,
+            request.form.get("aciklama", "").strip(),
+            koli_id,
+        ),
+    )
+    db.commit()
+    gonderim_id = koli["gonderim_id"]
+    cur.close()
+    flash("Koli bilgisi güncellendi.")
+    return redirect(url_for("fabrika_gonderim_detay", gonderim_id=gonderim_id))
+
+
+@app.route("/fabrika/gonderim/<int:gonderim_id>/rapor")
+@login_required
+def fabrika_rapor(gonderim_id):
+    """Sayaç Durum Raporu — yüklenen 'ARIZALI SAYAÇ BİLGİ FORMU' şablonuyla
+    birebir uyumlu, yazdırılabilir HTML çıktısı. Her koli kendi sayfası
+    (tablosu) olarak gösterilir."""
+    db = get_db()
+    gonderim, koliler, satici = _fabrika_rapor_verisi(db, gonderim_id)
+    if gonderim is None:
+        flash("Gönderim bulunamadı.")
+        return redirect(url_for("fabrika_gonderim_listesi"))
+    return render_template(
+        "fabrika_rapor.html", gonderim=gonderim, koliler=koliler, satici=satici,
+        koli_kapasitesi=FABRIKA_KOLI_KAPASITESI,
+    )
+
+
+@app.route("/fabrika/gonderim/<int:gonderim_id>/rapor.pdf")
+@login_required
+def fabrika_rapor_pdf(gonderim_id):
+    """Sayaç Durum Raporu'nu indirilebilir PDF olarak üretir (reportlab)."""
+    if SimpleDocTemplate is None:
+        flash("PDF oluşturma bileşeni (reportlab) sunucuda kurulu değil. Yazdırılabilir ekran görünümünü kullanabilirsiniz.")
+        return redirect(url_for("fabrika_rapor", gonderim_id=gonderim_id))
+    db = get_db()
+    gonderim, koliler, satici = _fabrika_rapor_verisi(db, gonderim_id)
+    if gonderim is None:
+        flash("Gönderim bulunamadı.")
+        return redirect(url_for("fabrika_gonderim_listesi"))
+    pdf_bayt = _fabrika_rapor_pdf_olustur(gonderim, koliler, satici)
+    return Response(
+        pdf_bayt, mimetype="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=sayac-durum-raporu-{gonderim_id}.pdf"},
+    )
 
 
 @app.route("/yedek-al")
