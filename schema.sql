@@ -273,3 +273,8 @@ CREATE TABLE IF NOT EXISTS fatura (
 );
 
 CREATE INDEX IF NOT EXISTS idx_fatura_kaynak ON fatura(kaynak_tur, kaynak_id);
+
+-- Faturanın kesildiği tarih olarak KULLANICININ SEÇTİĞİ tarih (varsayılan
+-- bugün, ama geriye dönük tarih de seçilebiliyor) — created_at (kaydın
+-- veritabanına düştüğü an) ile karıştırılmasın diye ayrı bir sütun.
+ALTER TABLE fatura ADD COLUMN IF NOT EXISTS fatura_tarihi DATE;

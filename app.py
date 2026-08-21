@@ -2266,12 +2266,23 @@ def _hizli_satici_eksik_mi(satici):
     return any(not satici.get(a) for a in zorunlu)
 
 
-def _hizli_invoice_model_olustur(satici, alici, kalemler, fatura_turu):
+def _hizli_invoice_model_olustur(satici, alici, kalemler, fatura_turu, fatura_tarihi=None):
     """SendInvoiceModel'in beklediği InvoiceModel nesnesini oluşturur.
     kalemler: [{"aciklama": str, "tutar_kdv_dahil": float}, ...] — sıfır/boş
     tutarlı kalemler zaten çağıran taraf tarafından elenmiş olmalı.
+    fatura_tarihi: kullanıcının Fatura Kes ekranından seçtiği 'YYYY-MM-DD'
+    tarihi (date/datetime nesnesi de olabilir) — verilmezse bugün kullanılır.
+    Fatura saati her zaman kesim anındaki gerçek saattir, sadece tarih
+    kullanıcı tarafından değiştirilebilir.
     Döndürür: (invoice_model_dict, toplam_kdv_dahil, toplam_kdv_haric, toplam_kdv)."""
     simdi = datetime.now()
+    if fatura_tarihi:
+        if isinstance(fatura_tarihi, str):
+            tarih_str = fatura_tarihi
+        else:
+            tarih_str = fatura_tarihi.strftime("%Y-%m-%d")
+    else:
+        tarih_str = simdi.strftime("%Y-%m-%d")
     invoice_lines = []
     toplam_kdv_haric = 0.0
     toplam_kdv = 0.0
@@ -2330,7 +2341,7 @@ def _hizli_invoice_model_olustur(satici, alici, kalemler, fatura_turu):
         "invoiceheader": {
             "ProfileID": _HIZLI_PROFILE_ID[fatura_turu],
             "InvoiceTypeCode": _HIZLI_INVOICE_TYPE_CODE,
-            "IssueDate": simdi.strftime("%Y-%m-%d"),
+            "IssueDate": tarih_str,
             "IssueTime": simdi.strftime("%H:%M:%S"),
             "DocumentCurrencyCode": _HIZLI_PARA_BIRIMI,
             "LineExtensionAmount": toplam_kdv_haric,
@@ -2344,23 +2355,25 @@ def _hizli_invoice_model_olustur(satici, alici, kalemler, fatura_turu):
     return invoice_model, toplam_kdv_dahil, toplam_kdv_haric, toplam_kdv
 
 
-def _hizli_fatura_gonder(db, kaynak_tur, kaynak_id, alici, kalemler, fatura_turu, olusturan_kullanici):
+def _hizli_fatura_gonder(db, kaynak_tur, kaynak_id, alici, kalemler, fatura_turu, olusturan_kullanici, fatura_tarihi=None):
     """Bir abone/arıza kaydı için e-Fatura/e-Arşiv Fatura keser: token alır,
     InvoiceModel'i oluşturur, SendInvoiceModel'i çağırır, sonucu 'fatura'
-    tablosuna kaydeder. Döndürdüğü değer: eklenen 'fatura' satırının id'si."""
+    tablosuna kaydeder. fatura_tarihi verilmezse bugün kullanılır. Döndürdüğü
+    değer: eklenen 'fatura' satırının id'si."""
     satici = _hizli_satici_bilgisi(db)
     kalem_ozet = ", ".join(f"{k['aciklama']}: {tl_format(k['tutar_kdv_dahil'])} TL" for k in kalemler)
     yerel_id = f"{kaynak_tur}-{kaynak_id}-{secrets.token_hex(4)}"
+    fatura_tarihi = fatura_tarihi or datetime.now().strftime("%Y-%m-%d")
 
     cur = db.cursor()
 
     if not _hizli_ayarli_mi():
         cur.execute(
-            "INSERT INTO fatura (kaynak_tur, kaynak_id, fatura_turu, yerel_id, durum, hata_mesaji, kalemler, olusturan_kullanici) "
-            "VALUES (%s, %s, %s, %s, 'hata', %s, %s, %s) RETURNING id",
+            "INSERT INTO fatura (kaynak_tur, kaynak_id, fatura_turu, yerel_id, durum, hata_mesaji, kalemler, olusturan_kullanici, fatura_tarihi) "
+            "VALUES (%s, %s, %s, %s, 'hata', %s, %s, %s, %s) RETURNING id",
             (kaynak_tur, kaynak_id, fatura_turu, yerel_id,
              "Hızlı Bilişim API ayarları (ortam değişkenleri) henüz tanımlanmamış.",
-             kalem_ozet, olusturan_kullanici),
+             kalem_ozet, olusturan_kullanici, fatura_tarihi),
         )
         fatura_id = cur.fetchone()["id"]
         db.commit()
@@ -2368,15 +2381,15 @@ def _hizli_fatura_gonder(db, kaynak_tur, kaynak_id, alici, kalemler, fatura_turu
         return fatura_id
 
     invoice_model, toplam_dahil, toplam_haric, toplam_kdv = _hizli_invoice_model_olustur(
-        satici, alici, kalemler, fatura_turu
+        satici, alici, kalemler, fatura_turu, fatura_tarihi
     )
 
     cur.execute(
         "INSERT INTO fatura (kaynak_tur, kaynak_id, fatura_turu, yerel_id, durum, "
-        "tutar_kdv_dahil, tutar_kdv_haric, kdv_tutari, kalemler, olusturan_kullanici) "
-        "VALUES (%s, %s, %s, %s, 'beklemede', %s, %s, %s, %s, %s) RETURNING id",
+        "tutar_kdv_dahil, tutar_kdv_haric, kdv_tutari, kalemler, olusturan_kullanici, fatura_tarihi) "
+        "VALUES (%s, %s, %s, %s, 'beklemede', %s, %s, %s, %s, %s, %s) RETURNING id",
         (kaynak_tur, kaynak_id, fatura_turu, yerel_id,
-         toplam_dahil, toplam_haric, toplam_kdv, kalem_ozet, olusturan_kullanici),
+         toplam_dahil, toplam_haric, toplam_kdv, kalem_ozet, olusturan_kullanici, fatura_tarihi),
     )
     fatura_id = cur.fetchone()["id"]
     db.commit()
@@ -3901,9 +3914,19 @@ def abone_fatura_kes(abone_id):
             flash("Bu abonede faturalanacak bir tutar yok (Sayaç Tutarı ve Malzeme Tutarı sıfır).")
             return redirect(url_for("abone_fatura_kes", abone_id=abone_id, geri=geri))
 
+        fatura_tarihi_form = request.form.get("fatura_tarihi", "").strip()
+        try:
+            fatura_tarihi_dt = datetime.strptime(fatura_tarihi_form, "%Y-%m-%d")
+        except ValueError:
+            flash("Geçerli bir fatura tarihi seçin.")
+            return redirect(url_for("abone_fatura_kes", abone_id=abone_id, geri=geri))
+        if fatura_tarihi_dt.date() > datetime.now().date():
+            flash("Fatura tarihi bugünden ileri bir tarih olamaz.")
+            return redirect(url_for("abone_fatura_kes", abone_id=abone_id, geri=geri))
+
         fatura_id = _hizli_fatura_gonder(
             db, "abone", abone_id, dict(abone), kalemler, fatura_turu,
-            session.get("kullanici_adi", ""),
+            session.get("kullanici_adi", ""), fatura_tarihi=fatura_tarihi_form,
         )
         hedef = url_for("fatura_goruntule", fatura_id=fatura_id)
         return redirect(hedef)
@@ -3926,6 +3949,7 @@ def abone_fatura_kes(abone_id):
         geri_url=url_for("abone_fatura_kes", abone_id=abone_id) + (f"?geri={_url_quote(geri, safe='')}" if geri else ""),
         onizleme=onizleme, toplam_dahil=round(toplam_dahil, 2), toplam_kdv=round(toplam_kdv, 2),
         onerilen_tur=onerilen_tur, hizli_ayarli_mi=_hizli_ayarli_mi(), geri=geri,
+        bugun=datetime.now().strftime("%Y-%m-%d"),
     )
 
 
@@ -5021,9 +5045,19 @@ def ariza_fatura_kes(ariza_id):
             flash("Bu arıza kaydında faturalanacak bir tutar yok (Arıza Ücreti sıfır).")
             return redirect(url_for("ariza_fatura_kes", ariza_id=ariza_id))
 
+        fatura_tarihi_form = request.form.get("fatura_tarihi", "").strip()
+        try:
+            fatura_tarihi_dt = datetime.strptime(fatura_tarihi_form, "%Y-%m-%d")
+        except ValueError:
+            flash("Geçerli bir fatura tarihi seçin.")
+            return redirect(url_for("ariza_fatura_kes", ariza_id=ariza_id))
+        if fatura_tarihi_dt.date() > datetime.now().date():
+            flash("Fatura tarihi bugünden ileri bir tarih olamaz.")
+            return redirect(url_for("ariza_fatura_kes", ariza_id=ariza_id))
+
         fatura_id = _hizli_fatura_gonder(
             db, "ariza", ariza_id, dict(ariza), kalemler, fatura_turu,
-            session.get("kullanici_adi", ""),
+            session.get("kullanici_adi", ""), fatura_tarihi=fatura_tarihi_form,
         )
         return redirect(url_for("fatura_goruntule", fatura_id=fatura_id))
 
@@ -5045,6 +5079,7 @@ def ariza_fatura_kes(ariza_id):
         geri_url=url_for("ariza_fatura_kes", ariza_id=ariza_id),
         onizleme=onizleme, toplam_dahil=round(toplam_dahil, 2), toplam_kdv=round(toplam_kdv, 2),
         onerilen_tur=onerilen_tur, hizli_ayarli_mi=_hizli_ayarli_mi(), geri="",
+        bugun=datetime.now().strftime("%Y-%m-%d"),
     )
 
 
