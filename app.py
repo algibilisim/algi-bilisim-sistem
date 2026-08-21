@@ -2159,8 +2159,12 @@ def _hizli_sifreli_kimlik(db):
     )
     if not basarili:
         return None, f"Kullanıcı bilgileri şifrelenemedi: {veri}"
-    sifreli_kullanici = veri.get("username") if isinstance(veri, dict) else None
-    sifreli_sifre = veri.get("password") if isinstance(veri, dict) else None
+    # Hızlı Bilişim bazı uçlarda yanıtı tek objeyle değil, [ {...} ] biçiminde
+    # bir liste içinde döndürüyor (Login uç noktasında doğrulandı) — burada da
+    # aynı ihtimale karşı savunmacı davranıyoruz.
+    veri_obj = veri[0] if isinstance(veri, list) and veri else veri
+    sifreli_kullanici = veri_obj.get("username") if isinstance(veri_obj, dict) else None
+    sifreli_sifre = veri_obj.get("password") if isinstance(veri_obj, dict) else None
     if not sifreli_kullanici or not sifreli_sifre:
         return None, f"Şifreleme yanıtı beklenmedik biçimde geldi: {veri}"
     _ayar_kaydet(db, "hizli_sifreli_kullanici", sifreli_kullanici)
@@ -2199,11 +2203,16 @@ def _hizli_token_al(db, zorla_yenile=False):
     )
     if not basarili:
         return None, f"Hızlı Bilişim'e giriş yapılamadı: {veri}"
+    # Login uç noktası yanıtı tek obje değil, [ {...} ] biçiminde bir liste
+    # içinde dönüyor — gerçek testte doğrulandı.
+    veri_obj = veri[0] if isinstance(veri, list) and veri else veri
     token = None
-    if isinstance(veri, dict):
-        token = veri.get("token") or veri.get("Token") or veri.get("accessToken")
-    elif isinstance(veri, str):
-        token = veri
+    if isinstance(veri_obj, dict):
+        if veri_obj.get("IsSucceeded") is False:
+            return None, f"Hızlı Bilişim'e giriş başarısız: {veri_obj.get('Message') or veri_obj}"
+        token = veri_obj.get("Token") or veri_obj.get("token") or veri_obj.get("accessToken")
+    elif isinstance(veri_obj, str):
+        token = veri_obj
     if not token:
         return None, f"Giriş yanıtında bir token bulunamadı: {veri}"
     _ayar_kaydet(db, "hizli_token", token)
@@ -2440,11 +2449,12 @@ def _hizli_fatura_pdf_al(db, fatura_id):
         cur.close()
         return False, veri
 
+    veri_obj = veri[0] if isinstance(veri, list) and veri else veri
     pdf_base64 = None
-    if isinstance(veri, dict):
-        pdf_base64 = veri.get("FileContent") or veri.get("Content") or veri.get("data")
-    elif isinstance(veri, str):
-        pdf_base64 = veri
+    if isinstance(veri_obj, dict):
+        pdf_base64 = veri_obj.get("FileContent") or veri_obj.get("Content") or veri_obj.get("data")
+    elif isinstance(veri_obj, str):
+        pdf_base64 = veri_obj
     if not pdf_base64:
         cur.close()
         return False, f"PDF yanıtında dosya içeriği bulunamadı: {veri}"
