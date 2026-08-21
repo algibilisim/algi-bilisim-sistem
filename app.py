@@ -47,7 +47,7 @@ try:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
     from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image as RLImage
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
@@ -56,7 +56,7 @@ except Exception:
     # seçeneği devre dışı kalır (yazdırılabilir HTML görünümü etkilenmez),
     # uygulamanın geri kalanı çökmez.
     A4 = mm = colors = SimpleDocTemplate = Table = TableStyle = None
-    Paragraph = Spacer = PageBreak = ParagraphStyle = pdfmetrics = TTFont = None
+    Paragraph = Spacer = PageBreak = RLImage = ParagraphStyle = pdfmetrics = TTFont = None
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 SECRET_KEY = os.environ.get("SECRET_KEY")
@@ -2915,17 +2915,45 @@ def _gg_aa_yyyy_veya(deger):
         return str(deger)
 
 
+def _fabrika_filigran_ciz(canvas, belge):
+    """Her sayfanın arkasına (yazı/tablolardan ÖNCE çizildiği için onların
+    altında kalır) sayfanın ortasına, soluk/şeffaf su damlası görselini
+    filigran olarak çizer — Word şablonundaki 'resim filigranı' efektinin
+    aynısı. Görselin şeffaflığı zaten dosyanın kendisine (alfa kanalına)
+    gömülü olduğu için burada ekstra bir saydamlık ayarına gerek yok."""
+    if RLImage is None:
+        return
+    taban = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+    yol = os.path.join(taban, "fabrika_su_damla_filigran.png")
+    if not os.path.exists(yol):
+        return
+    genislik = 100 * mm
+    yukseklik = genislik * (168 / 286)
+    sayfa_genislik, sayfa_yukseklik = A4
+    x = (sayfa_genislik - genislik) / 2
+    y = (sayfa_yukseklik - yukseklik) / 2
+    canvas.saveState()
+    try:
+        canvas.drawImage(yol, x, y, width=genislik, height=yukseklik, mask="auto")
+    except Exception:
+        pass
+    canvas.restoreState()
+
+
 def _fabrika_rapor_pdf_olustur(gonderim, koliler, satici):
     """Sayaç Durum Raporu'nu (yüklenen 'ARIZALI SAYAÇ BİLGİ FORMU' şablonuyla
-    aynı düzende: ADRES/TARİH/ÜRÜN TANIMI başlığı, S.NO/SERİ NO/ÜRETİM YILI/
-    ARIZA DURUMU/SAYAÇ SAHİBİ tablosu, TOPLAM satırı, imza alanı) reportlab
-    ile PDF olarak üretir. Her koli kendi sayfasıdır."""
+    aynı düzende: ALGI logosu, ADRES/TARİH/ÜRÜN TANIMI başlığı, S.NO/SERİ NO/
+    ÜRETİM YILI/ARIZA DURUMU/SAYAÇ SAHİBİ tablosu, TOPLAM satırı, imza alanı,
+    arka planda soluk su damlası filigranı) reportlab ile PDF olarak üretir.
+    Her koli kendi sayfasıdır."""
     _fabrika_font_hazirla()
     arabellek = io.BytesIO()
     belge = SimpleDocTemplate(
         arabellek, pagesize=A4,
         topMargin=14 * mm, bottomMargin=14 * mm, leftMargin=14 * mm, rightMargin=14 * mm,
     )
+    static_taban = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+    logo_yolu = os.path.join(static_taban, "fabrika_logo.jpg")
     baslik_stili = ParagraphStyle("fabrika_baslik", fontName="DejaVuSans-Bold", fontSize=13, alignment=1, spaceAfter=10)
     normal_stil = ParagraphStyle("fabrika_normal", fontName="DejaVuSans", fontSize=9, leading=11)
     normal_kalin = ParagraphStyle("fabrika_normal_kalin", fontName="DejaVuSans-Bold", fontSize=9, leading=11)
@@ -2942,6 +2970,13 @@ def _fabrika_rapor_pdf_olustur(gonderim, koliler, satici):
     for sira, koli in enumerate(koliler, start=1):
         if sira > 1:
             ogeler.append(PageBreak())
+        if os.path.exists(logo_yolu):
+            logo_genislik = 70 * mm
+            logo_yukseklik = logo_genislik * (229 / 1600)
+            logo_resmi = RLImage(logo_yolu, width=logo_genislik, height=logo_yukseklik)
+            logo_resmi.hAlign = "CENTER"
+            ogeler.append(logo_resmi)
+            ogeler.append(Spacer(1, 6))
         ogeler.append(Paragraph("ARIZALI SAYAÇ BİLGİ FORMU", baslik_stili))
 
         tarih_str = _gg_aa_yyyy_veya(koli.get("koli_tarihi") or gonderim.get("gonderim_tarihi"))
@@ -3009,7 +3044,7 @@ def _fabrika_rapor_pdf_olustur(gonderim, koliler, satici):
         imza.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
         ogeler.append(imza)
 
-    belge.build(ogeler)
+    belge.build(ogeler, onFirstPage=_fabrika_filigran_ciz, onLaterPages=_fabrika_filigran_ciz)
     return arabellek.getvalue()
 
 
