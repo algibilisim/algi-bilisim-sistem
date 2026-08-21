@@ -16,6 +16,7 @@
 <form method="post" class="abone-form" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {% if geri %}<input type="hidden" name="geri" value="{{ geri }}">{% endif %}
+    {% if hedef %}<input type="hidden" name="hedef" value="{{ hedef }}">{% endif %}
     <div class="form-kaydirici">
     <div class="form-grid">
         <div>
@@ -266,7 +267,7 @@
 
     <div class="form-butonlar">
         <button type="submit" class="btn btn-yesil">Kaydet</button>
-        <a class="btn" href="{{ url_for('abone_listesi') }}{% if geri %}?{{ geri }}{% endif %}">Vazgeç</a>
+        <a class="btn" href="{{ hedef if hedef else (url_for('abone_listesi') + ('?' + geri if geri else '')) }}">Vazgeç</a>
     </div>
     </div>
 </form>

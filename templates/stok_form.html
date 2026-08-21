@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Ürün Düzenle' if kayit else 'Yeni Ürün' }} - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi">
+    <h2>{{ 'Ürün Düzenle' if kayit else 'Yeni Ürün' }}</h2>
+    <a class="btn" href="{{ url_for('stok_listesi') }}">Stok Listesi'ne Dön</a>
+</div>
+
+<form method="post" style="max-width:520px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-grid">
+        <div>
+            <label>Ürün Adı *</label>
+            <input type="text" name="urun_adi" value="{{ kayit['urun_adi'] if kayit else '' }}" required style="width:100%;">
+        </div>
+        <div>
+            <label>Birim</label>
+            <input type="text" name="birim" value="{{ kayit['birim'] if kayit else 'ADET' }}" style="width:100%;">
+        </div>
+        <div>
+            <label>Birim Fiyat (KDV Hariç)</label>
+            <input type="number" name="birim_fiyat" value="{{ kayit['birim_fiyat'] if kayit else 0 }}" min="0" step="0.01" style="width:100%;">
+        </div>
+        <div>
+            <label>KDV Oranı %</label>
+            <input type="number" name="kdv_orani" value="{{ kayit['kdv_orani'] if kayit else 20 }}" min="0" max="100" step="0.01" style="width:100%;">
+        </div>
+        <div>
+            <label>Stok Miktarı</label>
+            <input type="number" name="stok_miktari" value="{{ kayit['stok_miktari'] if kayit else 0 }}" min="0" step="0.01" style="width:100%;">
+            <p style="font-size:12px; color:#888; margin:4px 0 0;">
+                Normal akışta miktar "Hareket Ekle" ile değişir; buradan sadece
+                ilk kurulum ya da sayım düzeltmesi için elle değiştirin.
+            </p>
+        </div>
+        <div>
+            <label>Min. Stok Seviyesi</label>
+            <input type="number" name="min_stok_seviyesi" value="{{ kayit['min_stok_seviyesi'] if kayit else 0 }}" min="0" step="0.01" style="width:100%;">
+            <p style="font-size:12px; color:#888; margin:4px 0 0;">
+                Stok miktarı bu seviyenin altına/ona eşit düşünce Stok listesinde
+                kırmızı uyarı gösterilir.
+            </p>
+        </div>
+        <div>
+            <label>Açıklama</label>
+            <input type="text" name="aciklama" value="{{ kayit['aciklama'] if kayit else '' }}" style="width:100%;">
+        </div>
+    </div>
+    <div class="form-butonlar" style="margin-top:16px;">
+        <button type="submit" class="btn btn-yesil">Kaydet</button>
+        <a class="btn" href="{{ url_for('stok_listesi') }}">Vazgeç</a>
+    </div>
+</form>
+
+{% endblock %}

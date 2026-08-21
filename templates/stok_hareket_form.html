@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Stok Hareketi Ekle - {{ urun['urun_adi'] }} - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi">
+    <h2>Stok Hareketi Ekle - {{ urun['urun_adi'] }}</h2>
+    <a class="btn" href="{{ url_for('stok_hareketleri', urun_id=urun['id']) }}">Hareketlere Dön</a>
+</div>
+
+<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:20px;">
+    <strong>Güncel Stok Miktarı:</strong> {{ urun['stok_miktari']|tl }} {{ urun['birim'] }}
+</div>
+
+<form method="post" style="max-width:520px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-grid">
+        <div>
+            <label>Hareket Türü *</label>
+            <select name="hareket_turu" id="hareket-turu-secim" required style="width:100%;" onchange="girisAlanlariniGoster()">
+                <option value="giris">Giriş (alım / stok artışı)</option>
+                <option value="cikis">Çıkış (kullanım / stok azalışı)</option>
+            </select>
+        </div>
+        <div>
+            <label>Miktar *</label>
+            <input type="number" name="miktar" min="0.01" step="0.01" required style="width:100%;">
+        </div>
+        <div>
+            <label>Tarih *</label>
+            <input type="date" name="tarih" value="{{ bugun }}" max="{{ bugun }}" required style="width:100%;">
+        </div>
+        <div id="giris-birim-fiyat-alani">
+            <label>Alım Birim Fiyatı</label>
+            <input type="number" name="birim_fiyat" min="0" step="0.01" style="width:100%;">
+        </div>
+        <div id="giris-tedarikci-alani">
+            <label>Tedarikçi Adı</label>
+            <input type="text" name="tedarikci_adi" style="width:100%;">
+        </div>
+        <div>
+            <label>Açıklama</label>
+            <input type="text" name="aciklama" style="width:100%;">
+        </div>
+    </div>
+    <div class="form-butonlar" style="margin-top:16px;">
+        <button type="submit" class="btn btn-yesil">Kaydet</button>
+        <a class="btn" href="{{ url_for('stok_hareketleri', urun_id=urun['id']) }}">Vazgeç</a>
+    </div>
+</form>
+
+<script>
+function girisAlanlariniGoster() {
+    var giris = document.getElementById('hareket-turu-secim').value === 'giris';
+    document.getElementById('giris-birim-fiyat-alani').style.display = giris ? '' : 'none';
+    document.getElementById('giris-tedarikci-alani').style.display = giris ? '' : 'none';
+}
+girisAlanlariniGoster();
+</script>
+
+{% endblock %}

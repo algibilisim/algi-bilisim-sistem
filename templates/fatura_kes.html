@@ -23,7 +23,8 @@
     <h4>Eksik bilgi: TC Kimlik No/Vergi No ve Adres gerekli</h4>
     <p style="margin:0 0 10px; font-size:12.5px;">
         Fatura kesebilmek için bu kayıtta TC Kimlik No/Vergi No ve Adres bilgilerinin
-        dolu olması gerekiyor. Önce kaydı düzenleyip bu bilgileri girin.
+        dolu olması gerekiyor. Önce kaydı düzenleyip bu bilgileri girin — kaydettiğinizde
+        otomatik olarak bu ekrana geri döneceksiniz.
     </p>
     <a class="btn btn-yesil" href="{{ duzenle_url }}">Kaydı Düzenle</a>
 </div>
@@ -36,34 +37,24 @@
     {% if kaynak['vergi_dairesi'] %}&nbsp;|&nbsp;<strong>Vergi Dairesi:</strong> {{ kaynak['vergi_dairesi'] }}{% endif %}
 </div>
 
-{% if not onizleme %}
-<div class="seri-uyari-kutu tam-genislik">
-    <h4>Faturalanacak bir tutar yok</h4>
-    <p style="margin:0; font-size:12.5px;">
-        Bu kayıtta {{ 'Sayaç Tutarı ve Malzeme Tutarı' if kaynak_tur == 'abone' else 'Arıza Ücreti' }}
-        sıfır görünüyor, faturalanacak bir kalem bulunamadı.
-    </p>
-</div>
-{% else %}
-
-<form method="post">
+<form method="post" id="fatura-kes-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {% if geri %}<input type="hidden" name="geri" value="{{ geri }}">{% endif %}
 
-    <div class="form-grid" style="max-width:400px;">
-        <div>
+    <div class="form-grid" style="max-width:640px; display:flex; flex-wrap:wrap; gap:20px;">
+        <div style="flex:1; min-width:260px;">
             <label>Fatura Türü *</label>
-            <select name="fatura_turu" required>
+            <select name="fatura_turu" required style="width:100%;">
                 <option value="earsiv" {% if onerilen_tur == 'earsiv' %}selected{% endif %}>e-Arşiv Fatura (bireysel alıcı)</option>
                 <option value="efatura" {% if onerilen_tur == 'efatura' %}selected{% endif %}>e-Fatura (kurumsal/mükellef alıcı)</option>
             </select>
         </div>
-        <div>
+        <div style="flex:1; min-width:200px;">
             <label>Fatura Tarihi *</label>
-            <input type="date" name="fatura_tarihi" value="{{ bugun }}" max="{{ bugun }}" required>
+            <input type="date" name="fatura_tarihi" value="{{ bugun }}" max="{{ bugun }}" required style="width:100%;">
         </div>
     </div>
-    <p style="font-size:12px; color:#888; margin:4px 0 16px;">
+    <p style="font-size:12px; color:#888; margin:10px 0 4px;">
         Varsayılan olarak bugünün tarihi seçili gelir, gerekirse geçmiş bir
         tarihe değiştirebilirsiniz. İleri tarihli fatura kesilemez.
     </p>
@@ -78,48 +69,180 @@
     {% endif %}
 
     <h3>Fatura Kalemleri</h3>
+    <p style="font-size:12px; color:#888; margin:0 0 10px;">
+        Kayıttan otomatik gelen kalemleri (açıklama, miktar, birim fiyat vb.) dilediğiniz gibi
+        değiştirebilir, satır silebilir veya "+ Kalem Ekle" ile yeni satır ekleyebilirsiniz.
+        Birim Fiyat KDV HARİÇ tutar olarak girilir, KDV ve toplam otomatik hesaplanır.
+    </p>
     <div class="tablo-kaydirici">
-    <table>
+    <table id="kalem-tablo">
         <thead>
             <tr>
-                <th>Açıklama</th>
-                <th>Birim</th>
-                <th>KDV Hariç Tutar</th>
-                <th>KDV (%20)</th>
-                <th>KDV Dahil Tutar</th>
+                <th>Sıra No</th>
+                <th style="min-width:180px;">Mal Hizmet</th>
+                <th style="min-width:80px;">Miktar</th>
+                <th style="min-width:100px;">Birim Fiyat</th>
+                <th style="min-width:90px;">İskonto Oranı %</th>
+                <th style="min-width:90px;">İskonto Tutarı</th>
+                <th style="min-width:120px;">İskonto Nedeni</th>
+                <th style="min-width:80px;">KDV Oranı %</th>
+                <th style="min-width:90px;">KDV Tutarı</th>
+                <th style="min-width:90px;">Diğer Vergiler</th>
+                <th style="min-width:100px;">Mal Hizmet Tutarı</th>
+                <th></th>
             </tr>
         </thead>
-        <tbody>
+        <tbody id="kalem-govde">
             {% for k in onizleme %}
-            <tr>
-                <td>{{ k['aciklama'] }}</td>
-                <td>1 Adet</td>
-                <td class="sayi">{{ k['tutar_kdv_haric']|tl }}</td>
-                <td class="sayi">{{ k['kdv_tutari']|tl }}</td>
-                <td class="sayi"><strong>{{ k['tutar_kdv_dahil']|tl }}</strong></td>
+            <tr class="kalem-satir">
+                <td class="siro-no">{{ loop.index }}</td>
+                <td><input type="text" name="kalem_aciklama[]" class="k-aciklama" value="{{ k['aciklama'] }}" required style="width:100%;"></td>
+                <td><input type="number" name="kalem_miktar[]" class="k-miktar" value="{{ k['miktar'] }}" min="0.01" step="0.01" required style="width:100%;"></td>
+                <td><input type="number" name="kalem_birim_fiyat[]" class="k-birim-fiyat" value="{{ k['birim_fiyat'] }}" min="0" step="0.01" required style="width:100%;"></td>
+                <td><input type="number" name="kalem_iskonto_orani[]" class="k-iskonto-orani" value="0" min="0" max="100" step="0.01" style="width:100%;"></td>
+                <td class="sayi k-iskonto-tutari">0,00</td>
+                <td><input type="text" name="kalem_iskonto_nedeni[]" class="k-iskonto-nedeni" value="" style="width:100%;"></td>
+                <td><input type="number" name="kalem_kdv_orani[]" class="k-kdv-orani" value="20" min="0" max="100" step="0.01" required style="width:100%;"></td>
+                <td class="sayi k-kdv-tutari">0,00</td>
+                <td><input type="number" name="kalem_diger_vergi[]" class="k-diger-vergi" value="0" min="0" step="0.01" style="width:100%;"></td>
+                <td class="sayi k-mal-hizmet-tutari"><strong>0,00</strong></td>
+                <td><button type="button" class="link-buton kalem-sil-buton" onclick="kalemSil(this)">Sil</button></td>
             </tr>
             {% endfor %}
         </tbody>
         <tfoot>
             <tr>
-                <td colspan="3"></td>
-                <td class="sayi"><strong>Toplam KDV</strong></td>
-                <td class="sayi"><strong>{{ toplam_kdv|tl }}</strong></td>
+                <td colspan="10" style="text-align:right;"><strong>Mal Hizmet Toplam Tutarı</strong></td>
+                <td class="sayi" id="toplam-mal-hizmet"><strong>0,00</strong></td>
+                <td></td>
             </tr>
             <tr>
-                <td colspan="3"></td>
-                <td class="sayi"><strong>Genel Toplam</strong></td>
-                <td class="sayi"><strong>{{ toplam_dahil|tl }}</strong></td>
+                <td colspan="10" style="text-align:right;"><strong>Toplam İskonto</strong></td>
+                <td class="sayi" id="toplam-iskonto"><strong>0,00</strong></td>
+                <td></td>
+            </tr>
+            <tr>
+                <td colspan="10" style="text-align:right;"><strong>Hesaplanan KDV</strong></td>
+                <td class="sayi" id="toplam-kdv"><strong>0,00</strong></td>
+                <td></td>
+            </tr>
+            <tr>
+                <td colspan="10" style="text-align:right;"><strong>Diğer Vergiler Toplamı</strong></td>
+                <td class="sayi" id="toplam-diger-vergi"><strong>0,00</strong></td>
+                <td></td>
+            </tr>
+            <tr>
+                <td colspan="10" style="text-align:right;"><strong>Vergiler Dahil Toplam Tutar / Ödenecek Tutar</strong></td>
+                <td class="sayi" id="toplam-genel"><strong>0,00</strong></td>
+                <td></td>
             </tr>
         </tfoot>
     </table>
     </div>
 
+    <div class="form-butonlar" style="margin-top:10px;">
+        <button type="button" class="btn" onclick="kalemEkle()">+ Kalem Ekle</button>
+    </div>
+
     <div class="form-butonlar" style="margin-top:16px;">
-        <button type="submit" class="btn btn-yesil" onclick="return confirm('Fatura kesilecek, emin misiniz? Bu işlem geri alınamaz.');">Fatura Kes</button>
+        <button type="submit" class="btn btn-yesil" id="fatura-kes-submit" onclick="return confirm('Fatura kesilecek, emin misiniz? Bu işlem geri alınamaz.');">Fatura Kes</button>
     </div>
 </form>
 
-{% endif %}
+<template id="kalem-satir-sablon">
+    <tr class="kalem-satir">
+        <td class="siro-no"></td>
+        <td><input type="text" name="kalem_aciklama[]" class="k-aciklama" value="" required style="width:100%;"></td>
+        <td><input type="number" name="kalem_miktar[]" class="k-miktar" value="1" min="0.01" step="0.01" required style="width:100%;"></td>
+        <td><input type="number" name="kalem_birim_fiyat[]" class="k-birim-fiyat" value="0" min="0" step="0.01" required style="width:100%;"></td>
+        <td><input type="number" name="kalem_iskonto_orani[]" class="k-iskonto-orani" value="0" min="0" max="100" step="0.01" style="width:100%;"></td>
+        <td class="sayi k-iskonto-tutari">0,00</td>
+        <td><input type="text" name="kalem_iskonto_nedeni[]" class="k-iskonto-nedeni" value="" style="width:100%;"></td>
+        <td><input type="number" name="kalem_kdv_orani[]" class="k-kdv-orani" value="20" min="0" max="100" step="0.01" required style="width:100%;"></td>
+        <td class="sayi k-kdv-tutari">0,00</td>
+        <td><input type="number" name="kalem_diger_vergi[]" class="k-diger-vergi" value="0" min="0" step="0.01" style="width:100%;"></td>
+        <td class="sayi k-mal-hizmet-tutari"><strong>0,00</strong></td>
+        <td><button type="button" class="link-buton kalem-sil-buton" onclick="kalemSil(this)">Sil</button></td>
+    </tr>
+</template>
+
+<script>
+function trFormatla(sayi) {
+    if (isNaN(sayi)) sayi = 0;
+    return sayi.toLocaleString('tr-TR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+
+function kalemEkle() {
+    var sablon = document.getElementById('kalem-satir-sablon');
+    var govde = document.getElementById('kalem-govde');
+    var klon = sablon.content.cloneNode(true);
+    govde.appendChild(klon);
+    siraNolariGuncelle();
+    hesapla();
+}
+
+function kalemSil(buton) {
+    var satir = buton.closest('tr');
+    var govde = document.getElementById('kalem-govde');
+    if (govde.querySelectorAll('.kalem-satir').length <= 1) {
+        alert('En az bir fatura kalemi kalmalı.');
+        return;
+    }
+    satir.remove();
+    siraNolariGuncelle();
+    hesapla();
+}
+
+function siraNolariGuncelle() {
+    var satirlar = document.querySelectorAll('#kalem-govde .kalem-satir');
+    satirlar.forEach(function (satir, i) {
+        satir.querySelector('.siro-no').textContent = i + 1;
+    });
+}
+
+function sayiAl(satir, sinif) {
+    var el = satir.querySelector('.' + sinif);
+    var deger = parseFloat(el.value);
+    return isNaN(deger) ? 0 : deger;
+}
+
+function hesapla() {
+    var satirlar = document.querySelectorAll('#kalem-govde .kalem-satir');
+    var toplamMalHizmet = 0, toplamIskonto = 0, toplamKdv = 0, toplamDigerVergi = 0;
+
+    satirlar.forEach(function (satir) {
+        var miktar = sayiAl(satir, 'k-miktar');
+        var birimFiyat = sayiAl(satir, 'k-birim-fiyat');
+        var iskontoOrani = sayiAl(satir, 'k-iskonto-orani');
+        var kdvOrani = sayiAl(satir, 'k-kdv-orani');
+        var digerVergi = sayiAl(satir, 'k-diger-vergi');
+
+        var araTutar = miktar * birimFiyat;
+        var iskontoTutari = araTutar * iskontoOrani / 100;
+        var malHizmetTutari = araTutar - iskontoTutari;
+        var kdvTutari = malHizmetTutari * kdvOrani / 100;
+
+        satir.querySelector('.k-iskonto-tutari').textContent = trFormatla(iskontoTutari);
+        satir.querySelector('.k-kdv-tutari').textContent = trFormatla(kdvTutari);
+        satir.querySelector('.k-mal-hizmet-tutari').innerHTML = '<strong>' + trFormatla(malHizmetTutari) + '</strong>';
+
+        toplamMalHizmet += malHizmetTutari;
+        toplamIskonto += iskontoTutari;
+        toplamKdv += kdvTutari;
+        toplamDigerVergi += digerVergi;
+    });
+
+    document.getElementById('toplam-mal-hizmet').innerHTML = '<strong>' + trFormatla(toplamMalHizmet) + '</strong>';
+    document.getElementById('toplam-iskonto').innerHTML = '<strong>' + trFormatla(toplamIskonto) + '</strong>';
+    document.getElementById('toplam-kdv').innerHTML = '<strong>' + trFormatla(toplamKdv) + '</strong>';
+    document.getElementById('toplam-diger-vergi').innerHTML = '<strong>' + trFormatla(toplamDigerVergi) + '</strong>';
+    document.getElementById('toplam-genel').innerHTML = '<strong>' + trFormatla(toplamMalHizmet + toplamKdv + toplamDigerVergi) + '</strong>';
+}
+
+document.getElementById('kalem-tablo').addEventListener('input', hesapla);
+siraNolariGuncelle();
+hesapla();
+</script>
+
 {% endif %}
 {% endblock %}

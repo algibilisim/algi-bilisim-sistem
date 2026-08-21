@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Stok - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi">
+    <h2>Stok</h2>
+    <a class="btn btn-yesil" href="{{ url_for('stok_yeni') }}">+ Yeni Ürün</a>
+</div>
+
+{% if dusuk_stok_sayisi > 0 %}
+<div class="seri-uyari-kutu tam-genislik">
+    <h4>⚠ {{ dusuk_stok_sayisi }} üründe stok azaldı</h4>
+    <p style="margin:0; font-size:12.5px;">
+        Aşağıdaki tabloda kırmızı görünen ürünlerin stok miktarı, belirlediğiniz
+        minimum stok seviyesinin altına düşmüş.
+    </p>
+</div>
+{% endif %}
+
+<div class="tablo-kaydirici">
+<table>
+    <thead>
+        <tr>
+            <th>Ürün Adı</th>
+            <th>Birim</th>
+            <th>Birim Fiyat (KDV Hariç)</th>
+            <th>KDV Oranı</th>
+            <th>Stok Miktarı</th>
+            <th>Min. Stok Seviyesi</th>
+            <th>Açıklama</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for u in urunler %}
+        {% set dusuk = u['stok_miktari']|float <= u['min_stok_seviyesi']|float %}
+        <tr class="{{ 'kirmizi' if dusuk else '' }}">
+            <td>{{ u['urun_adi'] }}{% if dusuk %} ⚠{% endif %}</td>
+            <td>{{ u['birim'] }}</td>
+            <td class="sayi">{{ u['birim_fiyat']|tl }}</td>
+            <td class="sayi">%{{ u['kdv_orani']|int }}</td>
+            <td class="sayi">{{ u['stok_miktari']|tl }}</td>
+            <td class="sayi">{{ u['min_stok_seviyesi']|tl }}</td>
+            <td>{{ u['aciklama'] or '' }}</td>
+            <td class="islem-hucre">
+                <a href="{{ url_for('stok_duzenle', urun_id=u['id']) }}">Düzenle</a>
+                <a href="{{ url_for('stok_hareket_ekle', urun_id=u['id']) }}">Hareket Ekle</a>
+                <a href="{{ url_for('stok_hareketleri', urun_id=u['id']) }}">Hareketler</a>
+                <button type="submit" class="link-buton"
+                        formaction="{{ url_for('stok_sil', urun_id=u['id']) }}"
+                        formmethod="post"
+                        onclick="return confirm('Bu ürünü ve tüm hareket geçmişini silmek istediğinize emin misiniz?');">Sil</button>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8">Henüz ürün eklenmemiş.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+{% endblock %}

@@ -18,6 +18,7 @@
 
 <form method="post" class="abone-form" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if hedef %}<input type="hidden" name="hedef" value="{{ hedef }}">{% endif %}
     <div class="form-kaydirici">
     <div class="form-grid">
         <div>
@@ -262,7 +263,7 @@
 
     <div class="form-butonlar">
         <button type="submit" class="btn btn-yesil">Kaydet</button>
-        <a class="btn" href="{{ url_for('ariza_listesi') }}">Vazgeç</a>
+        <a class="btn" href="{{ hedef if hedef else url_for('ariza_listesi') }}">Vazgeç</a>
     </div>
     </div>
 </form>
