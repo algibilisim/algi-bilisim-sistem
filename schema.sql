@@ -278,3 +278,33 @@ CREATE INDEX IF NOT EXISTS idx_fatura_kaynak ON fatura(kaynak_tur, kaynak_id);
 -- bugün, ama geriye dönük tarih de seçilebiliyor) — created_at (kaydın
 -- veritabanına düştüğü an) ile karıştırılmasın diye ayrı bir sütun.
 ALTER TABLE fatura ADD COLUMN IF NOT EXISTS fatura_tarihi DATE;
+
+-- STOK MODÜLÜ: ürün/malzeme kataloğu + miktar (giriş/çıkış) takibi +
+-- düşük stok uyarısı + tedarikçi/alım kaydı.
+CREATE TABLE IF NOT EXISTS stok_urun (
+    id SERIAL PRIMARY KEY,
+    urun_adi TEXT NOT NULL,
+    birim TEXT NOT NULL DEFAULT 'ADET',
+    birim_fiyat REAL DEFAULT 0,        -- referans/güncel birim fiyat (KDV hariç) — fatura kalemi eklerken öneri olarak kullanılabilir
+    kdv_orani REAL DEFAULT 20,
+    stok_miktari REAL NOT NULL DEFAULT 0,
+    min_stok_seviyesi REAL NOT NULL DEFAULT 0,  -- bunun altına düşünce "düşük stok" uyarısı gösterilir
+    aciklama TEXT,
+    aktif BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS stok_hareket (
+    id SERIAL PRIMARY KEY,
+    urun_id INTEGER NOT NULL REFERENCES stok_urun(id) ON DELETE CASCADE,
+    hareket_turu TEXT NOT NULL,        -- 'giris' veya 'cikis'
+    miktar REAL NOT NULL,
+    tarih DATE NOT NULL,
+    birim_fiyat REAL,                  -- giriş hareketlerinde alım fiyatı (tedarikçi/alım kaydı için)
+    tedarikci_adi TEXT,
+    aciklama TEXT,
+    olusturan_kullanici TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_stok_hareket_urun ON stok_hareket(urun_id);

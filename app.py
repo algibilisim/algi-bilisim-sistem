@@ -212,6 +212,18 @@ def _kimlik_no_temizle(deger):
     return "".join(ch for ch in str(deger or "") if ch.isdigit())
 
 
+def _sayi_veya(deger, varsayilan=0):
+    """Form alanından gelen bir metni (virgüllü/noktalı, boş olabilir)
+    float'a çevirir; çevrilemezse varsayilan değeri döner (None de olabilir,
+    ör. opsiyonel bir alan boş bırakıldıysa)."""
+    if deger is None or str(deger).strip() == "":
+        return varsayilan
+    try:
+        return float(str(deger).strip().replace(",", "."))
+    except (TypeError, ValueError):
+        return varsayilan
+
+
 BIRLER = ["", "Bir", "İki", "Üç", "Dört", "Beş", "Altı", "Yedi", "Sekiz", "Dokuz"]
 ONLAR = ["", "On", "Yirmi", "Otuz", "Kırk", "Elli", "Altmış", "Yetmiş", "Seksen", "Doksan"]
 BASAMAK = ["", "Bin", "Milyon", "Milyar", "Trilyon"]
@@ -2266,15 +2278,92 @@ def _hizli_satici_eksik_mi(satici):
     return any(not satici.get(a) for a in zorunlu)
 
 
+def _kalem_hesapla(kalem):
+    """Bir fatura kalemi (Fatura Kes ekranındaki düzenlenebilir/eklenebilir
+    tablonun bir satırı) için ara/iskonto/KDV/toplam tutarlarını hesaplar.
+    kalem: {"aciklama", "miktar", "birim_fiyat" (KDV HARİÇ), "iskonto_orani"
+    (%), "iskonto_nedeni", "kdv_orani" (%), "diger_vergi"} — sayısal alanlar
+    zaten float olmalı. Girdi sözlüğünü şu hesaplanan alanlarla
+    zenginleştirip döner: ara_tutar, iskonto_tutari, mal_hizmet_tutari (KDV
+    hariç net, iskonto düşülmüş), kdv_tutari, satir_toplam (KDV dahil +
+    diğer vergiler dahil satır toplamı)."""
+    miktar = float(kalem.get("miktar") or 0)
+    birim_fiyat = float(kalem.get("birim_fiyat") or 0)
+    iskonto_orani = float(kalem.get("iskonto_orani") or 0)
+    kdv_orani = float(kalem.get("kdv_orani") or 0)
+    diger_vergi = float(kalem.get("diger_vergi") or 0)
+
+    ara_tutar = round(miktar * birim_fiyat, 2)
+    iskonto_tutari = round(ara_tutar * iskonto_orani / 100, 2)
+    mal_hizmet_tutari = round(ara_tutar - iskonto_tutari, 2)
+    kdv_tutari = round(mal_hizmet_tutari * kdv_orani / 100, 2)
+    satir_toplam = round(mal_hizmet_tutari + kdv_tutari + diger_vergi, 2)
+
+    sonuc = dict(kalem)
+    sonuc.update({
+        "miktar": miktar, "birim_fiyat": birim_fiyat, "iskonto_orani": iskonto_orani,
+        "kdv_orani": kdv_orani, "diger_vergi": diger_vergi,
+        "ara_tutar": ara_tutar, "iskonto_tutari": iskonto_tutari,
+        "mal_hizmet_tutari": mal_hizmet_tutari, "kdv_tutari": kdv_tutari,
+        "satir_toplam": satir_toplam,
+    })
+    return sonuc
+
+
+def _fatura_kalemlerini_formdan_oku(form):
+    """Fatura Kes ekranındaki düzenlenebilir/eklenebilir kalem tablosunun
+    POST verisinden (array alanlar: kalem_aciklama[], kalem_miktar[], ...)
+    hesaplanmış (_kalem_hesapla'dan geçmiş) kalem sözlükleri listesi üretir.
+    Açıklaması boş, miktarı sıfır/negatif ya da birim fiyatı negatif olan
+    satırlar atlanır (kullanıcı boş satır bırakmış olabilir)."""
+    aciklamalar = form.getlist("kalem_aciklama[]")
+    miktarlar = form.getlist("kalem_miktar[]")
+    birim_fiyatlar = form.getlist("kalem_birim_fiyat[]")
+    iskonto_oranlari = form.getlist("kalem_iskonto_orani[]")
+    iskonto_nedenleri = form.getlist("kalem_iskonto_nedeni[]")
+    kdv_oranlari = form.getlist("kalem_kdv_orani[]")
+    diger_vergiler = form.getlist("kalem_diger_vergi[]")
+
+    def _sayi(liste, i, varsayilan=0.0):
+        if i >= len(liste):
+            return varsayilan
+        try:
+            return float(str(liste[i]).replace(",", "."))
+        except (TypeError, ValueError):
+            return varsayilan
+
+    kalemler = []
+    for i in range(len(aciklamalar)):
+        aciklama = (aciklamalar[i] or "").strip()
+        if not aciklama:
+            continue
+        miktar = _sayi(miktarlar, i, 0)
+        birim_fiyat = _sayi(birim_fiyatlar, i, 0)
+        if miktar <= 0 or birim_fiyat < 0:
+            continue
+        ham = {
+            "aciklama": aciklama,
+            "miktar": miktar,
+            "birim_fiyat": birim_fiyat,
+            "iskonto_orani": _sayi(iskonto_oranlari, i, 0),
+            "iskonto_nedeni": (iskonto_nedenleri[i].strip() if i < len(iskonto_nedenleri) else ""),
+            "kdv_orani": _sayi(kdv_oranlari, i, 20),
+            "diger_vergi": _sayi(diger_vergiler, i, 0),
+        }
+        kalemler.append(_kalem_hesapla(ham))
+    return kalemler
+
+
 def _hizli_invoice_model_olustur(satici, alici, kalemler, fatura_turu, fatura_tarihi=None):
     """SendInvoiceModel'in beklediği InvoiceModel nesnesini oluşturur.
-    kalemler: [{"aciklama": str, "tutar_kdv_dahil": float}, ...] — sıfır/boş
-    tutarlı kalemler zaten çağıran taraf tarafından elenmiş olmalı.
+    kalemler: _kalem_hesapla()'dan geçmiş, hesaplanmış kalem sözlükleri
+    listesi olmalı (aciklama, miktar, birim_fiyat, mal_hizmet_tutari,
+    kdv_tutari, kdv_orani, iskonto_tutari, diger_vergi vb. içerir).
     fatura_tarihi: kullanıcının Fatura Kes ekranından seçtiği 'YYYY-MM-DD'
     tarihi (date/datetime nesnesi de olabilir) — verilmezse bugün kullanılır.
     Fatura saati her zaman kesim anındaki gerçek saattir, sadece tarih
     kullanıcı tarafından değiştirilebilir.
-    Döndürür: (invoice_model_dict, toplam_kdv_dahil, toplam_kdv_haric, toplam_kdv)."""
+    Döndürür: (invoice_model_dict, toplam_kdv_dahil, toplam_mal_hizmet, toplam_kdv)."""
     simdi = datetime.now()
     if fatura_tarihi:
         if isinstance(fatura_tarihi, str):
@@ -2286,28 +2375,41 @@ def _hizli_invoice_model_olustur(satici, alici, kalemler, fatura_turu, fatura_ta
     invoice_lines = []
     toplam_kdv_haric = 0.0
     toplam_kdv = 0.0
+    toplam_diger_vergi = 0.0
     for i, kalem in enumerate(kalemler, start=1):
-        kdv_haric, kdv_tutari = _hizli_kdv_ayir(kalem["tutar_kdv_dahil"])
-        toplam_kdv_haric += kdv_haric
-        toplam_kdv += kdv_tutari
-        invoice_lines.append({
+        satir = {
             "ID": i,
             "Item_Name": kalem["aciklama"],
-            "Quantity_Amount": 1,
+            "Quantity_Amount": kalem["miktar"],
             "Quantity_Unit_User": "ADET",
-            "Price_Amount": kdv_haric,
-            "Price_Total": kdv_haric,
+            "Price_Amount": kalem["birim_fiyat"],
+            "Price_Total": kalem["mal_hizmet_tutari"],
             "lineTaxes": [{
                 "Tax_Code": _HIZLI_KDV_TAX_CODE,
                 "Tax_Name": "KDV",
-                "Tax_Base": kdv_haric,
-                "Tax_Perc": 20,
-                "Tax_Amnt": kdv_tutari,
+                "Tax_Base": kalem["mal_hizmet_tutari"],
+                "Tax_Perc": kalem["kdv_orani"],
+                "Tax_Amnt": kalem["kdv_tutari"],
             }],
-        })
+        }
+        # İskonto alan adları Hızlı Bilişim'in resmi şemasından teyit
+        # edilemedi (sandbox'tan API'ye erişilemedi) — EN İYİ TAHMİN olarak
+        # işaretlendi. Sadece iskonto girilmişse gönderilir, gerçek bir
+        # hata dönerse fatura.hata_mesaji'nda görünüp buradan düzeltilebilir.
+        if kalem.get("iskonto_tutari"):
+            satir["Discount_Percent"] = kalem["iskonto_orani"]
+            satir["Discount_Amount"] = kalem["iskonto_tutari"]
+            if kalem.get("iskonto_nedeni"):
+                satir["Discount_Reason"] = kalem["iskonto_nedeni"]
+        invoice_lines.append(satir)
+        toplam_kdv_haric += kalem["mal_hizmet_tutari"]
+        toplam_kdv += kalem["kdv_tutari"]
+        toplam_diger_vergi += kalem.get("diger_vergi") or 0
+
     toplam_kdv_haric = round(toplam_kdv_haric, 2)
     toplam_kdv = round(toplam_kdv, 2)
-    toplam_kdv_dahil = round(toplam_kdv_haric + toplam_kdv, 2)
+    toplam_diger_vergi = round(toplam_diger_vergi, 2)
+    toplam_kdv_dahil = round(toplam_kdv_haric + toplam_kdv + toplam_diger_vergi, 2)
 
     alici_kimlik_no = "".join(ch for ch in str(alici.get("kimlik_no") or "") if ch.isdigit())
     customer = {
@@ -2361,7 +2463,7 @@ def _hizli_fatura_gonder(db, kaynak_tur, kaynak_id, alici, kalemler, fatura_turu
     tablosuna kaydeder. fatura_tarihi verilmezse bugün kullanılır. Döndürdüğü
     değer: eklenen 'fatura' satırının id'si."""
     satici = _hizli_satici_bilgisi(db)
-    kalem_ozet = ", ".join(f"{k['aciklama']}: {tl_format(k['tutar_kdv_dahil'])} TL" for k in kalemler)
+    kalem_ozet = ", ".join(f"{k['aciklama']}: {tl_format(k['satir_toplam'])} TL" for k in kalemler)
     yerel_id = f"{kaynak_tur}-{kaynak_id}-{secrets.token_hex(4)}"
     fatura_tarihi = fatura_tarihi or datetime.now().strftime("%Y-%m-%d")
 
@@ -2539,6 +2641,208 @@ def fatura_pdf_goster(fatura_id):
         cur.close()
 
     return Response(bytes(fatura["pdf_icerik"]), mimetype="application/pdf")
+
+
+# ---------------------------------------------------------------------------
+# STOK MODÜLÜ: ürün/malzeme kataloğu, miktar (giriş/çıkış) takibi, düşük
+# stok uyarısı, tedarikçi/alım kaydı.
+# ---------------------------------------------------------------------------
+
+@app.route("/stok")
+@login_required
+def stok_listesi():
+    """Ürün/malzeme kataloğunu, güncel stok miktarlarını ve düşük stok
+    uyarılarını gösterir."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM stok_urun WHERE aktif = TRUE ORDER BY urun_adi")
+    urunler = cur.fetchall()
+    cur.close()
+    dusuk_stok_sayisi = sum(1 for u in urunler if float(u["stok_miktari"] or 0) <= float(u["min_stok_seviyesi"] or 0))
+    return render_template("stok_listesi.html", urunler=urunler, dusuk_stok_sayisi=dusuk_stok_sayisi)
+
+
+@app.route("/stok/yeni", methods=["GET", "POST"])
+@login_required
+def stok_yeni():
+    """Yeni bir ürün/malzeme kaydı (stok kartı) oluşturur."""
+    if request.method == "POST":
+        urun_adi = request.form.get("urun_adi", "").strip()
+        if not urun_adi:
+            flash("Ürün adı zorunludur.")
+            return redirect(url_for("stok_yeni"))
+        db = get_db()
+        cur = db.cursor()
+        cur.execute(
+            "INSERT INTO stok_urun (urun_adi, birim, birim_fiyat, kdv_orani, stok_miktari, min_stok_seviyesi, aciklama) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (
+                urun_adi,
+                request.form.get("birim", "ADET").strip() or "ADET",
+                _sayi_veya(request.form.get("birim_fiyat"), 0),
+                _sayi_veya(request.form.get("kdv_orani"), 20),
+                _sayi_veya(request.form.get("stok_miktari"), 0),
+                _sayi_veya(request.form.get("min_stok_seviyesi"), 0),
+                request.form.get("aciklama", "").strip(),
+            ),
+        )
+        db.commit()
+        cur.close()
+        flash("Ürün eklendi.")
+        return redirect(url_for("stok_listesi"))
+    return render_template("stok_form.html", kayit=None)
+
+
+@app.route("/stok/<int:urun_id>/duzenle", methods=["GET", "POST"])
+@login_required
+def stok_duzenle(urun_id):
+    """Bir ürün/malzeme kaydını düzenler (stok miktarının elle düzeltilmesi
+    de dahil — normal akışta miktar 'Stok Hareketi Ekle' ile değişir, ama
+    ilk kurulumda ya da sayım düzeltmesinde burada da değiştirilebilir)."""
+    db = get_db()
+    if request.method == "POST":
+        urun_adi = request.form.get("urun_adi", "").strip()
+        if not urun_adi:
+            flash("Ürün adı zorunludur.")
+            return redirect(url_for("stok_duzenle", urun_id=urun_id))
+        cur = db.cursor()
+        cur.execute(
+            "UPDATE stok_urun SET urun_adi=%s, birim=%s, birim_fiyat=%s, kdv_orani=%s, "
+            "stok_miktari=%s, min_stok_seviyesi=%s, aciklama=%s WHERE id=%s",
+            (
+                urun_adi,
+                request.form.get("birim", "ADET").strip() or "ADET",
+                _sayi_veya(request.form.get("birim_fiyat"), 0),
+                _sayi_veya(request.form.get("kdv_orani"), 20),
+                _sayi_veya(request.form.get("stok_miktari"), 0),
+                _sayi_veya(request.form.get("min_stok_seviyesi"), 0),
+                request.form.get("aciklama", "").strip(),
+                urun_id,
+            ),
+        )
+        db.commit()
+        cur.close()
+        flash("Ürün güncellendi.")
+        return redirect(url_for("stok_listesi"))
+    cur = db.cursor()
+    cur.execute("SELECT * FROM stok_urun WHERE id = %s", (urun_id,))
+    kayit = cur.fetchone()
+    cur.close()
+    if kayit is None:
+        flash("Ürün bulunamadı.")
+        return redirect(url_for("stok_listesi"))
+    return render_template("stok_form.html", kayit=kayit)
+
+
+@app.route("/stok/<int:urun_id>/sil", methods=["POST"])
+@login_required
+def stok_sil(urun_id):
+    """Bir ürünü (ve tüm hareket geçmişini) siler. Kalıcı kayıt tutmak
+    isteyenler için: 'sil' yerine ürünü pasif hale getirmek isterlerse
+    Düzenle ekranından 'aktif' işaretini kaldırmaları önerilebilir —
+    şimdilik basit tutuluyor, gerçek silme yapılıyor."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM stok_urun WHERE id = %s", (urun_id,))
+    db.commit()
+    cur.close()
+    flash("Ürün silindi.")
+    return redirect(url_for("stok_listesi"))
+
+
+@app.route("/stok/<int:urun_id>/hareket", methods=["GET", "POST"])
+@login_required
+def stok_hareket_ekle(urun_id):
+    """Bir ürüne giriş (alım/tedarikçi kaydı) ya da çıkış (kullanım) hareketi
+    ekler ve ürünün güncel stok_miktari'nı buna göre günceller."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM stok_urun WHERE id = %s", (urun_id,))
+    urun = cur.fetchone()
+    cur.close()
+    if urun is None:
+        flash("Ürün bulunamadı.")
+        return redirect(url_for("stok_listesi"))
+
+    if request.method == "POST":
+        hareket_turu = request.form.get("hareket_turu")
+        if hareket_turu not in ("giris", "cikis"):
+            flash("Geçerli bir hareket türü seçin.")
+            return redirect(url_for("stok_hareket_ekle", urun_id=urun_id))
+        miktar = _sayi_veya(request.form.get("miktar"), 0)
+        if miktar <= 0:
+            flash("Miktar sıfırdan büyük olmalı.")
+            return redirect(url_for("stok_hareket_ekle", urun_id=urun_id))
+        tarih = request.form.get("tarih", "").strip() or datetime.now().strftime("%Y-%m-%d")
+
+        cur = db.cursor()
+        cur.execute(
+            "INSERT INTO stok_hareket (urun_id, hareket_turu, miktar, tarih, birim_fiyat, tedarikci_adi, aciklama, olusturan_kullanici) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (
+                urun_id, hareket_turu, miktar, tarih,
+                _sayi_veya(request.form.get("birim_fiyat"), None) if hareket_turu == "giris" else None,
+                request.form.get("tedarikci_adi", "").strip() if hareket_turu == "giris" else "",
+                request.form.get("aciklama", "").strip(),
+                session.get("kullanici_adi", ""),
+            ),
+        )
+        degisim = miktar if hareket_turu == "giris" else -miktar
+        cur.execute("UPDATE stok_urun SET stok_miktari = stok_miktari + %s WHERE id = %s", (degisim, urun_id))
+        db.commit()
+        cur.close()
+        flash("Stok hareketi kaydedildi.")
+        return redirect(url_for("stok_hareketleri", urun_id=urun_id))
+
+    return render_template(
+        "stok_hareket_form.html", urun=urun, bugun=datetime.now().strftime("%Y-%m-%d"),
+    )
+
+
+@app.route("/stok/<int:urun_id>/hareketler")
+@login_required
+def stok_hareketleri(urun_id):
+    """Bir ürünün tüm giriş/çıkış (tedarikçi/alım dahil) hareket geçmişini
+    gösterir."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM stok_urun WHERE id = %s", (urun_id,))
+    urun = cur.fetchone()
+    cur.close()
+    if urun is None:
+        flash("Ürün bulunamadı.")
+        return redirect(url_for("stok_listesi"))
+    cur = db.cursor()
+    cur.execute(
+        "SELECT * FROM stok_hareket WHERE urun_id = %s ORDER BY tarih DESC, id DESC",
+        (urun_id,),
+    )
+    hareketler = cur.fetchall()
+    cur.close()
+    return render_template("stok_hareketleri.html", urun=urun, hareketler=hareketler)
+
+
+@app.route("/stok/hareket/<int:hareket_id>/sil", methods=["POST"])
+@login_required
+def stok_hareket_sil(hareket_id):
+    """Bir stok hareketini siler ve ürünün stok_miktari'na olan etkisini
+    geri alır (giriş silinirse miktar düşer, çıkış silinirse miktar artar)."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT urun_id, hareket_turu, miktar FROM stok_hareket WHERE id = %s", (hareket_id,))
+    hareket = cur.fetchone()
+    if hareket is None:
+        cur.close()
+        flash("Hareket kaydı bulunamadı.")
+        return redirect(url_for("stok_listesi"))
+    geri_alma = -hareket["miktar"] if hareket["hareket_turu"] == "giris" else hareket["miktar"]
+    cur.execute("UPDATE stok_urun SET stok_miktari = stok_miktari + %s WHERE id = %s", (geri_alma, hareket["urun_id"]))
+    cur.execute("DELETE FROM stok_hareket WHERE id = %s", (hareket_id,))
+    db.commit()
+    urun_id = hareket["urun_id"]
+    cur.close()
+    flash("Hareket silindi, stok miktarı geri alındı.")
+    return redirect(url_for("stok_hareketleri", urun_id=urun_id))
 
 
 @app.route("/yedek-al")
@@ -3663,9 +3967,16 @@ def abone_yeni():
 def abone_duzenle(abone_id):
     db = get_db()
     geri = request.args.get("geri", "") or request.form.get("geri", "")
+    # 'hedef': ör. Fatura Kes ekranında "eksik bilgi" nedeniyle buraya
+    # yönlendirildiyse, kaydettikten sonra doğrudan oraya geri dönmek için
+    # kullanılan tam URL (url-encoded). Verilmişse normal 'geri' akışından
+    # önceliklidir.
+    sonraki_hedef = request.args.get("hedef", "") or request.form.get("hedef", "")
     if request.method == "POST":
         _abone_kaydet(abone_id)
         _abone_fotograflarini_kaydet(db, abone_id, request.files.getlist("fotograflar"))
+        if sonraki_hedef:
+            return redirect(sonraki_hedef)
         hedef = url_for("abone_listesi")
         if geri:
             hedef += "?" + geri
@@ -3685,7 +3996,7 @@ def abone_duzenle(abone_id):
     fotograflar = cur.fetchall()
     cur.close()
     return render_template(
-        "abone_form.html", kayit=kayit, geri=geri, fotograflar=fotograflar,
+        "abone_form.html", kayit=kayit, geri=geri, hedef=sonraki_hedef, fotograflar=fotograflar,
         ozel_alan_harita=_ozel_alan_harita(_ozel_alanlari_getir(db, "abone")),
     )
 
@@ -3894,12 +4205,6 @@ def abone_fatura_kes(abone_id):
         flash("Kayıt bulunamadı.")
         return redirect(url_for("abone_listesi"))
 
-    kalemler = []
-    if float(abone["sayac_tutari"] or 0) > 0:
-        kalemler.append({"aciklama": "ÖN ÖDEMELİ SU SAYACI", "tutar_kdv_dahil": float(abone["sayac_tutari"])})
-    if float(abone["malzeme_tutari"] or 0) > 0:
-        kalemler.append({"aciklama": "FİTTİNGS MALZEMESİ", "tutar_kdv_dahil": float(abone["malzeme_tutari"])})
-
     onerilen_tur = _fatura_turu_belirle(abone["kimlik_no"])
 
     if request.method == "POST":
@@ -3910,8 +4215,10 @@ def abone_fatura_kes(abone_id):
         if not abone["kimlik_no"] or not abone["adres"]:
             flash("Fatura kesmeden önce abonenin TC Kimlik No/Vergi No ve Adres bilgilerini doldurun.")
             return redirect(url_for("abone_duzenle", abone_id=abone_id))
+
+        kalemler = _fatura_kalemlerini_formdan_oku(request.form)
         if not kalemler:
-            flash("Bu abonede faturalanacak bir tutar yok (Sayaç Tutarı ve Malzeme Tutarı sıfır).")
+            flash("En az bir fatura kalemi girilmeli (açıklama, miktar ve birim fiyat).")
             return redirect(url_for("abone_fatura_kes", abone_id=abone_id, geri=geri))
 
         fatura_tarihi_form = request.form.get("fatura_tarihi", "").strip()
@@ -3932,22 +4239,19 @@ def abone_fatura_kes(abone_id):
         return redirect(hedef)
 
     onizleme = []
-    toplam_dahil = 0.0
-    toplam_kdv = 0.0
-    for kalem in kalemler:
-        kdv_haric, kdv_tutari = _hizli_kdv_ayir(kalem["tutar_kdv_dahil"])
-        onizleme.append({
-            "aciklama": kalem["aciklama"], "tutar_kdv_dahil": kalem["tutar_kdv_dahil"],
-            "tutar_kdv_haric": kdv_haric, "kdv_tutari": kdv_tutari,
-        })
-        toplam_dahil += kalem["tutar_kdv_dahil"]
-        toplam_kdv += kdv_tutari
+    if float(abone["sayac_tutari"] or 0) > 0:
+        taban, _kdv = _hizli_kdv_ayir(float(abone["sayac_tutari"]))
+        onizleme.append({"aciklama": "ÖN ÖDEMELİ SU SAYACI", "miktar": 1, "birim_fiyat": taban})
+    if float(abone["malzeme_tutari"] or 0) > 0:
+        taban, _kdv = _hizli_kdv_ayir(float(abone["malzeme_tutari"]))
+        onizleme.append({"aciklama": "FİTTİNGS MALZEMESİ", "miktar": 1, "birim_fiyat": taban})
 
+    fatura_kes_url = url_for("abone_fatura_kes", abone_id=abone_id) + (f"?geri={_url_quote(geri, safe='')}" if geri else "")
     return render_template(
         "fatura_kes.html", kaynak=abone, kaynak_tur="abone", kaynak_ad=f"{abone['adi']} {abone['soyadi']}",
-        duzenle_url=url_for("abone_duzenle", abone_id=abone_id),
-        geri_url=url_for("abone_fatura_kes", abone_id=abone_id) + (f"?geri={_url_quote(geri, safe='')}" if geri else ""),
-        onizleme=onizleme, toplam_dahil=round(toplam_dahil, 2), toplam_kdv=round(toplam_kdv, 2),
+        duzenle_url=url_for("abone_duzenle", abone_id=abone_id) + f"?hedef={_url_quote(fatura_kes_url, safe='')}",
+        geri_url=fatura_kes_url,
+        onizleme=onizleme,
         onerilen_tur=onerilen_tur, hizli_ayarli_mi=_hizli_ayarli_mi(), geri=geri,
         bugun=datetime.now().strftime("%Y-%m-%d"),
     )
@@ -4694,9 +4998,15 @@ def ariza_yeni():
 @login_required
 def ariza_duzenle(ariza_id):
     db = get_db()
+    # 'hedef': ör. Fatura Kes ekranında "eksik bilgi" nedeniyle buraya
+    # yönlendirildiyse, kaydettikten sonra doğrudan oraya geri dönmek için
+    # kullanılan tam URL (url-encoded).
+    sonraki_hedef = request.args.get("hedef", "") or request.form.get("hedef", "")
     if request.method == "POST":
         _ariza_kaydet(ariza_id)
         _ariza_fotograflarini_kaydet(db, ariza_id, request.files.getlist("fotograflar"))
+        if sonraki_hedef:
+            return redirect(sonraki_hedef)
         flash("Kayıt kaydedildi.")
         return redirect(url_for("ariza_duzenle", ariza_id=ariza_id))
     cur = db.cursor()
@@ -4730,7 +5040,7 @@ def ariza_duzenle(ariza_id):
     cur.close()
 
     return render_template(
-        "ariza_form.html", kayit=kayit,
+        "ariza_form.html", kayit=kayit, hedef=sonraki_hedef,
         **_ariza_secenek_baglami(db),
         secili_tespit=secili_tespit, secili_islem=secili_islem,
         ilk_montaj_tarihi=ilk_montaj_tarihi,
@@ -5027,10 +5337,6 @@ def ariza_fatura_kes(ariza_id):
         flash("Kayıt bulunamadı.")
         return redirect(url_for("ariza_listesi"))
 
-    kalemler = []
-    if float(ariza["ariza_ucret"] or 0) > 0:
-        kalemler.append({"aciklama": "ARIZA TAMİR ÜCRETİ", "tutar_kdv_dahil": float(ariza["ariza_ucret"])})
-
     onerilen_tur = _fatura_turu_belirle(ariza["kimlik_no"])
 
     if request.method == "POST":
@@ -5041,8 +5347,10 @@ def ariza_fatura_kes(ariza_id):
         if not ariza["kimlik_no"] or not ariza["adres"]:
             flash("Fatura kesmeden önce arıza kaydının TC Kimlik No/Vergi No ve Adres bilgilerini doldurun.")
             return redirect(url_for("ariza_duzenle", ariza_id=ariza_id))
+
+        kalemler = _fatura_kalemlerini_formdan_oku(request.form)
         if not kalemler:
-            flash("Bu arıza kaydında faturalanacak bir tutar yok (Arıza Ücreti sıfır).")
+            flash("En az bir fatura kalemi girilmeli (açıklama, miktar ve birim fiyat).")
             return redirect(url_for("ariza_fatura_kes", ariza_id=ariza_id))
 
         fatura_tarihi_form = request.form.get("fatura_tarihi", "").strip()
@@ -5062,22 +5370,16 @@ def ariza_fatura_kes(ariza_id):
         return redirect(url_for("fatura_goruntule", fatura_id=fatura_id))
 
     onizleme = []
-    toplam_dahil = 0.0
-    toplam_kdv = 0.0
-    for kalem in kalemler:
-        kdv_haric, kdv_tutari = _hizli_kdv_ayir(kalem["tutar_kdv_dahil"])
-        onizleme.append({
-            "aciklama": kalem["aciklama"], "tutar_kdv_dahil": kalem["tutar_kdv_dahil"],
-            "tutar_kdv_haric": kdv_haric, "kdv_tutari": kdv_tutari,
-        })
-        toplam_dahil += kalem["tutar_kdv_dahil"]
-        toplam_kdv += kdv_tutari
+    if float(ariza["ariza_ucret"] or 0) > 0:
+        taban, _kdv = _hizli_kdv_ayir(float(ariza["ariza_ucret"]))
+        onizleme.append({"aciklama": "ARIZA TAMİR ÜCRETİ", "miktar": 1, "birim_fiyat": taban})
 
+    fatura_kes_url = url_for("ariza_fatura_kes", ariza_id=ariza_id)
     return render_template(
         "fatura_kes.html", kaynak=ariza, kaynak_tur="ariza", kaynak_ad=f"{ariza['adi']} {ariza['soyadi']}",
-        duzenle_url=url_for("ariza_duzenle", ariza_id=ariza_id),
-        geri_url=url_for("ariza_fatura_kes", ariza_id=ariza_id),
-        onizleme=onizleme, toplam_dahil=round(toplam_dahil, 2), toplam_kdv=round(toplam_kdv, 2),
+        duzenle_url=url_for("ariza_duzenle", ariza_id=ariza_id) + f"?hedef={_url_quote(fatura_kes_url, safe='')}",
+        geri_url=fatura_kes_url,
+        onizleme=onizleme,
         onerilen_tur=onerilen_tur, hizli_ayarli_mi=_hizli_ayarli_mi(), geri="",
         bugun=datetime.now().strftime("%Y-%m-%d"),
     )
