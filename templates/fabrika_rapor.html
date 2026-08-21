@@ -17,6 +17,7 @@
     body { margin: 0; }
 }
 .fabrika-rapor-sayfa {
+    position: relative;
     background: #fff;
     max-width: 900px;
     margin: 0 auto 20px;
@@ -24,6 +25,28 @@
     border: 1px solid #dfe6e1;
     border-radius: 8px;
     font-size: 13px;
+    overflow: hidden;
+}
+.fabrika-rapor-filigran {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 55%;
+    max-width: 320px;
+    z-index: 0;
+    pointer-events: none;
+}
+.fabrika-rapor-icerik {
+    position: relative;
+    z-index: 1;
+}
+.fabrika-rapor-logo {
+    display: block;
+    margin: 0 auto 10px;
+    max-width: 320px;
+    width: 100%;
+    height: auto;
 }
 @media print {
     .fabrika-rapor-sayfa {
@@ -65,6 +88,9 @@
 
 {% for koli in koliler %}
 <div class="fabrika-rapor-sayfa">
+    <img class="fabrika-rapor-filigran" src="{{ url_for('static', filename='fabrika_su_damla_filigran.png') }}" alt="">
+    <div class="fabrika-rapor-icerik">
+    <img class="fabrika-rapor-logo" src="{{ url_for('static', filename='fabrika_logo.jpg') }}" alt="ALGI Mevzuat Danışmanlık Bilişim Hizmetleri">
     <div class="fabrika-rapor-baslik">ARIZALI SAYAÇ BİLGİ FORMU</div>
 
     <table class="fabrika-rapor-ust-tablo">
@@ -129,6 +155,7 @@
             <td style="width:50%;"><strong>{{ satici['unvan'] }}{% if satici['yetkili'] %} – {{ satici['yetkili'] }}{% endif %}</strong><br>İMZA</td>
         </tr>
     </table>
+    </div>
 </div>
 {% endfor %}
 
