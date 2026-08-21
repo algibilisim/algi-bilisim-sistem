@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Fabrika / Tamir - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+{% macro durum_renk(d) %}{{ {"beklemede": "#888", "gonderildi": "#1f6fb2", "tamirde": "#c2740c", "tamir_edildi": "#2e7d32", "iade_edildi": "#00796b"}.get(d, "#555") }}{% endmacro %}
+
+<div class="sayfa-basligi">
+    <h2>Fabrika / Tamir</h2>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <a class="btn btn-yesil" href="{{ url_for('fabrika_yeni') }}">+ Yeni Kayıt</a>
+        <a class="btn" href="{{ url_for('fabrika_gonderim_listesi') }}">Gönderimler / Sayaç Durum Raporu</a>
+    </div>
+</div>
+
+<div style="margin-bottom:14px; display:flex; gap:6px; flex-wrap:wrap;">
+    <a class="btn" href="{{ url_for('fabrika_listesi') }}" style="{{ 'font-weight:700; text-decoration:underline;' if not durum_filtre else '' }}">Tümü</a>
+    {% for kod, etiket in durum_etiketleri.items() %}
+    <a class="btn" href="{{ url_for('fabrika_listesi', durum=kod) }}" style="{{ 'font-weight:700; text-decoration:underline;' if durum_filtre == kod else '' }}">{{ etiket }}</a>
+    {% endfor %}
+</div>
+
+<form method="post" action="{{ url_for('fabrika_gonderim_olustur') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="tablo-kaydirici">
+    <table>
+        <thead>
+            <tr>
+                <th></th>
+                <th>Seri No</th>
+                <th>Abone Adı</th>
+                <th>Köy Adı</th>
+                <th>Üretim Yılı</th>
+                <th>Tespit Edilen Arıza</th>
+                <th>Yerine Sayaç</th>
+                <th>Durum</th>
+                <th>Koli / Gönderim</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for k in kayitlar %}
+            <tr>
+                <td>
+                    {% if k['durum'] == 'beklemede' %}
+                    <input type="checkbox" name="secili_id" value="{{ k['id'] }}">
+                    {% endif %}
+                </td>
+                <td>{{ k['seri_no'] }}</td>
+                <td>{{ k['abone_adi'] or '' }}</td>
+                <td>{{ k['koy_adi'] or '' }}</td>
+                <td>{{ k['uretim_yili'] or '' }}</td>
+                <td>{{ (k['tespit_edilen_ariza'] or '')[:60] }}{% if k['tespit_edilen_ariza'] and k['tespit_edilen_ariza']|length > 60 %}…{% endif %}</td>
+                <td>
+                    {% if k['yerine_sayac_takildi'] %}Takıldı ({{ k['takilan_sayac_serisi'] or '-' }}){% else %}Takılmadı{% endif %}
+                </td>
+                <td><span style="color:{{ durum_renk(k['durum']) }}; font-weight:600;">{{ durum_etiketleri.get(k['durum'], k['durum']) }}</span></td>
+                <td>
+                    {% if k['koli_gonderim_id'] %}
+                    <a href="{{ url_for('fabrika_gonderim_detay', gonderim_id=k['koli_gonderim_id']) }}">Gönderim #{{ k['koli_gonderim_id'] }} — Koli {{ k['koli_no'] }}</a>
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td class="islem-hucre">
+                    <a href="{{ url_for('fabrika_duzenle', kayit_id=k['id']) }}">Düzenle</a>
+                    <button type="button" class="link-buton"
+                            onclick="var f=document.createElement('form'); f.method='post'; f.action='{{ url_for('fabrika_sil', kayit_id=k['id']) }}';
+                                     var i=document.createElement('input'); i.type='hidden'; i.name='csrf_token'; i.value='{{ csrf_token() }}';
+                                     f.appendChild(i); document.body.appendChild(f);
+                                     if (confirm('Bu tamir kaydını silmek istediğinize emin misiniz?')) { f.submit(); }">Sil</button>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="10">Henüz kayıt yok.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+
+    <div class="form-butonlar" style="margin-top:16px;">
+        <button type="submit" class="btn btn-yesil">Seçilenler İçin Gönderim Oluştur</button>
+    </div>
+    <p style="font-size:12.5px; color:#888; margin-top:6px;">
+        Sadece "Beklemede" durumundaki kayıtlar işaretlenebilir. İşaretlediğiniz kayıtlar
+        otomatik olarak 8'erli gruplara (koli) bölünüp tek bir gönderim altında paketlenir.
+    </p>
+</form>
+
+{% endblock %}

@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Sayaç Durum Raporu - Gönderim #{{ gonderim['id'] }} - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi no-print">
+    <h2>Sayaç Durum Raporu — Gönderim #{{ gonderim['id'] }}</h2>
+    <div style="display:flex; gap:8px;">
+        <a class="btn" href="{{ url_for('fabrika_gonderim_detay', gonderim_id=gonderim['id']) }}">Gönderim Detayına Dön</a>
+        <a class="btn" href="{{ url_for('fabrika_rapor_pdf', gonderim_id=gonderim['id']) }}">PDF İndir</a>
+        <button type="button" class="btn btn-yesil" onclick="window.print()">Yazdır</button>
+    </div>
+</div>
+
+<style>
+@media print {
+    @page { size: A4; margin: 12mm; }
+    body { margin: 0; }
+}
+.fabrika-rapor-sayfa {
+    background: #fff;
+    max-width: 900px;
+    margin: 0 auto 20px;
+    padding: 16px;
+    border: 1px solid #dfe6e1;
+    border-radius: 8px;
+    font-size: 13px;
+}
+@media print {
+    .fabrika-rapor-sayfa {
+        border: none;
+        border-radius: 0;
+        max-width: none;
+        margin: 0;
+        padding: 0;
+        page-break-after: always;
+    }
+    .fabrika-rapor-sayfa:last-child { page-break-after: auto; }
+}
+.fabrika-rapor-baslik {
+    text-align: center;
+    font-weight: 700;
+    font-size: 16px;
+    margin-bottom: 12px;
+}
+.fabrika-rapor-ust-tablo, .fabrika-rapor-kalem-tablo, .fabrika-rapor-imza-tablo {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 12px;
+}
+.fabrika-rapor-ust-tablo td, .fabrika-rapor-kalem-tablo th, .fabrika-rapor-kalem-tablo td, .fabrika-rapor-imza-tablo td {
+    border: 1px solid #999;
+    padding: 6px 8px;
+    vertical-align: top;
+}
+.fabrika-rapor-ust-tablo td.etiket, .fabrika-rapor-kalem-tablo th {
+    background: #f2f2f2;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.fabrika-rapor-kalem-tablo th { text-align: center; }
+.fabrika-rapor-kalem-tablo td.sira { text-align: center; width: 30px; }
+.fabrika-rapor-kalem-tablo td.toplam-etiket { font-weight: 700; text-align: center; }
+.fabrika-rapor-imza-tablo td { height: 60px; }
+</style>
+
+{% for koli in koliler %}
+<div class="fabrika-rapor-sayfa">
+    <div class="fabrika-rapor-baslik">ARIZALI SAYAÇ BİLGİ FORMU</div>
+
+    <table class="fabrika-rapor-ust-tablo">
+        <tr>
+            <td class="etiket">ADRES</td>
+            <td>{{ gonderim['adres'] or '' }}</td>
+            <td class="etiket">TARİH</td>
+            <td>{{ (koli['koli_tarihi'] or gonderim['gonderim_tarihi']).strftime('%d.%m.%Y') if (koli['koli_tarihi'] or gonderim['gonderim_tarihi']) else '' }}</td>
+        </tr>
+        <tr>
+            <td class="etiket">ÜRÜN TANIMI</td>
+            <td>{{ gonderim['urun_tanimi'] or '' }}</td>
+            <td class="etiket">KOLİ</td>
+            <td>{{ loop.index }} / {{ koliler|length }}</td>
+        </tr>
+        <tr>
+            <td class="etiket">KARGO FİRMASI</td>
+            <td>{{ gonderim['kargo_firmasi'] or '' }}</td>
+            <td class="etiket">TAKİP NO</td>
+            <td>{{ gonderim['kargo_takip_no'] or '' }}</td>
+        </tr>
+    </table>
+
+    <table class="fabrika-rapor-kalem-tablo">
+        <thead>
+            <tr>
+                <th>S.NO</th>
+                <th>SERİ NO</th>
+                <th>ÜRETİM YILI</th>
+                <th>ARIZA DURUMU</th>
+                <th>SAYAÇ SAHİBİ</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for i in range(koli_kapasitesi) %}
+            {% if i < koli['kayitlar']|length %}
+            {% set k = koli['kayitlar'][i] %}
+            <tr>
+                <td class="sira">{{ i + 1 }}</td>
+                <td>{{ k['seri_no'] }}</td>
+                <td>{{ k['uretim_yili'] or '' }}</td>
+                <td>{{ k['tespit_edilen_ariza'] or '' }}</td>
+                <td>{{ k['koy_adi'] or '' }}{% if k['abone_adi'] %}<br>{{ k['abone_adi'] }}{% endif %}</td>
+            </tr>
+            {% else %}
+            <tr>
+                <td class="sira">{{ i + 1 }}</td>
+                <td></td><td></td><td></td><td></td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+            <tr>
+                <td class="toplam-etiket" colspan="3">TOPLAM</td>
+                <td colspan="2">{{ koli['kayitlar']|length }} Adet Su Sayacı</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <table class="fabrika-rapor-imza-tablo">
+        <tr>
+            <td style="width:50%;"><strong>YETKİLİ BAYİİ</strong><br>İMZA</td>
+            <td style="width:50%;"><strong>{{ satici['unvan'] }}{% if satici['yetkili'] %} – {{ satici['yetkili'] }}{% endif %}</strong><br>İMZA</td>
+        </tr>
+    </table>
+</div>
+{% endfor %}
+
+{% endblock %}

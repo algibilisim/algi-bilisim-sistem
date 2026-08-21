@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Gönderim Oluştur - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi">
+    <h2>Gönderim Oluştur</h2>
+    <a class="btn" href="{{ url_for('fabrika_listesi') }}">Fabrika / Tamir Listesi'ne Dön</a>
+</div>
+
+<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:20px;">
+    <strong>{{ kayitlar|length }}</strong> sayaç seçildi — otomatik olarak
+    <strong>{{ koli_sayisi }}</strong> koli (en fazla {{ koli_kapasitesi }}'erli gruplar) halinde paketlenecek.
+</div>
+
+<div class="tablo-kaydirici" style="margin-bottom:20px;">
+<table>
+    <thead>
+        <tr><th>#</th><th>Seri No</th><th>Abone Adı</th><th>Köy Adı</th><th>Tespit Edilen Arıza</th></tr>
+    </thead>
+    <tbody>
+        {% for k in kayitlar %}
+        <tr>
+            <td>{{ ((loop.index0 // koli_kapasitesi) + 1) }}. Koli</td>
+            <td>{{ k['seri_no'] }}</td>
+            <td>{{ k['abone_adi'] or '' }}</td>
+            <td>{{ k['koy_adi'] or '' }}</td>
+            <td>{{ (k['tespit_edilen_ariza'] or '')[:60] }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<form method="post" action="{{ url_for('fabrika_gonderim_kaydet') }}" style="max-width:640px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% for k in kayitlar %}<input type="hidden" name="secili_id" value="{{ k['id'] }}">{% endfor %}
+    <div class="form-grid">
+        <div>
+            <label>Kargo Firması</label>
+            <input type="text" name="kargo_firmasi" style="width:100%;">
+        </div>
+        <div>
+            <label>Kargo Takip No</label>
+            <input type="text" name="kargo_takip_no" style="width:100%;">
+        </div>
+        <div>
+            <label>Gönderim Tarihi</label>
+            <input type="date" name="gonderim_tarihi" value="{{ bugun }}" max="{{ bugun }}" style="width:100%;">
+        </div>
+        <div>
+            <label>Ürün Tanımı</label>
+            <input type="text" name="urun_tanimi" value="Elektronik Kartlı Ön Ödemeli Su Sayacı" style="width:100%;">
+        </div>
+        <div class="tam-genislik">
+            <label>Adres</label>
+            <input type="text" name="adres" value="{{ varsayilan_adres }}" style="width:100%;">
+        </div>
+    </div>
+    <p style="font-size:12.5px; color:#888; margin-top:6px;">
+        Birden fazla koli oluşsa da tüm koliler için tek kargo bilgisi kullanılır (hep birlikte
+        gönderildiği varsayılır). Her kolinin kendi tarihini/notunu, gönderim oluştuktan sonra
+        gönderim detay sayfasından ayrı ayrı düzenleyebilirsiniz.
+    </p>
+    <div class="form-butonlar" style="margin-top:16px;">
+        <button type="submit" class="btn btn-yesil">Gönderimi Kaydet</button>
+        <a class="btn" href="{{ url_for('fabrika_listesi') }}">Vazgeç</a>
+    </div>
+</form>
+
+{% endblock %}

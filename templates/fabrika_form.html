@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Tamir Kaydı Düzenle' if kayit else 'Yeni Tamir Kaydı' }} - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi">
+    <h2>{{ 'Tamir Kaydı Düzenle' if kayit else 'Yeni Tamir Kaydı' }}</h2>
+    <a class="btn" href="{{ url_for('fabrika_listesi') }}">Fabrika / Tamir Listesi'ne Dön</a>
+</div>
+
+{% if koli_bilgi %}
+<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:20px;">
+    <strong>Gönderim / Koli:</strong>
+    <a href="{{ url_for('fabrika_gonderim_detay', gonderim_id=koli_bilgi['gonderim_id']) }}">
+        Gönderim #{{ koli_bilgi['gonderim_id'] }} — Koli {{ koli_bilgi['koli_no'] }}
+    </a>
+    (Kargo: {{ koli_bilgi['kargo_firmasi'] or '-' }}, Takip No: {{ koli_bilgi['kargo_takip_no'] or '-' }})
+</div>
+{% endif %}
+
+<form method="post" style="max-width:640px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-grid">
+        <div>
+            <label>Seri No *</label>
+            <input type="text" id="fabrika_seri_no_girisi" name="seri_no"
+                   value="{{ kayit['seri_no'] if kayit and kayit['seri_no'] is not none else '' }}"
+                   {% if not kayit %}autofocus{% endif %} required style="width:100%;">
+        </div>
+        <div>
+            <label>Abone Adı</label>
+            <input type="text" id="fabrika_abone_adi" name="abone_adi"
+                   value="{{ kayit['abone_adi'] if kayit and kayit['abone_adi'] is not none else '' }}" style="width:100%;">
+        </div>
+        <div>
+            <label>Köy Adı</label>
+            <input type="text" id="fabrika_koy_adi" name="koy_adi"
+                   value="{{ kayit['koy_adi'] if kayit and kayit['koy_adi'] is not none else '' }}" style="width:100%;">
+        </div>
+        <div>
+            <label>Telefon</label>
+            <input type="text" id="fabrika_telefon" name="telefon"
+                   value="{{ kayit['telefon'] if kayit and kayit['telefon'] is not none else '' }}" style="width:100%;">
+        </div>
+        <div>
+            <label>İlk Montaj Tarihi</label>
+            <input type="date" id="fabrika_montaj_tarihi" name="ilk_montaj_tarihi"
+                   value="{{ kayit['ilk_montaj_tarihi'] if kayit and kayit['ilk_montaj_tarihi'] is not none else '' }}" style="width:100%;">
+        </div>
+
+        <div id="fabrika-seri-uyari-kutu" class="seri-uyari-kutu tam-genislik" style="display:none;">
+            <h4>Dikkat: Bu seri no başka abonelerde de kayıtlı</h4>
+            <table>
+                <thead><tr><th>Adı</th><th>Soyadı</th><th>Köy</th></tr></thead>
+                <tbody id="fabrika-seri-uyari-govde"></tbody>
+            </table>
+        </div>
+
+        {% if not kayit %}
+        <div id="fabrika-kaynak-cakisma-kutu" class="kaynak-cakisma-kutu tam-genislik" style="display:none;">
+            <h4>Dikkat: Bu seri no farklı kaynaklarda/kayıtlarda farklı bilgilerle kayıtlı — hangisini kullanmak istiyorsunuz?</h4>
+            <div class="kaynak-secenekleri" id="fabrika-kaynak-secenek-listesi"></div>
+        </div>
+        {% endif %}
+
+        <div>
+            <label>Üretim Yılı</label>
+            <input type="text" name="uretim_yili" value="{{ kayit['uretim_yili'] if kayit and kayit['uretim_yili'] is not none else '' }}" style="width:100%;">
+        </div>
+        <div class="tam-genislik">
+            <label>Tespit Edilen Arıza</label>
+            <textarea name="tespit_edilen_ariza" rows="3" style="width:100%;">{{ kayit['tespit_edilen_ariza'] if kayit and kayit['tespit_edilen_ariza'] is not none else '' }}</textarea>
+        </div>
+
+        <div>
+            <label>Yerine Sayaç Takıldı mı?</label>
+            <select name="yerine_sayac_takildi" id="fabrika-yerine-takildi-secim" style="width:100%;" onchange="fabrikaTakilanAlaniniGoster()">
+                <option value="takilmadi" {{ 'selected' if not (kayit and kayit['yerine_sayac_takildi']) else '' }}>Takılmadı</option>
+                <option value="takildi" {{ 'selected' if kayit and kayit['yerine_sayac_takildi'] else '' }}>Takıldı</option>
+            </select>
+        </div>
+        <div id="fabrika-takilan-serisi-alani">
+            <label>Takılan Sayaç Serisi</label>
+            <input type="text" name="takilan_sayac_serisi"
+                   value="{{ kayit['takilan_sayac_serisi'] if kayit and kayit['takilan_sayac_serisi'] is not none else '' }}" style="width:100%;">
+        </div>
+
+        <div class="ayirici">Gönderim / Durum</div>
+
+        <div>
+            <label>Durum</label>
+            {% if kayit and kayit['koli_id'] is not none %}
+            <select name="durum" style="width:100%;">
+                {% for kod in ['gonderildi', 'tamirde', 'tamir_edildi', 'iade_edildi'] %}
+                <option value="{{ kod }}" {{ 'selected' if kayit['durum'] == kod else '' }}>{{ durum_etiketleri[kod] }}</option>
+                {% endfor %}
+            </select>
+            {% else %}
+            <input type="text" value="Beklemede (Gönderilmedi)" readonly tabindex="-1" style="width:100%;">
+            <p style="font-size:12px; color:#888; margin:4px 0 0;">
+                Bu kayıt henüz bir gönderime/koliye dahil edilmedi. Fabrika/Tamir listesinden seçip
+                "Gönderim Oluştur" ile paketleyince durum otomatik "Gönderildi" olur.
+            </p>
+            {% endif %}
+        </div>
+        <div>
+            <label>Dönüş Tarihi</label>
+            <input type="date" name="donus_tarihi" value="{{ kayit['donus_tarihi'] if kayit and kayit['donus_tarihi'] is not none else '' }}" style="width:100%;">
+        </div>
+
+        <div class="ayirici">Maliyet</div>
+
+        <div>
+            <label>Tamir Ücreti</label>
+            <input type="number" name="tamir_ucreti" min="0" step="0.01" value="{{ kayit['tamir_ucreti'] if kayit else 0 }}" style="width:100%;">
+        </div>
+        <div>
+            <label>Parça Maliyeti</label>
+            <input type="number" name="parca_maliyeti" min="0" step="0.01" value="{{ kayit['parca_maliyeti'] if kayit else 0 }}" style="width:100%;">
+        </div>
+        <div>
+            <label>Ödeyen</label>
+            <select name="odeyen" style="width:100%;">
+                <option value="">Seçiniz</option>
+                {% for secenek in ['Biz (Firma)', 'Garanti', 'Müşteri'] %}
+                <option value="{{ secenek }}" {{ 'selected' if kayit and kayit['odeyen'] == secenek else '' }}>{{ secenek }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    <div class="form-butonlar" style="margin-top:16px;">
+        <button type="submit" class="btn btn-yesil">Kaydet</button>
+        <a class="btn" href="{{ url_for('fabrika_listesi') }}">Vazgeç</a>
+    </div>
+</form>
+
+<script>
+function fabrikaTakilanAlaniniGoster() {
+    var takildi = document.getElementById('fabrika-yerine-takildi-secim').value === 'takildi';
+    document.getElementById('fabrika-takilan-serisi-alani').style.display = takildi ? '' : 'none';
+}
+fabrikaTakilanAlaniniGoster();
+
+{% if not kayit %}
+document.getElementById('fabrika_seri_no_girisi').addEventListener('blur', function() {
+    var deger = this.value.trim();
+    var uyariKutu = document.getElementById('fabrika-seri-uyari-kutu');
+    var uyariGovde = document.getElementById('fabrika-seri-uyari-govde');
+    var cakismaKutu = document.getElementById('fabrika-kaynak-cakisma-kutu');
+    if (!deger) { return; }
+    fetch('/api/abone-ara?sayac_no=' + encodeURIComponent(deger))
+        .then(function(r) { return r.json(); })
+        .then(function(veri) {
+            if (veri.bulundu) {
+                document.getElementById('fabrika_abone_adi').value = ((veri.adi || '') + ' ' + (veri.soyadi || '')).trim();
+                document.getElementById('fabrika_koy_adi').value = veri.koy_adi || '';
+                document.getElementById('fabrika_telefon').value = veri.telefon || '';
+                document.getElementById('fabrika_montaj_tarihi').value = veri.montaj_tarihi || '';
+
+                uyariGovde.innerHTML = '';
+                if (veri.coklu && veri.digerleri && veri.digerleri.length > 1) {
+                    veri.digerleri.forEach(function(kayit) {
+                        var satir = document.createElement('tr');
+                        satir.innerHTML = '<td>' + (kayit.adi || '') + '</td><td>' + (kayit.soyadi || '') + '</td><td>' + (kayit.koy_adi || '') + '</td>';
+                        uyariGovde.appendChild(satir);
+                    });
+                    uyariKutu.style.display = 'block';
+                } else {
+                    uyariKutu.style.display = 'none';
+                }
+
+                if (cakismaKutu) {
+                    var liste = document.getElementById('fabrika-kaynak-secenek-listesi');
+                    liste.innerHTML = '';
+                    if (veri.secenekler && veri.secenekler.length > 1) {
+                        veri.secenekler.forEach(function(secenek) {
+                            var buton = document.createElement('button');
+                            buton.type = 'button';
+                            buton.className = 'kaynak-secenek-buton';
+                            buton.innerHTML = '<strong>' + (secenek.kaynak === 'koy_listesi' ? 'Köy Abone Listeleri' : 'Abone Listesi') + ':</strong> ' +
+                                (secenek.adi || '') + ' ' + (secenek.soyadi || '') + ' — ' + (secenek.koy_adi || '');
+                            buton.onclick = function() {
+                                document.getElementById('fabrika_abone_adi').value = ((secenek.adi || '') + ' ' + (secenek.soyadi || '')).trim();
+                                document.getElementById('fabrika_koy_adi').value = secenek.koy_adi || '';
+                                document.getElementById('fabrika_telefon').value = secenek.telefon || '';
+                                document.getElementById('fabrika_montaj_tarihi').value = secenek.montaj_tarihi || '';
+                                cakismaKutu.style.display = 'none';
+                            };
+                            liste.appendChild(buton);
+                        });
+                        cakismaKutu.style.display = 'block';
+                    } else {
+                        cakismaKutu.style.display = 'none';
+                    }
+                }
+            } else {
+                uyariKutu.style.display = 'none';
+                if (cakismaKutu) { cakismaKutu.style.display = 'none'; }
+            }
+        });
+});
+{% endif %}
+</script>
+
+{% endblock %}

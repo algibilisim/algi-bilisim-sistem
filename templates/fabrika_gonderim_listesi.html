@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Gönderimler - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi">
+    <h2>Gönderimler</h2>
+    <a class="btn" href="{{ url_for('fabrika_listesi') }}">Fabrika / Tamir Listesi'ne Dön</a>
+</div>
+
+<div class="tablo-kaydirici">
+<table>
+    <thead>
+        <tr>
+            <th>#</th>
+            <th>Gönderim Tarihi</th>
+            <th>Kargo Firması</th>
+            <th>Kargo Takip No</th>
+            <th>Koli Sayısı</th>
+            <th>Sayaç Sayısı</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for g in gonderimler %}
+        <tr>
+            <td>{{ g['id'] }}</td>
+            <td>{{ g['gonderim_tarihi'].strftime('%d.%m.%Y') if g['gonderim_tarihi'] else '' }}</td>
+            <td>{{ g['kargo_firmasi'] or '' }}</td>
+            <td>{{ g['kargo_takip_no'] or '' }}</td>
+            <td class="sayi">{{ g['koli_sayisi'] }}</td>
+            <td class="sayi">{{ g['sayac_sayisi'] }}</td>
+            <td class="islem-hucre">
+                <a href="{{ url_for('fabrika_gonderim_detay', gonderim_id=g['id']) }}">Detay</a>
+                <a href="{{ url_for('fabrika_rapor', gonderim_id=g['id']) }}">Sayaç Durum Raporu</a>
+                <a href="{{ url_for('fabrika_rapor_pdf', gonderim_id=g['id']) }}">PDF İndir</a>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7">Henüz gönderim oluşturulmadı.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+{% endblock %}

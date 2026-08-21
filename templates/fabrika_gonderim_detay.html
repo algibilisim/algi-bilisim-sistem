@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Gönderim #{{ gonderim['id'] }} - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi">
+    <h2>Gönderim #{{ gonderim['id'] }}</h2>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <a class="btn" href="{{ url_for('fabrika_rapor', gonderim_id=gonderim['id']) }}">Sayaç Durum Raporu</a>
+        <a class="btn" href="{{ url_for('fabrika_rapor_pdf', gonderim_id=gonderim['id']) }}">PDF İndir</a>
+        <a class="btn" href="{{ url_for('fabrika_gonderim_listesi') }}">Gönderimler'e Dön</a>
+    </div>
+</div>
+
+<form method="post" style="max-width:640px; margin-bottom:24px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-grid">
+        <div>
+            <label>Kargo Firması</label>
+            <input type="text" name="kargo_firmasi" value="{{ gonderim['kargo_firmasi'] or '' }}" style="width:100%;">
+        </div>
+        <div>
+            <label>Kargo Takip No</label>
+            <input type="text" name="kargo_takip_no" value="{{ gonderim['kargo_takip_no'] or '' }}" style="width:100%;">
+        </div>
+        <div>
+            <label>Ürün Tanımı</label>
+            <input type="text" name="urun_tanimi" value="{{ gonderim['urun_tanimi'] or '' }}" style="width:100%;">
+        </div>
+        <div class="tam-genislik">
+            <label>Adres</label>
+            <input type="text" name="adres" value="{{ gonderim['adres'] or '' }}" style="width:100%;">
+        </div>
+    </div>
+    <div class="form-butonlar" style="margin-top:12px;">
+        <button type="submit" class="btn btn-yesil">Kargo Bilgisini Güncelle</button>
+    </div>
+</form>
+
+{% for koli in koliler %}
+<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:20px;">
+    <h3 style="margin-top:0;">Koli {{ koli['koli_no'] }} ({{ koli['kayitlar']|length }} sayaç)</h3>
+
+    <form method="post" action="{{ url_for('fabrika_koli_duzenle', koli_id=koli['id']) }}" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin-bottom:14px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div>
+            <label>Koli Tarihi</label>
+            <input type="date" name="koli_tarihi" value="{{ koli['koli_tarihi'].strftime('%Y-%m-%d') if koli['koli_tarihi'] else '' }}">
+        </div>
+        <div style="flex:1; min-width:200px;">
+            <label>Not / Açıklama</label>
+            <input type="text" name="aciklama" value="{{ koli['aciklama'] or '' }}" style="width:100%;">
+        </div>
+        <div>
+            <button type="submit" class="btn">Koliyi Güncelle</button>
+        </div>
+    </form>
+
+    <div class="tablo-kaydirici">
+    <table>
+        <thead>
+            <tr><th>Seri No</th><th>Abone Adı</th><th>Köy Adı</th><th>Üretim Yılı</th><th>Tespit Edilen Arıza</th><th>Durum</th></tr>
+        </thead>
+        <tbody>
+            {% for k in koli['kayitlar'] %}
+            <tr>
+                <td><a href="{{ url_for('fabrika_duzenle', kayit_id=k['id']) }}">{{ k['seri_no'] }}</a></td>
+                <td>{{ k['abone_adi'] or '' }}</td>
+                <td>{{ k['koy_adi'] or '' }}</td>
+                <td>{{ k['uretim_yili'] or '' }}</td>
+                <td>{{ k['tespit_edilen_ariza'] or '' }}</td>
+                <td>{{ k['durum'] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+{% endfor %}
+
+{% endblock %}
