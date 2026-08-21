@@ -28,7 +28,7 @@
     <tbody>
         {% for f in faturalar %}
         <tr>
-            <td>{{ f['created_at'].strftime('%d.%m.%Y %H:%M') if f['created_at'] else '' }}</td>
+            <td>{{ f['fatura_tarihi'].strftime('%d.%m.%Y') if f['fatura_tarihi'] else (f['created_at'].strftime('%d.%m.%Y') if f['created_at'] else '') }}</td>
             <td>{{ 'Abone' if f['kaynak_tur'] == 'abone' else 'Arıza' }} #{{ f['kaynak_id'] }}</td>
             <td>{{ 'e-Arşiv' if f['fatura_turu'] == 'earsiv' else 'e-Fatura' }}</td>
             <td>{{ f['kalemler'] }}</td>

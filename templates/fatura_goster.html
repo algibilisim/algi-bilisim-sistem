@@ -55,7 +55,8 @@
             <tr><td><strong>Fatura UUID</strong></td><td>{{ fatura['fatura_uuid'] }}</td></tr>
             {% endif %}
             <tr><td><strong>Kesen Kullanıcı</strong></td><td>{{ fatura['olusturan_kullanici'] }}</td></tr>
-            <tr><td><strong>Tarih</strong></td><td>{{ fatura['created_at'].strftime('%d.%m.%Y %H:%M') if fatura['created_at'] else '' }}</td></tr>
+            <tr><td><strong>Fatura Tarihi</strong></td><td>{{ fatura['fatura_tarihi'].strftime('%d.%m.%Y') if fatura['fatura_tarihi'] else (fatura['created_at'].strftime('%d.%m.%Y') if fatura['created_at'] else '') }}</td></tr>
+            <tr><td><strong>Kesim Zamanı (kayıt anı)</strong></td><td>{{ fatura['created_at'].strftime('%d.%m.%Y %H:%M') if fatura['created_at'] else '' }}</td></tr>
         </tbody>
     </table>
 </div>

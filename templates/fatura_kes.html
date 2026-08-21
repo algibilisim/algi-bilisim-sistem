@@ -58,7 +58,15 @@
                 <option value="efatura" {% if onerilen_tur == 'efatura' %}selected{% endif %}>e-Fatura (kurumsal/mükellef alıcı)</option>
             </select>
         </div>
+        <div>
+            <label>Fatura Tarihi *</label>
+            <input type="date" name="fatura_tarihi" value="{{ bugun }}" max="{{ bugun }}" required>
+        </div>
     </div>
+    <p style="font-size:12px; color:#888; margin:4px 0 16px;">
+        Varsayılan olarak bugünün tarihi seçili gelir, gerekirse geçmiş bir
+        tarihe değiştirebilirsiniz. İleri tarihli fatura kesilemez.
+    </p>
     {% if onerilen_tur %}
     <p style="font-size:12px; color:#888; margin:4px 0 16px;">
         Kimlik No'nun uzunluğuna göre "{{ 'e-Arşiv Fatura' if onerilen_tur == 'earsiv' else 'e-Fatura' }}" önerildi, gerekirse değiştirebilirsiniz.
