@@ -362,3 +362,8 @@ CREATE TABLE IF NOT EXISTS fabrika_tamir (
 CREATE INDEX IF NOT EXISTS idx_fabrika_tamir_seri_no ON fabrika_tamir(seri_no);
 CREATE INDEX IF NOT EXISTS idx_fabrika_tamir_durum ON fabrika_tamir(durum);
 CREATE INDEX IF NOT EXISTS idx_fabrika_tamir_koli ON fabrika_tamir(koli_id);
+
+-- Sayaç Durum Raporu'nda "YETKİLİ BAYİİ" tarafında imza atacak kişinin adı;
+-- programdan (daha önce kullanılmış isimler arasından) seçilebilir olsun diye
+-- serbest metin olarak tutulur.
+ALTER TABLE fabrika_gonderim ADD COLUMN IF NOT EXISTS yetkili_bayii TEXT;

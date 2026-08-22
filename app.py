@@ -2966,22 +2966,27 @@ def _fabrika_rapor_pdf_olustur(gonderim, koliler, satici):
     kargo_takip_no = gonderim.get("kargo_takip_no") or ""
     toplam_koli = len(koliler)
 
+    yetkili_bayii_adi = gonderim.get("yetkili_bayii") or ""
+
     ogeler = []
     for sira, koli in enumerate(koliler, start=1):
         if sira > 1:
             ogeler.append(PageBreak())
-        if os.path.exists(logo_yolu):
-            logo_genislik = 70 * mm
-            logo_yukseklik = logo_genislik * (229 / 1600)
-            logo_resmi = RLImage(logo_yolu, width=logo_genislik, height=logo_yukseklik)
-            logo_resmi.hAlign = "CENTER"
-            ogeler.append(logo_resmi)
-            ogeler.append(Spacer(1, 6))
-        ogeler.append(Paragraph("ARIZALI SAYAÇ BİLGİ FORMU", baslik_stili))
 
         tarih_str = _gg_aa_yyyy_veya(koli.get("koli_tarihi") or gonderim.get("gonderim_tarihi"))
+
+        if os.path.exists(logo_yolu):
+            logo_genislik = 56 * mm
+            logo_yukseklik = logo_genislik * (229 / 1600)
+            logo_resmi = RLImage(logo_yolu, width=logo_genislik, height=logo_yukseklik)
+            logo_resmi.hAlign = "LEFT"
+            baslik_hucresi = [logo_resmi, Paragraph("ARIZALI SAYAÇ BİLGİ FORMU", baslik_stili)]
+        else:
+            baslik_hucresi = [Paragraph("ARIZALI SAYAÇ BİLGİ FORMU", baslik_stili)]
+
         ust_bilgi = Table(
             [
+                [baslik_hucresi, "", "", ""],
                 [Paragraph("ADRES", normal_kalin), Paragraph(adres, normal_stil),
                  Paragraph("TARİH", normal_kalin), Paragraph(tarih_str, normal_stil)],
                 [Paragraph("ÜRÜN TANIMI", normal_kalin), Paragraph(urun_tanimi, normal_stil),
@@ -2994,11 +2999,12 @@ def _fabrika_rapor_pdf_olustur(gonderim, koliler, satici):
         ust_bilgi.setStyle(TableStyle([
             ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke),
-            ("BACKGROUND", (2, 0), (2, -1), colors.whitesmoke),
+            ("VALIGN", (0, 0), (-1, 0), "TOP"),
+            ("BACKGROUND", (0, 1), (0, -1), colors.whitesmoke),
+            ("BACKGROUND", (2, 1), (2, -1), colors.whitesmoke),
+            ("SPAN", (0, 0), (-1, 0)),
         ]))
         ogeler.append(ust_bilgi)
-        ogeler.append(Spacer(1, 8))
 
         basliklar = ["S.NO", "SERİ NO", "ÜRETİM\nYILI", "ARIZA DURUMU", "SAYAÇ SAHİBİ"]
         veri = [[Paragraph(b, baslik_hucre_stil) for b in basliklar]]
@@ -3020,28 +3026,49 @@ def _fabrika_rapor_pdf_olustur(gonderim, koliler, satici):
             Paragraph("TOPLAM", normal_kalin), "", "",
             Paragraph(f"{len(kayitlar)} Adet Su Sayacı", normal_kalin), "",
         ])
-        tablo = Table(veri, colWidths=[12 * mm, 26 * mm, 18 * mm, 82 * mm, 34 * mm], repeatRows=1)
+        # Word şablonundaki gibi TOPLAM ile imza alanı arasında üç boş satır
+        # (düz / gri fonlu / düz) — sayfanın A4'ü aynı oranda kaplaması için.
+        bosluk_satir_sayisi = 3
+        for _ in range(bosluk_satir_sayisi):
+            veri.append(["", "", "", "", ""])
+        gövde_satir_sayisi = 1 + FABRIKA_KOLI_KAPASITESI + 1  # başlık + kayıtlar + TOPLAM
+        satir_yukseklikleri = ([None] * gövde_satir_sayisi) + [14.5 * mm, 9.5 * mm, 6 * mm]
+        tablo = Table(
+            veri,
+            colWidths=[12 * mm, 21 * mm, 17 * mm, 99 * mm, 23 * mm],
+            rowHeights=satir_yukseklikleri,
+            repeatRows=1,
+        )
+        gri_satir = gövde_satir_sayisi + 1  # üç boşluk satırından ortadaki (gri fonlu)
         tablo.setStyle(TableStyle([
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("GRID", (0, 0), (-1, gövde_satir_sayisi - 1), 0.5, colors.grey),
+            ("BOX", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("LINEABOVE", (0, gövde_satir_sayisi), (-1, gövde_satir_sayisi), 0.5, colors.grey),
             ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("BACKGROUND", (0, -1), (-1, -1), colors.whitesmoke),
-            ("SPAN", (0, -1), (2, -1)),
-            ("SPAN", (3, -1), (4, -1)),
+            ("BACKGROUND", (0, gövde_satir_sayisi - 1), (-1, gövde_satir_sayisi - 1), colors.whitesmoke),
+            ("SPAN", (0, gövde_satir_sayisi - 1), (2, gövde_satir_sayisi - 1)),
+            ("SPAN", (3, gövde_satir_sayisi - 1), (4, gövde_satir_sayisi - 1)),
+            ("BACKGROUND", (0, gri_satir), (-1, gri_satir), colors.HexColor("#f2f2f2")),
         ]))
         ogeler.append(tablo)
-        ogeler.append(Spacer(1, 26))
 
+        sol_hucre = [Paragraph("YETKİLİ BAYİİ", normal_kalin)]
+        if yetkili_bayii_adi:
+            sol_hucre.append(Paragraph(yetkili_bayii_adi, normal_kalin))
+        sol_hucre.append(Paragraph("İMZA", normal_stil))
+        sag_metin = f"{satici.get('unvan', '')} – {satici.get('yetkili', '')}".strip(" –")
         imza = Table(
             [
-                [Paragraph("YETKİLİ BAYİİ", normal_kalin),
-                 Paragraph(f"{satici.get('unvan', '')} – {satici.get('yetkili', '')}".strip(" –"), normal_kalin)],
-                [Paragraph("İMZA", normal_stil), Paragraph("İMZA", normal_stil)],
+                [sol_hucre, Paragraph(sag_metin, normal_kalin)],
                 [Spacer(1, 24), Spacer(1, 24)],
             ],
             colWidths=[86 * mm, 86 * mm],
         )
-        imza.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+        imza.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ]))
         ogeler.append(imza)
 
     belge.build(ogeler, onFirstPage=_fabrika_filigran_ciz, onLaterPages=_fabrika_filigran_ciz)
@@ -3069,6 +3096,20 @@ def _fabrika_rapor_verisi(db, gonderim_id):
     satici_soyad = _ayar_getir(db, "fatura_satici_soyad") or ""
     satici = {"unvan": satici_unvan, "yetkili": f"{satici_ad} {satici_soyad}".strip()}
     return gonderim, koliler, satici
+
+
+def _fabrika_yetkili_bayii_listesi(db):
+    """Sayaç Durum Raporu'nda 'YETKİLİ BAYİİ' tarafında imza atacak kişi için,
+    daha önce herhangi bir gönderimde kullanılmış isimlerden oluşan, programdan
+    seçilebilir listeyi döndürür (yeni bir isim de serbestçe eklenebilir)."""
+    cur = db.cursor()
+    cur.execute(
+        "SELECT DISTINCT yetkili_bayii FROM fabrika_gonderim "
+        "WHERE yetkili_bayii IS NOT NULL AND yetkili_bayii <> '' ORDER BY yetkili_bayii"
+    )
+    isimler = [r["yetkili_bayii"] for r in cur.fetchall()]
+    cur.close()
+    return isimler
 
 
 @app.route("/fabrika")
@@ -3268,6 +3309,7 @@ def fabrika_gonderim_olustur():
         "fabrika_gonderim_onay.html", kayitlar=kayitlar, koli_sayisi=koli_sayisi,
         koli_kapasitesi=FABRIKA_KOLI_KAPASITESI, varsayilan_adres=varsayilan_adres,
         bugun=datetime.now().strftime("%Y-%m-%d"),
+        yetkili_bayii_listesi=_fabrika_yetkili_bayii_listesi(db),
     )
 
 
@@ -3291,6 +3333,8 @@ def fabrika_gonderim_kaydet():
     kargo_takip_no = request.form.get("kargo_takip_no", "").strip()
     urun_tanimi = request.form.get("urun_tanimi", "").strip() or "Elektronik Kartlı Ön Ödemeli Su Sayacı"
     adres = request.form.get("adres", "").strip()
+    yetkili_bayii = (request.form.get("yetkili_bayii_yeni", "").strip()
+                     or request.form.get("yetkili_bayii", "").strip())
 
     db = get_db()
     cur = db.cursor()
@@ -3305,9 +3349,9 @@ def fabrika_gonderim_kaydet():
         return redirect(url_for("fabrika_listesi"))
 
     cur.execute(
-        "INSERT INTO fabrika_gonderim (kargo_firmasi, kargo_takip_no, urun_tanimi, adres, gonderim_tarihi) "
-        "VALUES (%s, %s, %s, %s, %s) RETURNING id",
-        (kargo_firmasi, kargo_takip_no, urun_tanimi, adres, gonderim_tarihi),
+        "INSERT INTO fabrika_gonderim (kargo_firmasi, kargo_takip_no, urun_tanimi, adres, gonderim_tarihi, yetkili_bayii) "
+        "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+        (kargo_firmasi, kargo_takip_no, urun_tanimi, adres, gonderim_tarihi, yetkili_bayii or None),
     )
     gonderim_id = cur.fetchone()["id"]
 
@@ -3365,13 +3409,17 @@ def fabrika_gonderim_detay(gonderim_id):
         return redirect(url_for("fabrika_gonderim_listesi"))
 
     if request.method == "POST":
+        yetkili_bayii = (request.form.get("yetkili_bayii_yeni", "").strip()
+                         or request.form.get("yetkili_bayii", "").strip())
         cur.execute(
-            "UPDATE fabrika_gonderim SET kargo_firmasi=%s, kargo_takip_no=%s, urun_tanimi=%s, adres=%s WHERE id=%s",
+            "UPDATE fabrika_gonderim SET kargo_firmasi=%s, kargo_takip_no=%s, urun_tanimi=%s, adres=%s, "
+            "yetkili_bayii=%s WHERE id=%s",
             (
                 request.form.get("kargo_firmasi", "").strip(),
                 request.form.get("kargo_takip_no", "").strip(),
                 request.form.get("urun_tanimi", "").strip() or "Elektronik Kartlı Ön Ödemeli Su Sayacı",
                 request.form.get("adres", "").strip(),
+                yetkili_bayii or None,
                 gonderim_id,
             ),
         )
@@ -3385,8 +3433,12 @@ def fabrika_gonderim_detay(gonderim_id):
     for koli in koliler:
         cur.execute("SELECT * FROM fabrika_tamir WHERE koli_id = %s ORDER BY id", (koli["id"],))
         koli["kayitlar"] = cur.fetchall()
+    yetkili_bayii_listesi = _fabrika_yetkili_bayii_listesi(db)
     cur.close()
-    return render_template("fabrika_gonderim_detay.html", gonderim=gonderim, koliler=koliler)
+    return render_template(
+        "fabrika_gonderim_detay.html", gonderim=gonderim, koliler=koliler,
+        yetkili_bayii_listesi=yetkili_bayii_listesi,
+    )
 
 
 @app.route("/fabrika/koli/<int:koli_id>/duzenle", methods=["POST"])
