@@ -41,13 +41,6 @@
     position: relative;
     z-index: 1;
 }
-.fabrika-rapor-logo {
-    display: block;
-    margin: 0 auto 10px;
-    max-width: 320px;
-    width: 100%;
-    height: auto;
-}
 @media print {
     .fabrika-rapor-sayfa {
         border: none;
@@ -59,30 +52,46 @@
     }
     .fabrika-rapor-sayfa:last-child { page-break-after: auto; }
 }
-.fabrika-rapor-baslik {
-    text-align: center;
-    font-weight: 700;
-    font-size: 16px;
-    margin-bottom: 12px;
-}
 .fabrika-rapor-ust-tablo, .fabrika-rapor-kalem-tablo, .fabrika-rapor-imza-tablo {
     width: 100%;
     border-collapse: collapse;
-    margin-bottom: 12px;
+    margin: 0;
+    table-layout: fixed;
 }
 .fabrika-rapor-ust-tablo td, .fabrika-rapor-kalem-tablo th, .fabrika-rapor-kalem-tablo td, .fabrika-rapor-imza-tablo td {
     border: 1px solid #999;
     padding: 6px 8px;
     vertical-align: top;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: break-word;
 }
 .fabrika-rapor-ust-tablo td.etiket, .fabrika-rapor-kalem-tablo th {
     background: #f2f2f2;
     font-weight: 700;
-    white-space: nowrap;
+}
+.fabrika-rapor-ust-tablo td.etiket { white-space: nowrap; }
+.fabrika-rapor-baslik-hucre {
+    text-align: center;
+    padding-top: 8px;
+}
+.fabrika-rapor-logo {
+    display: block;
+    margin: 0;
+    width: 56mm;
+    max-width: 50%;
+    height: auto;
+}
+.fabrika-rapor-baslik {
+    text-align: center;
+    font-weight: 700;
+    font-size: 16px;
+    margin-top: 4px;
 }
 .fabrika-rapor-kalem-tablo th { text-align: center; }
-.fabrika-rapor-kalem-tablo td.sira { text-align: center; width: 30px; }
+.fabrika-rapor-kalem-tablo td.sira { text-align: center; }
 .fabrika-rapor-kalem-tablo td.toplam-etiket { font-weight: 700; text-align: center; }
+.fabrika-rapor-kalem-tablo td.bosluk { padding: 0; }
 .fabrika-rapor-imza-tablo td { height: 60px; }
 </style>
 
@@ -90,10 +99,20 @@
 <div class="fabrika-rapor-sayfa">
     <img class="fabrika-rapor-filigran" src="{{ url_for('static', filename='fabrika_su_damla_filigran.png') }}" alt="">
     <div class="fabrika-rapor-icerik">
-    <img class="fabrika-rapor-logo" src="{{ url_for('static', filename='fabrika_logo.jpg') }}" alt="ALGI Mevzuat Danışmanlık Bilişim Hizmetleri">
-    <div class="fabrika-rapor-baslik">ARIZALI SAYAÇ BİLGİ FORMU</div>
 
     <table class="fabrika-rapor-ust-tablo">
+        <colgroup>
+            <col style="width:16.3%;">
+            <col style="width:40.7%;">
+            <col style="width:12.8%;">
+            <col style="width:30.2%;">
+        </colgroup>
+        <tr>
+            <td class="fabrika-rapor-baslik-hucre" colspan="4">
+                <img class="fabrika-rapor-logo" src="{{ url_for('static', filename='fabrika_logo.jpg') }}" alt="ALGI Mevzuat Danışmanlık Bilişim Hizmetleri">
+                <div class="fabrika-rapor-baslik">ARIZALI SAYAÇ BİLGİ FORMU</div>
+            </td>
+        </tr>
         <tr>
             <td class="etiket">ADRES</td>
             <td>{{ gonderim['adres'] or '' }}</td>
@@ -115,6 +134,13 @@
     </table>
 
     <table class="fabrika-rapor-kalem-tablo">
+        <colgroup>
+            <col style="width:7%;">
+            <col style="width:12.2%;">
+            <col style="width:9.9%;">
+            <col style="width:57.6%;">
+            <col style="width:13.3%;">
+        </colgroup>
         <thead>
             <tr>
                 <th>S.NO</th>
@@ -146,13 +172,16 @@
                 <td class="toplam-etiket" colspan="3">TOPLAM</td>
                 <td colspan="2">{{ koli['kayitlar']|length }} Adet Su Sayacı</td>
             </tr>
+            <tr><td class="bosluk" colspan="5" style="height:14.5mm;"></td></tr>
+            <tr><td class="bosluk" colspan="5" style="height:9.5mm; background:#f2f2f2;"></td></tr>
+            <tr><td class="bosluk" colspan="5" style="height:6mm;"></td></tr>
         </tbody>
     </table>
 
     <table class="fabrika-rapor-imza-tablo">
         <tr>
-            <td style="width:50%;"><strong>YETKİLİ BAYİİ</strong><br>İMZA</td>
-            <td style="width:50%;"><strong>{{ satici['unvan'] }}{% if satici['yetkili'] %} – {{ satici['yetkili'] }}{% endif %}</strong><br>İMZA</td>
+            <td style="width:50%;"><strong>YETKİLİ BAYİİ</strong>{% if gonderim['yetkili_bayii'] %}<br>{{ gonderim['yetkili_bayii'] }}{% endif %}<br>İMZA</td>
+            <td style="width:50%;"><strong>{{ satici['unvan'] }}{% if satici['yetkili'] %} – {{ satici['yetkili'] }}{% endif %}</strong></td>
         </tr>
     </table>
     </div>

@@ -55,6 +55,19 @@
             <label>Adres</label>
             <input type="text" name="adres" value="{{ varsayilan_adres }}" style="width:100%;">
         </div>
+        <div>
+            <label>Yetkili Bayii (İmza)</label>
+            <select name="yetkili_bayii" style="width:100%;">
+                <option value="">— Seçiniz —</option>
+                {% for isim in yetkili_bayii_listesi %}
+                <option value="{{ isim }}">{{ isim }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label>Listede Yoksa Yeni İsim</label>
+            <input type="text" name="yetkili_bayii_yeni" placeholder="Yeni isim girilirse listedeki seçim yerine bu kullanılır" style="width:100%;">
+        </div>
     </div>
     <p style="font-size:12.5px; color:#888; margin-top:6px;">
         Birden fazla koli oluşsa da tüm koliler için tek kargo bilgisi kullanılır (hep birlikte

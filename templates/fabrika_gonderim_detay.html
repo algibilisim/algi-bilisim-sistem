@@ -30,6 +30,19 @@
             <label>Adres</label>
             <input type="text" name="adres" value="{{ gonderim['adres'] or '' }}" style="width:100%;">
         </div>
+        <div>
+            <label>Yetkili Bayii (İmza)</label>
+            <select name="yetkili_bayii" style="width:100%;">
+                <option value="">— Seçiniz —</option>
+                {% for isim in yetkili_bayii_listesi %}
+                <option value="{{ isim }}" {% if gonderim['yetkili_bayii'] == isim %}selected{% endif %}>{{ isim }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label>Listede Yoksa Yeni İsim</label>
+            <input type="text" name="yetkili_bayii_yeni" placeholder="Yeni isim girilirse listedeki seçim yerine bu kullanılır" style="width:100%;">
+        </div>
     </div>
     <div class="form-butonlar" style="margin-top:12px;">
         <button type="submit" class="btn btn-yesil">Kargo Bilgisini Güncelle</button>
