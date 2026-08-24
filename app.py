@@ -6673,6 +6673,64 @@ def ariza_fatura_kes(ariza_id):
     )
 
 
+@app.route("/ariza/<int:ariza_id>/mesaj-gonder", methods=["GET", "POST"])
+@login_required
+def ariza_mesaj_gonder(ariza_id):
+    """Bir arıza kaydına WhatsApp/SMS/E-posta mesajı gönderir (kayıtlı
+    telefon/telefon2 ya da eposta bilgisine)."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM ariza WHERE id = %s", (ariza_id,))
+    ariza = cur.fetchone()
+    cur.close()
+    if ariza is None:
+        flash("Kayıt bulunamadı.")
+        return redirect(url_for("ariza_listesi"))
+
+    ad = f"{ariza['adi']} {ariza['soyadi']}"
+
+    if request.method == "POST":
+        kanal = request.form.get("kanal", "whatsapp")
+        icerik = request.form.get("icerik", "").strip()
+        if not icerik:
+            flash("Mesaj içeriği boş olamaz.")
+            return redirect(url_for("ariza_mesaj_gonder", ariza_id=ariza_id))
+        if kanal == "eposta":
+            eposta = ariza["eposta"]
+            if not eposta:
+                flash("Bu arızaya kayıtlı bir e-posta adresi yok, mesaj gönderilemedi.")
+                return redirect(url_for("ariza_duzenle", ariza_id=ariza_id))
+            _mesaj_gonder(
+                db, "ariza", ariza_id, ad, None, kanal, icerik,
+                session.get("kullanici_adi", ""), alici_eposta=eposta,
+            )
+        else:
+            telefon = ariza["telefon"] or ariza["telefon2"]
+            if not telefon:
+                flash("Bu arızaya kayıtlı bir telefon numarası yok, mesaj gönderilemedi.")
+                return redirect(url_for("ariza_duzenle", ariza_id=ariza_id))
+            _mesaj_gonder(
+                db, "ariza", ariza_id, ad, telefon, kanal, icerik,
+                session.get("kullanici_adi", ""),
+            )
+        flash("Mesaj gönderim isteği oluşturuldu, sonucunu 'Mesajlarım' sayfasından görebilirsiniz.")
+        return redirect(url_for("mesaj_listesi"))
+
+    hedefler = [{
+        "id": ariza["id"], "ad": ad,
+        "telefon": ariza["telefon"] or ariza["telefon2"] or "",
+        "eposta": ariza["eposta"] or "",
+    }]
+    return render_template(
+        "mesaj_gonder.html", hedefler=hedefler, tekli=True,
+        baslik=f"Mesaj Gönder - {ad}",
+        gonder_url=url_for("ariza_mesaj_gonder", ariza_id=ariza_id),
+        geri_url=url_for("ariza_duzenle", ariza_id=ariza_id),
+        liste_url=url_for("ariza_listesi"), netgsm_ayarli_mi=_netgsm_ayarli_mi(),
+        sms_hazir=_netgsm_sms_ayarli_mi(), eposta_hazir=_eposta_ayarli_mi(), geri="",
+    )
+
+
 @app.route("/ariza-tahsilat/<int:tahsilat_id>/sil", methods=["POST"])
 @login_required
 def ariza_tahsilat_sil(tahsilat_id):
