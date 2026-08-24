@@ -76,11 +76,12 @@
             <td>{{ s['soyadi'] }}</td>
             <td>{{ s['adres'] }}</td>
             <td class="islem-hucre sabit-sutun">
-                <a href="{{ url_for('koy_abone_duzenle', kayit_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}">Düzenle</a>
-                <button type="submit" class="link-buton"
+                <a href="{{ url_for('koy_abone_duzenle', kayit_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}" class="ikon-rozet" data-ipucu="Düzenle" aria-label="Düzenle">✏️</a>
+                <button type="submit" class="ikon-rozet"
                         formaction="{{ url_for('koy_abone_sil', kayit_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}"
                         formmethod="post"
-                        onclick="return confirm('Bu kaydı silmek istediğinize emin misiniz?');">Sil</button>
+                        data-ipucu="Sil" aria-label="Sil"
+                        onclick="return confirm('Bu kaydı silmek istediğinize emin misiniz?');">🗑️</button>
             </td>
         </tr>
         {% else %}

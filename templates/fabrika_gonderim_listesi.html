@@ -30,9 +30,9 @@
             <td class="sayi">{{ g['koli_sayisi'] }}</td>
             <td class="sayi">{{ g['sayac_sayisi'] }}</td>
             <td class="islem-hucre">
-                <a href="{{ url_for('fabrika_gonderim_detay', gonderim_id=g['id']) }}">Detay</a>
-                <a href="{{ url_for('fabrika_rapor', gonderim_id=g['id']) }}">Sayaç Durum Raporu</a>
-                <a href="{{ url_for('fabrika_rapor_pdf', gonderim_id=g['id']) }}">PDF İndir</a>
+                <a href="{{ url_for('fabrika_gonderim_detay', gonderim_id=g['id']) }}" class="ikon-rozet" data-ipucu="Detay" aria-label="Detay">🔍</a>
+                <a href="{{ url_for('fabrika_rapor', gonderim_id=g['id']) }}" class="ikon-rozet" data-ipucu="Sayaç Durum Raporu" aria-label="Sayaç Durum Raporu">📊</a>
+                <a href="{{ url_for('fabrika_rapor_pdf', gonderim_id=g['id']) }}" class="ikon-rozet" data-ipucu="PDF İndir" aria-label="PDF İndir">📥</a>
             </td>
         </tr>
         {% else %}

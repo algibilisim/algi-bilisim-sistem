@@ -43,13 +43,14 @@
             <td class="sayi">{{ u['min_stok_seviyesi']|tl }}</td>
             <td>{{ u['aciklama'] or '' }}</td>
             <td class="islem-hucre">
-                <a href="{{ url_for('stok_duzenle', urun_id=u['id']) }}">Düzenle</a>
-                <a href="{{ url_for('stok_hareket_ekle', urun_id=u['id']) }}">Hareket Ekle</a>
-                <a href="{{ url_for('stok_hareketleri', urun_id=u['id']) }}">Hareketler</a>
-                <button type="submit" class="link-buton"
+                <a href="{{ url_for('stok_duzenle', urun_id=u['id']) }}" class="ikon-rozet" data-ipucu="Düzenle" aria-label="Düzenle">✏️</a>
+                <a href="{{ url_for('stok_hareket_ekle', urun_id=u['id']) }}" class="ikon-rozet" data-ipucu="Hareket Ekle" aria-label="Hareket Ekle">➕</a>
+                <a href="{{ url_for('stok_hareketleri', urun_id=u['id']) }}" class="ikon-rozet" data-ipucu="Hareketler" aria-label="Hareketler">🔄</a>
+                <button type="submit" class="ikon-rozet"
                         formaction="{{ url_for('stok_sil', urun_id=u['id']) }}"
                         formmethod="post"
-                        onclick="return confirm('Bu ürünü ve tüm hareket geçmişini silmek istediğinize emin misiniz?');">Sil</button>
+                        data-ipucu="Sil" aria-label="Sil"
+                        onclick="return confirm('Bu ürünü ve tüm hareket geçmişini silmek istediğinize emin misiniz?');">🗑️</button>
             </td>
         </tr>
         {% else %}

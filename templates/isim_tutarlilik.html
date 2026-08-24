@@ -52,11 +52,11 @@
                 <td><strong>{{ k.soyadi }}</strong></td>
                 <td class="islem-hucre sabit-sutun">
                     {% if k.kaynak == 'abone' %}
-                    <a href="{{ url_for('abone_duzenle', abone_id=k.id) }}">Düzenle</a>
+                    <a href="{{ url_for('abone_duzenle', abone_id=k.id) }}" class="ikon-rozet" data-ipucu="Düzenle" aria-label="Düzenle">✏️</a>
                     {% elif k.kaynak == 'koy_abone' %}
-                    <a href="{{ url_for('koy_abone_duzenle', kayit_id=k.id) }}">Düzenle</a>
+                    <a href="{{ url_for('koy_abone_duzenle', kayit_id=k.id) }}" class="ikon-rozet" data-ipucu="Düzenle" aria-label="Düzenle">✏️</a>
                     {% elif k.kaynak == 'ariza' %}
-                    <a href="{{ url_for('ariza_duzenle', ariza_id=k.id) }}">Düzenle</a>
+                    <a href="{{ url_for('ariza_duzenle', ariza_id=k.id) }}" class="ikon-rozet" data-ipucu="Düzenle" aria-label="Düzenle">✏️</a>
                     {% endif %}
                 </td>
             </tr>

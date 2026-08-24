@@ -73,12 +73,12 @@
                     {% endif %}
                 </td>
                 <td class="islem-hucre">
-                    <a href="{{ url_for('fabrika_duzenle', kayit_id=k['id']) }}">Düzenle</a>
-                    <button type="button" class="link-buton"
+                    <a href="{{ url_for('fabrika_duzenle', kayit_id=k['id']) }}" class="ikon-rozet" data-ipucu="Düzenle" aria-label="Düzenle">✏️</a>
+                    <button type="button" class="ikon-rozet" data-ipucu="Sil" aria-label="Sil"
                             onclick="var f=document.createElement('form'); f.method='post'; f.action='{{ url_for('fabrika_sil', kayit_id=k['id']) }}';
                                      var i=document.createElement('input'); i.type='hidden'; i.name='csrf_token'; i.value='{{ csrf_token() }}';
                                      f.appendChild(i); document.body.appendChild(f);
-                                     if (confirm('Bu tamir kaydını silmek istediğinize emin misiniz?')) { f.submit(); }">Sil</button>
+                                     if (confirm('Bu tamir kaydını silmek istediğinize emin misiniz?')) { f.submit(); }">🗑️</button>
                 </td>
             </tr>
             {% else %}

@@ -77,11 +77,11 @@
             <td>{{ t['odemeyi_yapan'] }}</td>
             <td>{{ t['aciklama'] }}</td>
             <td class="islem-hucre">
-                <a href="{{ url_for('ariza_tahsilat_makbuz', tahsilat_id=t['id']) }}">Makbuz</a>
+                <a href="{{ url_for('ariza_tahsilat_makbuz', tahsilat_id=t['id']) }}" class="ikon-rozet" data-ipucu="Makbuz" aria-label="Makbuz">🧾</a>
                 <form method="post" action="{{ url_for('ariza_tahsilat_sil', tahsilat_id=t['id']) }}"
                       onsubmit="return confirm('Bu tahsilat kaydını silmek istediğinize emin misiniz?');">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="link-buton">Sil</button>
+                    <button type="submit" class="ikon-rozet" data-ipucu="Sil" aria-label="Sil">🗑️</button>
                 </form>
             </td>
         </tr>

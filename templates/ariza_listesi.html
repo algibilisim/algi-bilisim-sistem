@@ -109,13 +109,15 @@
                 <td class="{{ 'sayi' if anahtar in sayisal_kolonlar else '' }} {{ s['_renk'][anahtar] }}">{% if anahtar in ('telefon', 'telefon2') and s[anahtar] %}<a href="tel:{{ s[anahtar]|replace(' ', '') }}" class="tel-link">{{ s[anahtar] }}</a>{% else %}{{ s[anahtar] }}{% endif %}</td>
                 {% endfor %}
                 <td class="islem-hucre sabit-sutun">
-                    <a href="{{ url_for('ariza_duzenle', ariza_id=s['id']) }}">Düzenle</a>
-                    <a href="{{ url_for('ariza_tahsilat', ariza_id=s['id']) }}">Tahsilat</a>
-                    <a href="{{ url_for('ariza_fatura_kes', ariza_id=s['id']) }}">Fatura Kes</a>
-                    <button type="submit" class="link-buton"
+                    <a href="{{ url_for('ariza_duzenle', ariza_id=s['id']) }}" class="ikon-rozet" data-ipucu="Düzenle" aria-label="Düzenle">✏️</a>
+                    <a href="{{ url_for('ariza_tahsilat', ariza_id=s['id']) }}" class="ikon-rozet" data-ipucu="Tahsilat" aria-label="Tahsilat">💸</a>
+                    <a href="{{ url_for('ariza_fatura_kes', ariza_id=s['id']) }}" class="ikon-rozet" data-ipucu="Fatura Kes" aria-label="Fatura Kes">🧾</a>
+                    <a href="{{ url_for('ariza_mesaj_gonder', ariza_id=s['id']) }}" class="ikon-rozet" data-ipucu="Mesaj Gönder" aria-label="Mesaj Gönder">💬</a>
+                    <button type="submit" class="ikon-rozet"
                             formaction="{{ url_for('ariza_sil', ariza_id=s['id']) }}"
                             formmethod="post"
-                            onclick="return confirm('Bu kaydı silmek istediğinize emin misiniz?');">Sil</button>
+                            data-ipucu="Sil" aria-label="Sil"
+                            onclick="return confirm('Bu kaydı silmek istediğinize emin misiniz?');">🗑️</button>
                 </td>
             </tr>
             {% else %}

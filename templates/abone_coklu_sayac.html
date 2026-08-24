@@ -42,7 +42,7 @@
             <td class="sayi">{{ s['alinan_tutar'] }}</td>
             <td class="sayi"><strong>{{ s['toplam_kalan'] }}</strong></td>
             <td class="islem-hucre sabit-sutun">
-                <a href="{{ url_for('abone_duzenle', abone_id=s['id']) }}" target="_blank">Düzenle</a>
+                <a href="{{ url_for('abone_duzenle', abone_id=s['id']) }}" target="_blank" class="ikon-rozet" data-ipucu="Düzenle" aria-label="Düzenle">✏️</a>
             </td>
         </tr>
         {% else %}
