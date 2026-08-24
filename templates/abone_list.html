@@ -75,6 +75,7 @@
     <button type="button" class="btn" onclick="filtreTemizle('tumu')">Tüm Filtreleri Temizle</button>
     <a class="btn" href="{{ url_for('abone_coklu_sayac') }}" target="_blank">Aynı Sayaç No'lu Kayıtları Getir</a>
     <a class="btn btn-yesil" href="{{ url_for('abone_montaj_formu_toplu') }}?{{ request.query_string.decode() }}">Montaj Formu Oluştur (Filtrelenenler — {{ filtreli_kayit }} kayıt)</a>
+    <a class="btn btn-yesil" href="{{ url_for('abone_toplu_mesaj') }}?{{ request.query_string.decode() }}">Seçilenlere Mesaj Gönder (Filtrelenenler — {{ filtreli_kayit }} kayıt)</a>
     <a class="btn" href="{{ url_for('montaj_formu_tasarim') }}">Montaj Formu Tasarımı</a>
 </div>
 
@@ -142,6 +143,7 @@
                     <a href="{{ url_for('abone_duzenle', abone_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}">Düzenle</a>
                     <a href="{{ url_for('abone_tahsilat', abone_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}">Tahsilat</a>
                     <a href="{{ url_for('abone_fatura_kes', abone_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}">Fatura Kes</a>
+                    <a href="{{ url_for('abone_mesaj_gonder', abone_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}">Mesaj Gönder</a>
                     <a href="#" class="mform-ac" data-abone-id="{{ s['id'] }}">M.Form</a>
                     <button type="submit" class="link-buton"
                             formaction="{{ url_for('abone_sil', abone_id=s['id']) }}?geri={{ request.query_string.decode() | urlencode }}"

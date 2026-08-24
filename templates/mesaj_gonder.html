@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}{{ baslik }} - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi">
+    <h2>{{ baslik }}</h2>
+    <a class="btn" href="{{ geri_url }}">{{ 'Kayda Dön' if tekli else 'Abone Listesi\'ne Dön' }}</a>
+</div>
+
+{% if not netgsm_ayarli_mi %}
+<div class="seri-uyari-kutu tam-genislik">
+    <h4>WhatsApp gönderim ayarları henüz tamamlanmadı</h4>
+    <p style="margin:0; font-size:12.5px;">
+        Netgsm API bilgileri (NETGSM_USERCODE / NETGSM_PASSWORD) henüz DigitalOcean'da
+        tanımlanmamış. Yine de deneyebilirsiniz — ama gönderim "hata" olarak kaydedilecek,
+        gerçek bir mesaj gitmeyecektir. Netgsm hesabı açılıp API bilgileri girildiğinde
+        bu ekran otomatik olarak çalışır hale gelecek.
+    </p>
+</div>
+{% endif %}
+{% if not sms_hazir %}
+<div class="seri-uyari-kutu tam-genislik">
+    <h4>SMS gönderim ayarları henüz tamamlanmadı</h4>
+    <p style="margin:0; font-size:12.5px;">
+        SMS göndermek için Netgsm API bilgilerinin (NETGSM_USERCODE / NETGSM_PASSWORD)
+        YANI SIRA Netgsm panelinden onaylı bir mesaj başlığının da (NETGSM_MSGHEADER)
+        DigitalOcean'da tanımlanmış olması gerekiyor. Yine de deneyebilirsiniz — ama
+        gönderim "hata" olarak kaydedilecek, gerçek bir SMS gitmeyecektir.
+    </p>
+</div>
+{% endif %}
+{% if not eposta_hazir %}
+<div class="seri-uyari-kutu tam-genislik">
+    <h4>E-posta gönderim ayarları henüz tamamlanmadı</h4>
+    <p style="margin:0; font-size:12.5px;">
+        E-posta göndermek için SMTP bilgileri (SMTP_HOST / SMTP_KULLANICI / SMTP_SIFRE)
+        henüz DigitalOcean'da tanımlanmamış. Yine de deneyebilirsiniz — ama gönderim
+        "hata" olarak kaydedilecek, gerçek bir e-posta gitmeyecektir.
+    </p>
+</div>
+{% endif %}
+
+<form method="post" action="{{ gonder_url }}" id="mesaj-gonder-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if geri %}<input type="hidden" name="geri" value="{{ geri }}">{% endif %}
+    {% if sorgu is defined %}<input type="hidden" name="sorgu" value="{{ sorgu }}">{% endif %}
+
+    <div class="form-grid" style="max-width:640px;">
+        <label>Kanal *</label>
+        <select name="kanal" id="mesaj-kanal-secim" required style="width:100%; max-width:300px;">
+            <option value="whatsapp">WhatsApp</option>
+            <option value="sms">SMS</option>
+            <option value="eposta">E-posta</option>
+        </select>
+    </div>
+
+    <div class="form-grid" style="max-width:640px; margin-top:14px;">
+        <label>Mesaj İçeriği *</label>
+        <textarea name="icerik" required rows="5" style="width:100%;" placeholder="Mesaj metnini buraya yazın..."></textarea>
+    </div>
+
+    <h3 style="margin-top:20px;">{{ 'Alıcı' if tekli else 'Alıcılar (' ~ hedefler|length ~ ' kayıt)' }}</h3>
+    {% if not tekli %}
+    <p style="font-size:12px; color:#888; margin:0 0 10px;">
+        Aşağıdaki liste, Abone Listesi'nde o an görülen filtrelenmiş kayıtlardan oluşuyor.
+        Göndermek istemediğiniz kayıtların işaretini kaldırabilirsiniz. Seçtiğiniz kanala göre
+        (WhatsApp/SMS için telefon, E-posta için e-posta) gerekli iletişim bilgisi olmayan
+        kayıtlar otomatik olarak atlanır.
+    </p>
+    {% endif %}
+    <div class="tablo-kaydirici">
+    <table>
+        <thead>
+            <tr>
+                {% if not tekli %}<th></th>{% endif %}
+                <th>Ad Soyad</th>
+                <th>Telefon</th>
+                <th>E-posta</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for h in hedefler %}
+            <tr>
+                {% if not tekli %}
+                <td><input type="checkbox" name="abone_id[]" value="{{ h['id'] }}"
+                           data-telefon="{{ '1' if h['telefon'] else '0' }}"
+                           data-eposta="{{ '1' if h['eposta'] else '0' }}"
+                           {% if h['telefon'] %}checked{% else %}disabled{% endif %}></td>
+                {% else %}
+                <input type="hidden" name="abone_id[]" value="{{ h['id'] }}">
+                {% endif %}
+                <td>{{ h['ad'] }}</td>
+                <td>{% if h['telefon'] %}{{ h['telefon'] }}{% else %}<span style="color:#a13a2e;">Telefon yok</span>{% endif %}</td>
+                <td>{% if h['eposta'] %}{{ h['eposta'] }}{% else %}<span style="color:#a13a2e;">E-posta yok</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+
+    <div class="form-butonlar" style="margin-top:16px;">
+        <button type="submit" class="btn btn-yesil" onclick="return confirm('Mesaj gönderilecek, emin misiniz?');">Gönder</button>
+    </div>
+</form>
+
+{% if not tekli %}
+<script>
+(function() {
+    // Kanal seçimine göre (WhatsApp/SMS -> telefon, E-posta -> eposta) hangi
+    // alıcı satırlarının işaretlenebilir olduğunu günceller. Kullanıcı bir
+    // satırı elle değiştirdiyse (kutuyu kendisi açıp kapattıysa) kanal
+    // değişince o tercihini ezmiyoruz, sadece iletişim bilgisi olmayanları
+    // yeniden devre dışı bırakıyoruz.
+    var kanalSecim = document.getElementById('mesaj-kanal-secim');
+    var kutular = document.querySelectorAll('input[name="abone_id[]"][type="checkbox"]');
+    if (!kanalSecim || !kutular.length) { return; }
+
+    function guncelle() {
+        var alan = kanalSecim.value === 'eposta' ? 'eposta' : 'telefon';
+        kutular.forEach(function(kutu) {
+            var varMi = kutu.getAttribute('data-' + alan) === '1';
+            kutu.disabled = !varMi;
+            if (!varMi) {
+                kutu.checked = false;
+            } else if (!kutu.dataset.elleDegisti) {
+                kutu.checked = true;
+            }
+        });
+    }
+    kutular.forEach(function(kutu) {
+        kutu.addEventListener('change', function() { kutu.dataset.elleDegisti = '1'; });
+    });
+    kanalSecim.addEventListener('change', function() {
+        kutular.forEach(function(kutu) { delete kutu.dataset.elleDegisti; });
+        guncelle();
+    });
+    guncelle();
+})();
+</script>
+{% endif %}
+
+{% endblock %}

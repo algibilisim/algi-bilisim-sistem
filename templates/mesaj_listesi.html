@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Mesajlarım - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi">
+    <h2>Mesajlarım</h2>
+    <a class="btn" href="{{ url_for('abone_listesi') }}">Abone Listesi'ne Dön</a>
+</div>
+
+<p style="font-size:12.5px; color:#888; margin:0 0 14px;">
+    Abone kayıtlarından tek tek ya da toplu gönderilen (veya gönderilmeye
+    çalışılıp hata alan) son 500 mesaj, en yeniden eskiye sıralı.
+</p>
+
+<div class="tablo-kaydirici">
+<table>
+    <thead>
+        <tr>
+            <th>Tarih</th>
+            <th>Alıcı</th>
+            <th>Telefon / E-posta</th>
+            <th>Kanal</th>
+            <th>Mesaj</th>
+            <th>Durum</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for m in mesajlar %}
+        <tr>
+            <td>{{ (m['created_at']|trsaat).strftime('%d.%m.%Y %H:%M') if m['created_at'] else '' }}</td>
+            <td>{{ m['alici_adi'] }}</td>
+            <td>{{ m['alici_telefon'] or m['alici_eposta'] or '' }}</td>
+            <td>{{ 'WhatsApp' if m['kanal'] == 'whatsapp' else ('SMS' if m['kanal'] == 'sms' else 'E-posta') }}</td>
+            <td style="max-width:320px; white-space:pre-wrap;">{{ m['icerik'] }}</td>
+            <td>
+                {% if m['durum'] == 'basarili' %}<span style="color:#2e7d32;">✓ Başarılı</span>
+                {% elif m['durum'] == 'hata' %}<span style="color:#a13a2e;">✗ Hata</span>{% if m['hata_mesaji'] %}<br><span style="font-size:11px; color:#888;">{{ m['hata_mesaji'] }}</span>{% endif %}
+                {% else %}<span style="color:#888;">Beklemede</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6">Henüz gönderilmiş bir mesaj yok.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+{% endblock %}

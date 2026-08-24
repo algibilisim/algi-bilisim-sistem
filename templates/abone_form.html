@@ -214,6 +214,50 @@
             </p>
         </div>
 
+        <div class="ayirici">İmzalar</div>
+        <div class="tam-genislik" style="display:flex; gap:20px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:280px;">
+                <label>Montaj Personeli İmzası</label>
+                {% if imzalar['montaj'] %}
+                <div id="imza-montaj-mevcut">
+                    <img src="{{ url_for('abone_imza_goster', abone_id=kayit['id'], hangi='montaj') }}" style="max-width:100%; border:1px solid #ccc; background:#fff; display:block;" alt="Montaj Personeli İmzası">
+                    <div style="margin-top:6px;">
+                        <button type="button" class="btn" onclick="imzaYenidenAl('montaj')">Yeniden İmzala</button>
+                    </div>
+                </div>
+                {% endif %}
+                <div id="imza-montaj-canvas-alani" style="{{ 'display:none;' if imzalar['montaj'] else '' }}">
+                    <canvas id="imza-montaj-canvas" style="width:100%; max-width:400px; height:150px; border:1px solid #ccc; background:#fff; touch-action:none; display:block;"></canvas>
+                    <div style="margin-top:6px;">
+                        <button type="button" class="btn" onclick="imzaTemizle('montaj')">Temizle</button>
+                    </div>
+                </div>
+                <input type="hidden" name="imza_montaj_personeli_veri" id="imza-montaj-veri">
+            </div>
+            <div style="flex:1; min-width:280px;">
+                <label>Abone İmzası</label>
+                {% if imzalar['abone'] %}
+                <div id="imza-abone-mevcut">
+                    <img src="{{ url_for('abone_imza_goster', abone_id=kayit['id'], hangi='abone') }}" style="max-width:100%; border:1px solid #ccc; background:#fff; display:block;" alt="Abone İmzası">
+                    <div style="margin-top:6px;">
+                        <button type="button" class="btn" onclick="imzaYenidenAl('abone')">Yeniden İmzala</button>
+                    </div>
+                </div>
+                {% endif %}
+                <div id="imza-abone-canvas-alani" style="{{ 'display:none;' if imzalar['abone'] else '' }}">
+                    <canvas id="imza-abone-canvas" style="width:100%; max-width:400px; height:150px; border:1px solid #ccc; background:#fff; touch-action:none; display:block;"></canvas>
+                    <div style="margin-top:6px;">
+                        <button type="button" class="btn" onclick="imzaTemizle('abone')">Temizle</button>
+                    </div>
+                </div>
+                <input type="hidden" name="imza_abone_veri" id="imza-abone-veri">
+            </div>
+            <p class="tam-genislik" style="margin:2px 0 0; font-size:12px; color:#888;">
+                Parmağınızla veya kalemle (telefon/tablet) ya da fareyle (bilgisayar) imza
+                alanına dokunup/tıklayıp imzalayın. Kaydet'e bastığınızda imza(lar) bu kayda eklenir.
+            </p>
+        </div>
+
         <div class="ayirici">Sayaç / Tesisat Fotoğrafları / Videoları</div>
         <div class="tam-genislik">
             {% if fotograflar %}
@@ -242,9 +286,10 @@
                 <button type="button" class="btn" id="fotograf-yukle-buton">🖼 Galeriden Yükle</button>
                 <span id="fotograf-secim-bilgisi" style="font-size:12.5px; color:#666;"></span>
             </div>
-            <input type="file" name="fotograflar" id="foto-cek-input" accept="image/*" capture="environment" style="display:none;">
-            <input type="file" name="fotograflar" id="video-cek-input" accept="video/*" capture="environment" style="display:none;">
-            <input type="file" name="fotograflar" id="fotograf-yukle-input" accept="image/*,video/*" multiple style="display:none;">
+            <input type="file" id="foto-cek-input" accept="image/*" capture="environment" style="display:none;">
+            <input type="file" id="video-cek-input" accept="video/*" capture="environment" style="display:none;">
+            <input type="file" id="fotograf-yukle-input" accept="image/*,video/*" multiple style="display:none;">
+            <input type="file" name="fotograflar" id="fotograf-birlesik-input" multiple style="display:none;">
             <p style="margin:6px 0 0; font-size:12px; color:#888;">
                 Kaydet'e bastığınızda seçtiğiniz fotoğraf/videolar bu kayda eklenir.
                 {% if not kayit %}Yeni kayıt önce oluşturulur, fotoğraflar ondan sonra eklenir.{% endif %}
@@ -279,22 +324,41 @@
         ['video-cek-buton', 'video-cek-input'],
         ['fotograf-yukle-buton', 'fotograf-yukle-input'],
     ];
-    var girdiler = [];
+    var birlesikInput = document.getElementById('fotograf-birlesik-input');
+    // NOT: bir <input type="file"> her çekim/seçimde SADECE o anki dosya(lar)ı
+    // taşır — bir öncekini SİLER. "Fotoğraf Çek" butonuna art arda birkaç kez
+    // basılırsa (2., 3. fotoğraf), her basışta önceki fotoğraf kayboluyordu ve
+    // sadece SON çekilen Kaydet'e eklenmiş oluyordu. Bunu önlemek için üç ayrı
+    // çekim/seçim girdisi artık kendileri gönderilmiyor (name="fotograflar"
+    // kaldırıldı); her "change" olayında o girdideki dosyalar bu JS dizisinde
+    // BİRİKTİRİLİYOR, girdi hemen boşaltılıyor (aynı butona tekrar basılabilsin
+    // diye) ve birikmiş TÜM dosyalar tek bir gizli "birleşik" input'a
+    // (DataTransfer ile) aktarılıyor — form gönderilirken sunucuya giden
+    // "fotograflar" alanı sadece bu birleşik input'tur.
+    var secilenDosyalar = [];
     var bilgi = document.getElementById('fotograf-secim-bilgisi');
 
-    function _bilgiGuncelle() {
-        var toplam = 0;
-        girdiler.forEach(function(g) { toplam += (g.files ? g.files.length : 0); });
-        bilgi.textContent = toplam > 0 ? (toplam + ' dosya seçildi (Kaydet\'e basınca eklenecek)') : '';
+    function _birlesikGuncelle() {
+        var aktarici = new DataTransfer();
+        secilenDosyalar.forEach(function(dosya) { aktarici.items.add(dosya); });
+        birlesikInput.files = aktarici.files;
+        bilgi.textContent = secilenDosyalar.length > 0
+            ? (secilenDosyalar.length + ' dosya seçildi (Kaydet\'e basınca eklenecek)')
+            : '';
     }
 
     eslesmeler.forEach(function(cift) {
         var buton = document.getElementById(cift[0]);
         var girdi = document.getElementById(cift[1]);
         if (buton && girdi) {
-            girdiler.push(girdi);
             buton.addEventListener('click', function() { girdi.click(); });
-            girdi.addEventListener('change', _bilgiGuncelle);
+            girdi.addEventListener('change', function() {
+                for (var i = 0; i < girdi.files.length; i++) {
+                    secilenDosyalar.push(girdi.files[i]);
+                }
+                girdi.value = '';
+                _birlesikGuncelle();
+            });
         }
     });
 })();
@@ -386,6 +450,97 @@
         });
     }
 })();
+
+// --- İmza (Montaj Personeli / Abone) --------------------------------------
+// Telefon/tablette parmak/kalem, bilgisayarda fare ile çizim — hepsi tek bir
+// olay ailesiyle (Pointer Events) yakalanıyor. Canvas yüksek DPI ekranlarda
+// bulanık çıkmasın diye devicePixelRatio ile ölçekleniyor; imza her zaman
+// beyaz zeminli PNG olarak dışa aktarılıyor (canvas'ın kendisi şeffaf
+// başladığı için, zemin elle beyaza boyanmazsa dışa aktarılan PNG şeffaf
+// kalır ve başka bir yerde koyu zemin üstünde görüntülenirse görünmez olurdu).
+var _imzaPadlar = {};
+
+function _imzaPadKur(tur) {
+    if (_imzaPadlar[tur]) { return; }
+    var canvas = document.getElementById('imza-' + tur + '-canvas');
+    var hidden = document.getElementById('imza-' + tur + '-veri');
+    if (!canvas || !hidden) { return; }
+    var ctx = canvas.getContext('2d');
+    var ciziliyor = false;
+
+    function temizleVeHazirla() {
+        var oran = window.devicePixelRatio || 1;
+        var w = canvas.clientWidth;
+        var h = canvas.clientHeight;
+        canvas.width = w * oran;
+        canvas.height = h * oran;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(oran, oran);
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, w, h);
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = '#000';
+    }
+    temizleVeHazirla();
+
+    function konumAl(e) {
+        var r = canvas.getBoundingClientRect();
+        return { x: e.clientX - r.left, y: e.clientY - r.top };
+    }
+    function ciziBitir() {
+        if (!ciziliyor) { return; }
+        ciziliyor = false;
+        hidden.value = canvas.toDataURL('image/png');
+    }
+    canvas.addEventListener('pointerdown', function(e) {
+        ciziliyor = true;
+        var p = konumAl(e);
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        canvas.setPointerCapture(e.pointerId);
+        e.preventDefault();
+    });
+    canvas.addEventListener('pointermove', function(e) {
+        if (!ciziliyor) { return; }
+        var p = konumAl(e);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+        e.preventDefault();
+    });
+    canvas.addEventListener('pointerup', ciziBitir);
+    canvas.addEventListener('pointercancel', ciziBitir);
+    canvas.addEventListener('pointerleave', ciziBitir);
+
+    _imzaPadlar[tur] = { temizle: temizleVeHazirla };
+}
+
+function imzaTemizle(tur) {
+    _imzaPadKur(tur);
+    _imzaPadlar[tur].temizle();
+    document.getElementById('imza-' + tur + '-veri').value = 'TEMIZLE';
+}
+
+function imzaYenidenAl(tur) {
+    var mevcut = document.getElementById('imza-' + tur + '-mevcut');
+    var canvasAlani = document.getElementById('imza-' + tur + '-canvas-alani');
+    if (mevcut) { mevcut.style.display = 'none'; }
+    canvasAlani.style.display = '';
+    _imzaPadKur(tur);
+    // Kullanıcı "Yeniden İmzala"ya bastıktan sonra hiç çizmeden Kaydet'e
+    // basarsa, ekranda gördüğü (boş canvas) ile kaydedilen (eski imza kalır)
+    // birbirini tutmazdı — bu yüzden burada baştan TEMİZLE gönderiliyor;
+    // kullanıcı gerçekten çizerse ciziBitir() bunun üzerine gerçek imzayı yazar.
+    document.getElementById('imza-' + tur + '-veri').value = 'TEMIZLE';
+}
+
+['montaj', 'abone'].forEach(function(tur) {
+    var canvasAlani = document.getElementById('imza-' + tur + '-canvas-alani');
+    if (canvasAlani && canvasAlani.style.display !== 'none') {
+        _imzaPadKur(tur);
+    }
+});
 </script>
 
 {% if not kayit %}

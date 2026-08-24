@@ -17,7 +17,7 @@
 </div>
 {% endif %}
 
-<form method="post" style="max-width:640px;">
+<form method="post" style="max-width:640px;" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="form-grid">
         <div>
@@ -126,6 +126,46 @@
                 {% endfor %}
             </select>
         </div>
+
+        <div class="ayirici">Sayaç Fotoğrafları / Videoları</div>
+        <div class="tam-genislik">
+            {% if fotograflar %}
+            <div class="fotograf-izgara">
+                {% for f in fotograflar %}
+                <div class="fotograf-kutu">
+                    {% if f.content_type and f.content_type.startswith('video/') %}
+                    <video src="{{ url_for('fabrika_fotograf_goster', foto_id=f.id) }}" controls preload="metadata"></video>
+                    {% else %}
+                    <a href="{{ url_for('fabrika_fotograf_goster', foto_id=f.id) }}" target="_blank">
+                        <img src="{{ url_for('fabrika_fotograf_goster', foto_id=f.id) }}" alt="{{ f.dosya_adi or 'fotoğraf' }}">
+                    </a>
+                    {% endif %}
+                    <button type="submit" class="btn btn-kirmizi"
+                            formaction="{{ url_for('fabrika_fotograf_sil', foto_id=f.id) }}"
+                            formmethod="post" formnovalidate
+                            onclick="return confirm('Bunu silmek istediğinize emin misiniz?');">Sil</button>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <button type="button" class="btn" id="foto-cek-buton">📷 Fotoğraf Çek</button>
+                <button type="button" class="btn" id="video-cek-buton">🎥 Video Çek</button>
+                <button type="button" class="btn" id="fotograf-yukle-buton">🖼 Galeriden Yükle</button>
+                <span id="fotograf-secim-bilgisi" style="font-size:12.5px; color:#666;"></span>
+            </div>
+            <input type="file" id="foto-cek-input" accept="image/*" capture="environment" style="display:none;">
+            <input type="file" id="video-cek-input" accept="video/*" capture="environment" style="display:none;">
+            <input type="file" id="fotograf-yukle-input" accept="image/*,video/*" multiple style="display:none;">
+            <input type="file" name="fotograflar" id="fotograf-birlesik-input" multiple style="display:none;">
+            <p style="margin:6px 0 0; font-size:12px; color:#888;">
+                "Fotoğraf Çek" ve "Video Çek" telefon/tabletlerde kamerayı doğrudan açar.
+                "Galeriden Yükle" ise cihazınızda zaten kayıtlı bir fotoğraf/video seçmenizi
+                sağlar. Kaydet'e bastığınızda seçtikleriniz bu kayda eklenir.
+                {% if not kayit %}Yeni kayıt önce oluşturulur, fotoğraflar ondan sonra eklenir.{% endif %}
+            </p>
+        </div>
     </div>
     <div class="form-butonlar" style="margin-top:16px;">
         <button type="submit" class="btn btn-yesil">Kaydet</button>
@@ -199,6 +239,46 @@ document.getElementById('fabrika_seri_no_girisi').addEventListener('blur', funct
         });
 });
 {% endif %}
+
+(function() {
+    var eslesmeler = [
+        ['foto-cek-buton', 'foto-cek-input'],
+        ['video-cek-buton', 'video-cek-input'],
+        ['fotograf-yukle-buton', 'fotograf-yukle-input'],
+    ];
+    var birlesikInput = document.getElementById('fotograf-birlesik-input');
+    // bkz. abone_form.html / ariza_form.html içindeki aynı desendeki not:
+    // input type="file" her çekim/seçimde SADECE o anki dosya(lar)ı taşır,
+    // bir öncekini SİLER — bu yüzden art arda birden fazla fotoğraf çekilince
+    // biriktirip tek bir gizli "birleşik" input'a (DataTransfer ile) aktarmak
+    // gerekiyor, aksi halde sadece SON çekilen fotoğraf kaydedilirdi.
+    var secilenDosyalar = [];
+    var bilgi = document.getElementById('fotograf-secim-bilgisi');
+
+    function _birlesikGuncelle() {
+        var aktarici = new DataTransfer();
+        secilenDosyalar.forEach(function(dosya) { aktarici.items.add(dosya); });
+        birlesikInput.files = aktarici.files;
+        bilgi.textContent = secilenDosyalar.length > 0
+            ? (secilenDosyalar.length + ' dosya seçildi (Kaydet\'e basınca eklenecek)')
+            : '';
+    }
+
+    eslesmeler.forEach(function(cift) {
+        var buton = document.getElementById(cift[0]);
+        var girdi = document.getElementById(cift[1]);
+        if (buton && girdi) {
+            buton.addEventListener('click', function() { girdi.click(); });
+            girdi.addEventListener('change', function() {
+                for (var i = 0; i < girdi.files.length; i++) {
+                    secilenDosyalar.push(girdi.files[i]);
+                }
+                girdi.value = '';
+                _birlesikGuncelle();
+            });
+        }
+    });
+})();
 </script>
 
 {% endblock %}

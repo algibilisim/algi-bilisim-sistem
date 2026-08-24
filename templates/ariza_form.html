@@ -212,9 +212,10 @@
                  açıyor. Bu yüzden fotoğraf ve video için AYRI, tek türlü capture input'u var;
                  galeriden seçim için ise capture olmayan, iki türü birden kabul eden ayrı bir
                  input kullanılıyor. -->
-            <input type="file" name="fotograflar" id="foto-cek-input" accept="image/*" capture="environment" style="display:none;">
-            <input type="file" name="fotograflar" id="video-cek-input" accept="video/*" capture="environment" style="display:none;">
-            <input type="file" name="fotograflar" id="fotograf-yukle-input" accept="image/*,video/*" multiple style="display:none;">
+            <input type="file" id="foto-cek-input" accept="image/*" capture="environment" style="display:none;">
+            <input type="file" id="video-cek-input" accept="video/*" capture="environment" style="display:none;">
+            <input type="file" id="fotograf-yukle-input" accept="image/*,video/*" multiple style="display:none;">
+            <input type="file" name="fotograflar" id="fotograf-birlesik-input" multiple style="display:none;">
             <p style="margin:6px 0 0; font-size:12px; color:#888;">
                 "Fotoğraf Çek" ve "Video Çek" telefon/tabletlerde kamerayı doğrudan açar.
                 "Galeriden Yükle" ise cihazınızda zaten kayıtlı bir fotoğraf/video seçmenizi
@@ -275,22 +276,41 @@
         ['video-cek-buton', 'video-cek-input'],
         ['fotograf-yukle-buton', 'fotograf-yukle-input'],
     ];
-    var girdiler = [];
+    var birlesikInput = document.getElementById('fotograf-birlesik-input');
+    // NOT: bir <input type="file"> her çekim/seçimde SADECE o anki dosya(lar)ı
+    // taşır — bir öncekini SİLER. "Fotoğraf Çek" butonuna art arda birkaç kez
+    // basılırsa (2., 3. fotoğraf), her basışta önceki fotoğraf kayboluyordu ve
+    // sadece SON çekilen Kaydet'e eklenmiş oluyordu. Bunu önlemek için üç ayrı
+    // çekim/seçim girdisi artık kendileri gönderilmiyor (name="fotograflar"
+    // kaldırıldı); her "change" olayında o girdideki dosyalar bu JS dizisinde
+    // BİRİKTİRİLİYOR, girdi hemen boşaltılıyor (aynı butona tekrar basılabilsin
+    // diye) ve birikmiş TÜM dosyalar tek bir gizli "birleşik" input'a
+    // (DataTransfer ile) aktarılıyor — form gönderilirken sunucuya giden
+    // "fotograflar" alanı sadece bu birleşik input'tur.
+    var secilenDosyalar = [];
     var bilgi = document.getElementById('fotograf-secim-bilgisi');
 
-    function _bilgiGuncelle() {
-        var toplam = 0;
-        girdiler.forEach(function(g) { toplam += (g.files ? g.files.length : 0); });
-        bilgi.textContent = toplam > 0 ? (toplam + ' dosya seçildi (Kaydet\'e basınca eklenecek)') : '';
+    function _birlesikGuncelle() {
+        var aktarici = new DataTransfer();
+        secilenDosyalar.forEach(function(dosya) { aktarici.items.add(dosya); });
+        birlesikInput.files = aktarici.files;
+        bilgi.textContent = secilenDosyalar.length > 0
+            ? (secilenDosyalar.length + ' dosya seçildi (Kaydet\'e basınca eklenecek)')
+            : '';
     }
 
     eslesmeler.forEach(function(cift) {
         var buton = document.getElementById(cift[0]);
         var girdi = document.getElementById(cift[1]);
         if (buton && girdi) {
-            girdiler.push(girdi);
             buton.addEventListener('click', function() { girdi.click(); });
-            girdi.addEventListener('change', _bilgiGuncelle);
+            girdi.addEventListener('change', function() {
+                for (var i = 0; i < girdi.files.length; i++) {
+                    secilenDosyalar.push(girdi.files[i]);
+                }
+                girdi.value = '';
+                _birlesikGuncelle();
+            });
         }
     });
 })();
