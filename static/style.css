@@ -146,6 +146,66 @@ th.sabit-sutun { background: #eef0f1; z-index: 4; }
     background: none; border: none; color: #c0392b;
     cursor: pointer; font-size: 13px; padding: 0;
 }
+/* Liste ekranlarındaki işlem bağlantıları (Düzenle, Tahsilat, Sil vb.):
+   yazı yerine yuvarlak rozet içinde emoji ikon gösterilir, ne olduğu da
+   üzerine gelince/dokununca (data-ipucu) ve ekran okuyucular için
+   (aria-label) belli olur. Bağlantı/form davranışı (href, formaction,
+   onclick vb.) hiç değişmez — sadece görünüm. */
+.ikon-rozet {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #eef0f1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    line-height: 1;
+    text-decoration: none;
+    color: inherit;
+    flex: none;
+}
+.islem-hucre a.ikon-rozet { color: inherit; }
+button.ikon-rozet {
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    font-family: inherit;
+}
+.ikon-rozet:hover, .ikon-rozet:focus-visible {
+    background: #e2e6e3;
+}
+[data-ipucu] { position: relative; }
+[data-ipucu]::after {
+    content: attr(data-ipucu);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%) translateY(4px);
+    background: #2c3136;
+    color: #f2f4f5;
+    font-size: 11.5px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease, transform 0.12s ease;
+    z-index: 5;
+}
+[data-ipucu]:hover::after, [data-ipucu]:focus-visible::after {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+/* Sabit (sticky) sağ sütunlu tablolarda her satırın hücresi kendi
+   yığın (stacking) bağlamını oluşturuyor; ipucu açıldığında bir üstteki/
+   alttaki satırın hücresi arkasında kalıp görünmez olabiliyor. Üzerine
+   gelinen/dokunulan hücrenin z-index'ini geçici olarak yükselterek bunu
+   önlüyoruz. */
+.sabit-sutun:has([data-ipucu]:hover),
+.sabit-sutun:has([data-ipucu]:focus-visible) {
+    z-index: 6;
+}
 .login-box {
     max-width: 360px;
     margin: 60px auto;
