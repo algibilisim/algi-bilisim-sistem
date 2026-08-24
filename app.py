@@ -14,7 +14,7 @@ import smtplib
 import urllib.request
 import urllib.error
 from email.message import EmailMessage
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 from urllib.parse import quote as _url_quote, urlencode as _urlencode
 
@@ -163,6 +163,23 @@ def tl_format(deger):
     s = f"{deger:,.2f}"
     s = s.replace(",", "X").replace(".", ",").replace("X", ".")
     return s
+
+
+@app.template_filter('trsaat')
+def tr_saat(deger):
+    """Veritabanında NOW() ile (sunucu/DB saati UTC olduğu için UTC olarak)
+    oluşan created_at/updated_at gibi 'bu ne zaman oldu' zaman damgalarını,
+    ekranda gösterilmeden önce Türkiye saatine (UTC+3, yaz saati uygulaması
+    yok) çevirir. Kullanıcının kendi seçtiği takvim tarihi alanları
+    (fatura_tarihi, montaj_tarihi, gonderim_tarihi vb.) bu dönüşümü GEREKTİRMEZ
+    — onlar zaten saat taşımayan salt tarihlerdir, bu filtre onlara
+    uygulanmamalıdır."""
+    if deger is None:
+        return None
+    try:
+        return deger + timedelta(hours=3)
+    except TypeError:
+        return deger
 
 
 def _fatura_no_temizle(deger):
