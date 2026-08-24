@@ -137,6 +137,26 @@ CREATE TABLE IF NOT EXISTS abone_fotograf (
 
 CREATE INDEX IF NOT EXISTS idx_abone_fotograf_abone ON abone_fotograf(abone_id);
 
+-- Montaj personelinin ve abonenin, kayıt sırasında telefon/tabletten
+-- (dokunmatik ekranda parmakla/kalemle) attığı imza — canvas'tan PNG olarak
+-- dışa aktarılır. BİLEREK abone tablosunun kendisine DEĞİL, ayrı bir tabloya
+-- kondu: abone tablosu üzerinde "SELECT *" uygulamanın HER YERİNDE (Abone
+-- Listesi, Fatura Kes, vb.) kullanılıyor — imza PNG'leri oraya BYTEA sütun
+-- olarak eklenseydi, imzayla hiç ilgisi olmayan onlarca sorguda da gereksiz
+-- yere yüklenip sayfaları yavaşlatırdı (tıpkı küçültülmemiş fotoğrafların
+-- yavaşlattığı gibi — bkz. _fotografi_kucult). Her abone+tür (montaj/abone)
+-- için en fazla bir satır olacağından (abone_id, tur) üzerinde tekil bir
+-- indeks var; yeniden imzalanınca UPSERT ile üzerine yazılır.
+CREATE TABLE IF NOT EXISTS abone_imza (
+    id SERIAL PRIMARY KEY,
+    abone_id INTEGER NOT NULL REFERENCES abone(id) ON DELETE CASCADE,
+    tur TEXT NOT NULL,  -- 'montaj' (Montaj Personeli) veya 'abone' (Abone)
+    icerik BYTEA NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_abone_imza_abone_tur ON abone_imza(abone_id, tur);
+
 -- Abonenin konumu (enlem/boylam) — "Konum Al" ile telefonun GPS'inden
 -- alınır, "Konuma Git" ile harita uygulamasında navigasyon başlatılır.
 ALTER TABLE abone ADD COLUMN IF NOT EXISTS konum_enlem DOUBLE PRECISION;
@@ -279,6 +299,31 @@ CREATE INDEX IF NOT EXISTS idx_fatura_kaynak ON fatura(kaynak_tur, kaynak_id);
 -- veritabanına düştüğü an) ile karıştırılmasın diye ayrı bir sütun.
 ALTER TABLE fatura ADD COLUMN IF NOT EXISTS fatura_tarihi DATE;
 
+-- ABONELERE MESAJ SİSTEMİ: Abone Listesi'nden tek tek ya da toplu (filtreye
+-- uyan tüm kayıtlara) WhatsApp/SMS/E-posta mesajı gönderme geçmişi.
+-- Her alıcı için ayrı bir satır oluşur (toplu gönderimde N alıcı = N satır),
+-- böylece hem "Mesajlarım" genel geçmişi hem de ileride abone bazlı geçmiş
+-- aynı tablodan sorgulanabilir.
+CREATE TABLE IF NOT EXISTS mesaj (
+    id SERIAL PRIMARY KEY,
+    kaynak_tur TEXT NOT NULL,              -- şimdilik sadece 'abone'
+    kaynak_id INTEGER NOT NULL,
+    kanal TEXT NOT NULL,                   -- 'whatsapp' / 'sms' / 'eposta'
+    alici_adi TEXT,
+    alici_telefon TEXT,
+    icerik TEXT NOT NULL,
+    durum TEXT NOT NULL DEFAULT 'beklemede',  -- 'beklemede' / 'basarili' / 'hata'
+    hata_mesaji TEXT,
+    olusturan_kullanici TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_mesaj_kaynak ON mesaj(kaynak_tur, kaynak_id);
+
+-- E-posta kanalıyla gönderilen mesajlar için alıcı adresi (SMS/WhatsApp'ta
+-- kullanılan alici_telefon'un e-posta karşılığı).
+ALTER TABLE mesaj ADD COLUMN IF NOT EXISTS alici_eposta TEXT;
+
 -- STOK MODÜLÜ: ürün/malzeme kataloğu + miktar (giriş/çıkış) takibi +
 -- düşük stok uyarısı + tedarikçi/alım kaydı.
 CREATE TABLE IF NOT EXISTS stok_urun (
@@ -362,6 +407,19 @@ CREATE TABLE IF NOT EXISTS fabrika_tamir (
 CREATE INDEX IF NOT EXISTS idx_fabrika_tamir_seri_no ON fabrika_tamir(seri_no);
 CREATE INDEX IF NOT EXISTS idx_fabrika_tamir_durum ON fabrika_tamir(durum);
 CREATE INDEX IF NOT EXISTS idx_fabrika_tamir_koli ON fabrika_tamir(koli_id);
+
+-- Fabrika/Tamir kaydına ait fotoğraf/videolar — Arıza Takip'teki
+-- ariza_fotograf ile aynı mantıkla (doğrudan veritabanında, BYTEA) saklanır.
+CREATE TABLE IF NOT EXISTS fabrika_fotograf (
+    id SERIAL PRIMARY KEY,
+    kayit_id INTEGER NOT NULL REFERENCES fabrika_tamir(id) ON DELETE CASCADE,
+    dosya_adi TEXT,
+    content_type TEXT,
+    icerik BYTEA NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_fabrika_fotograf_kayit ON fabrika_fotograf(kayit_id);
 
 -- Sayaç Durum Raporu'nda "YETKİLİ BAYİİ" tarafında imza atacak kişinin adı;
 -- programdan (daha önce kullanılmış isimler arasından) seçilebilir olsun diye

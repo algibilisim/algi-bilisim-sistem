@@ -2621,6 +2621,418 @@ def _hizli_fatura_pdf_al(db, fatura_id):
     return True, None
 
 
+# ===========================================================================
+# ABONELERE MESAJ SİSTEMİ — Abone Listesi'nden tek tek ya da toplu (filtreye
+# uyan tüm kayıtlara) WhatsApp/SMS/E-posta mesajı gönderme.
+#
+# SMS ve E-posta AKTİF, gerçek gönderim yapıyor. WhatsApp gönderimi ise HÂLÂ
+# AKTİF DEĞİL — Netgsm'in genel bildirim/duyuru amaçlı WhatsApp mesajı
+# göndermeye yarayan, herkese açık dokümante edilmiş bir REST API'si
+# bulunamadı (sadece "WhatsApp OTP" ve "0850 numarayı WhatsApp Business
+# uygulamasında manuel kullanma" ürünleri görüldü). Netgsm hesabı açılıp
+# destek/satış ekibinden gerçek API dokümantasyonu (endpoint, kimlik
+# doğrulama, şablon mesaj formatı) alınınca, SADECE aşağıdaki
+# _netgsm_whatsapp_gonder fonksiyonunun içi gerçek HTTP isteğiyle
+# değiştirilecek — geri kalan her şey (ekranlar, veritabanı, gönderim
+# geçmişi) zaten hazır. SMS ise Netgsm'in herkese açık dokümante edilmiş
+# REST API'si (bkz. _netgsm_sms_gonder) ile, E-posta da mevcut "Yedek Al"
+# özelliğindeki SMTP altyapısıyla (bkz. _mesaj_eposta_gonder) çalışıyor.
+#
+# Gerekli ortam değişkenleri (DigitalOcean App Platform ayarlarından, KODA
+# ASLA YAZILMAZ):
+#   NETGSM_USERCODE - Netgsm abone numarası / API kullanıcı adı (WhatsApp + SMS)
+#   NETGSM_PASSWORD - API alt kullanıcı şifresi (WhatsApp + SMS)
+#   NETGSM_MSGHEADER - Netgsm panelinden ONAYLI mesaj başlığı/gönderici adı (sadece SMS için)
+#   SMTP_HOST / SMTP_PORT / SMTP_KULLANICI / SMTP_SIFRE / SMTP_GONDEREN -
+#       "Yedek Al" özelliğiyle PAYLAŞILAN SMTP ayarları (sadece E-posta için)
+# ===========================================================================
+
+def _netgsm_ayarli_mi():
+    """Netgsm API kimlik bilgileri (ortam değişkenleri) tanımlanmış mı —
+    tanımlı değilse mesaj gönderme denemesi doğrudan 'hata' olarak kaydedilir."""
+    return all([os.environ.get("NETGSM_USERCODE"), os.environ.get("NETGSM_PASSWORD")])
+
+
+def _telefon_e164_dene(telefon):
+    """Serbest metin olarak girilmiş bir Türkiye telefon numarasını, WhatsApp/SMS
+    API'lerinin beklediği E.164 formatına (ör. '905551112233') çevirmeyi dener.
+    Numara tanınamayacak kadar bozuksa None döner."""
+    if not telefon:
+        return None
+    rakamlar = "".join(ch for ch in str(telefon) if ch.isdigit())
+    if len(rakamlar) == 10 and rakamlar.startswith("5"):
+        return "90" + rakamlar
+    if len(rakamlar) == 11 and rakamlar.startswith("05"):
+        return "90" + rakamlar[1:]
+    if len(rakamlar) == 12 and rakamlar.startswith("90"):
+        return rakamlar
+    if len(rakamlar) == 13 and rakamlar.startswith("090"):
+        return "90" + rakamlar[3:]
+    if len(rakamlar) == 14 and rakamlar.startswith("0090"):
+        return rakamlar[2:]
+    return None
+
+
+def _netgsm_whatsapp_gonder(telefon, icerik):
+    """Netgsm üzerinden WhatsApp mesajı gönderir. (basarili: bool, hata_veya_None)
+    döner. HENÜZ GERÇEK BİR API ÇAĞRISI YAPMIYOR — bkz. yukarıdaki modül notu.
+    Netgsm'den gerçek API dokümanı alındığında bu fonksiyonun içi (sadece
+    burası) gerçek bir HTTP isteğiyle değiştirilecek."""
+    if not _netgsm_ayarli_mi():
+        return False, (
+            "Netgsm API ayarları (NETGSM_USERCODE / NETGSM_PASSWORD ortam "
+            "değişkenleri) henüz tanımlanmamış."
+        )
+    e164 = _telefon_e164_dene(telefon)
+    if not e164:
+        return False, f"Telefon numarası ({telefon or 'boş'}) WhatsApp gönderimi için geçerli bir formata çevrilemedi."
+    # NOT: API bilgileri tanımlansa bile, gerçek Netgsm WhatsApp API'sinin
+    # endpoint/istek formatı henüz netleşmediği için burada bilerek hata
+    # döndürülüyor — canlıya alınmadan önce bu satırlar gerçek
+    # requests.post(...) çağrısıyla değiştirilecek.
+    return False, (
+        "Netgsm WhatsApp API entegrasyonu henüz tamamlanmadı (API dokümanı "
+        "bekleniyor). Alt yapı hazır, sadece gönderim çağrısı eksik."
+    )
+
+
+# ---------------------------------------------------------------------------
+# NETGSM SMS — WhatsApp'ın aksine Netgsm'in SMS API'si herkese açık şekilde
+# dokümante (bkz. Netgsm'in resmi Python SDK'sı: github.com/netgsm/netgsm-sms-python
+# ve bilgibankasi.netgsm.com.tr/sms/toplu-sms/api-ile-sms), bu yüzden gerçek
+# bir HTTP isteğiyle çalışıyor. Aynı NETGSM_USERCODE/NETGSM_PASSWORD hesabı
+# kullanılır; ayrıca Netgsm panelinden ONAYLI bir "mesaj başlığı" (gönderici
+# adı) gerekir — bu, NETGSM_MSGHEADER ortam değişkeniyle verilir.
+# ---------------------------------------------------------------------------
+
+_NETGSM_SMS_HATA_KODLARI = {
+    "20": "Mesaj metninde bir sorun var ya da standart maksimum karakter sayısı aşıldı.",
+    "30": "Kullanıcı adı/şifre hatalı ya da API erişim izni yok (IP kısıtlaması olabilir).",
+    "40": "Mesaj başlığı (gönderici adı) Netgsm panelinde tanımlı/onaylı değil.",
+    "50": "Bu abonelik hesabıyla İYS kontrollü gönderim yapılamıyor.",
+    "51": "Aboneliğiniz için İYS Marka bilgisi bulunamadı.",
+    "70": "İstek geçersiz — parametrelerden biri hatalı ya da eksik.",
+    "80": "Gönderim limiti aşıldı.",
+    "85": "Aynı numaraya 1 dakika içinde 20'den fazla gönderim isteği oluşturulamaz.",
+}
+
+
+def _netgsm_sms_ayarli_mi():
+    """SMS göndermek için Netgsm hesap bilgilerinin YANI SIRA onaylı bir
+    mesaj başlığının (NETGSM_MSGHEADER) da tanımlı olması gerekir."""
+    return _netgsm_ayarli_mi() and bool(os.environ.get("NETGSM_MSGHEADER"))
+
+
+def _telefon_yerel_format_dene(telefon):
+    """Serbest metin bir Türkiye telefon numarasını, Netgsm SMS API'sinin
+    beklediği 10 haneli yerel formata (ör. '5551112233', başında ülke kodu
+    YOK) çevirmeyi dener. Numara tanınamıyorsa None döner."""
+    e164 = _telefon_e164_dene(telefon)
+    if not e164:
+        return None
+    return e164[2:]  # '90' ülke kodu önekini at
+
+
+def _netgsm_sms_gonder(telefon, icerik):
+    """Netgsm SMS REST API'si (POST /sms/rest/v2/send, HTTP Basic Auth,
+    JSON gövde) üzerinden SMS gönderir. (basarili: bool, hata_veya_None)
+    döner."""
+    if not _netgsm_ayarli_mi():
+        return False, (
+            "Netgsm API ayarları (NETGSM_USERCODE / NETGSM_PASSWORD ortam "
+            "değişkenleri) henüz tanımlanmamış."
+        )
+    msgheader = os.environ.get("NETGSM_MSGHEADER")
+    if not msgheader:
+        return False, (
+            "Netgsm SMS mesaj başlığı (NETGSM_MSGHEADER ortam değişkeni) "
+            "henüz tanımlanmamış — Netgsm panelinden onaylı bir başlık "
+            "alıp bu isimle tanımlamanız gerekiyor."
+        )
+    yerel_no = _telefon_yerel_format_dene(telefon)
+    if not yerel_no:
+        return False, f"Telefon numarası ({telefon or 'boş'}) SMS gönderimi için geçerli bir formata çevrilemedi."
+
+    govde = {
+        "msgheader": msgheader,
+        "messages": [{"msg": icerik, "no": yerel_no}],
+        "encoding": "TR",
+    }
+    veri_bytes = json.dumps(govde).encode("utf-8")
+    kimlik_str = f"{os.environ.get('NETGSM_USERCODE')}:{os.environ.get('NETGSM_PASSWORD')}"
+    kimlik_b64 = base64.b64encode(kimlik_str.encode("ascii")).decode("ascii")
+    istek = urllib.request.Request(
+        "https://api.netgsm.com.tr/sms/rest/v2/send", data=veri_bytes, method="POST"
+    )
+    istek.add_header("Content-Type", "application/json")
+    istek.add_header("Accept", "application/json")
+    istek.add_header("Authorization", f"Basic {kimlik_b64}")
+    try:
+        with urllib.request.urlopen(istek, timeout=20) as yanit:
+            yanit.read()  # yanıt gövdesi (jobid içerir) şu an kullanılmıyor
+        return True, None
+    except urllib.error.HTTPError as e:
+        kod, mesaj = None, None
+        try:
+            hata_json = json.loads(e.read().decode("utf-8"))
+            kod = hata_json.get("code")
+            mesaj = hata_json.get("message")
+        except Exception:
+            pass
+        aciklama = _NETGSM_SMS_HATA_KODLARI.get(kod)
+        if aciklama:
+            return False, f"Netgsm hatası ({kod}): {aciklama}"
+        return False, f"Netgsm hatası: HTTP {e.code}" + (f" - {mesaj}" if mesaj else "")
+    except urllib.error.URLError as e:
+        return False, f"Netgsm'e bağlanılamadı: {e.reason}"
+    except Exception as e:
+        return False, f"SMS gönderiminde beklenmeyen hata: {e}"
+
+
+# ---------------------------------------------------------------------------
+# E-POSTA — "Yedek Al" özelliğindeki _yedek_eposta_gonder ile AYNI SMTP_*
+# ortam değişkenlerini kullanır (bkz. yukarısı), ama konu/gövdesi bu mesaj
+# sistemine özel serbest metin olduğu için ayrı, bağımsız bir fonksiyon —
+# _yedek_eposta_gonder'e (yedek dosyası ekleme mantığına) dokunulmadı.
+# ---------------------------------------------------------------------------
+
+def _eposta_ayarli_mi():
+    return all([
+        os.environ.get("SMTP_HOST"),
+        os.environ.get("SMTP_KULLANICI"),
+        os.environ.get("SMTP_SIFRE"),
+    ])
+
+
+def _mesaj_eposta_gonder(alici_eposta, icerik):
+    """Aboneye SMTP üzerinden düz metin e-posta gönderir. (basarili: bool,
+    hata_veya_None) döner."""
+    if not alici_eposta or "@" not in alici_eposta:
+        return False, f"Geçerli bir e-posta adresi yok ({alici_eposta or 'boş'})."
+    if not _eposta_ayarli_mi():
+        return False, (
+            "SMTP ayarları (SMTP_HOST / SMTP_KULLANICI / SMTP_SIFRE ortam "
+            "değişkenleri) henüz tanımlanmamış, bu yüzden e-posta gönderilemedi."
+        )
+    smtp_sunucu = os.environ.get("SMTP_HOST")
+    smtp_kullanici = os.environ.get("SMTP_KULLANICI")
+    smtp_sifre = os.environ.get("SMTP_SIFRE")
+    smtp_gonderen = os.environ.get("SMTP_GONDEREN") or smtp_kullanici
+    try:
+        smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    except (TypeError, ValueError):
+        smtp_port = 587
+
+    mesaj = EmailMessage()
+    mesaj["Subject"] = "ALGI BİLİŞİM"
+    mesaj["From"] = smtp_gonderen
+    mesaj["To"] = alici_eposta
+    mesaj.set_content(icerik)
+
+    try:
+        if smtp_port == 465:
+            with smtplib.SMTP_SSL(smtp_sunucu, smtp_port, timeout=20) as sunucu:
+                sunucu.login(smtp_kullanici, smtp_sifre)
+                sunucu.send_message(mesaj)
+        else:
+            with smtplib.SMTP(smtp_sunucu, smtp_port, timeout=20) as sunucu:
+                sunucu.ehlo()
+                sunucu.starttls()
+                sunucu.ehlo()
+                sunucu.login(smtp_kullanici, smtp_sifre)
+                sunucu.send_message(mesaj)
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
+def _mesaj_gonder(db, kaynak_tur, kaynak_id, alici_adi, alici_telefon, kanal, icerik, olusturan_kullanici, alici_eposta=None):
+    """Tek bir alıcıya, seçilen kanaldan ('whatsapp' / 'sms' / 'eposta')
+    mesaj gönderir; sonucu (başarılı da olsa hata da olsa) 'mesaj' tablosuna
+    kaydeder. Döndürdüğü değer: eklenen 'mesaj' satırının id'si."""
+    cur = db.cursor()
+    cur.execute(
+        "INSERT INTO mesaj (kaynak_tur, kaynak_id, kanal, alici_adi, alici_telefon, alici_eposta, icerik, durum, olusturan_kullanici) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, 'beklemede', %s) RETURNING id",
+        (kaynak_tur, kaynak_id, kanal, alici_adi, alici_telefon, alici_eposta, icerik, olusturan_kullanici),
+    )
+    mesaj_id = cur.fetchone()["id"]
+    db.commit()
+
+    if kanal == "whatsapp":
+        basarili, hata = _netgsm_whatsapp_gonder(alici_telefon, icerik)
+    elif kanal == "sms":
+        basarili, hata = _netgsm_sms_gonder(alici_telefon, icerik)
+    elif kanal == "eposta":
+        basarili, hata = _mesaj_eposta_gonder(alici_eposta, icerik)
+    else:
+        basarili, hata = False, f"'{kanal}' kanalı henüz desteklenmiyor."
+
+    if basarili:
+        cur.execute("UPDATE mesaj SET durum = 'basarili' WHERE id = %s", (mesaj_id,))
+    else:
+        cur.execute("UPDATE mesaj SET durum = 'hata', hata_mesaji = %s WHERE id = %s", (hata, mesaj_id))
+    db.commit()
+    cur.close()
+    return mesaj_id
+
+
+@app.route("/mesajlar")
+@login_required
+def mesaj_listesi():
+    """'Mesajlarım' sayfası — Abone Listesi'nden tek tek ya da toplu gönderilen
+    (veya gönderilmeye çalışılıp hata alan) tüm mesajların geçmişi, en
+    yeniden eskiye."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM mesaj ORDER BY created_at DESC LIMIT 500")
+    mesajlar = cur.fetchall()
+    cur.close()
+    return render_template("mesaj_listesi.html", mesajlar=mesajlar)
+
+
+@app.route("/abone/<int:abone_id>/mesaj-gonder", methods=["GET", "POST"])
+@login_required
+def abone_mesaj_gonder(abone_id):
+    """Tek bir aboneye WhatsApp/SMS/E-posta mesajı gönderir. GET mesaj yazma
+    ekranını gösterir, POST asıl gönderimi yapar."""
+    db = get_db()
+    geri = request.args.get("geri", "") or request.form.get("geri", "")
+    cur = db.cursor()
+    cur.execute("SELECT * FROM abone WHERE id = %s", (abone_id,))
+    abone = cur.fetchone()
+    cur.close()
+    if abone is None:
+        flash("Kayıt bulunamadı.")
+        return redirect(url_for("abone_listesi"))
+
+    if request.method == "POST":
+        kanal = request.form.get("kanal", "whatsapp")
+        icerik = request.form.get("icerik", "").strip()
+        if not icerik:
+            flash("Mesaj içeriği boş olamaz.")
+            return redirect(url_for("abone_mesaj_gonder", abone_id=abone_id, geri=geri))
+        if kanal == "eposta":
+            eposta = abone["eposta"]
+            if not eposta:
+                flash("Bu abonenin kayıtlı bir e-posta adresi yok, mesaj gönderilemedi.")
+                return redirect(url_for("abone_duzenle", abone_id=abone_id))
+            _mesaj_gonder(
+                db, "abone", abone_id, f"{abone['adi']} {abone['soyadi']}", None, kanal, icerik,
+                session.get("kullanici_adi", ""), alici_eposta=eposta,
+            )
+        else:
+            telefon = abone["telefon"] or abone["telefon2"]
+            if not telefon:
+                flash("Bu abonenin kayıtlı bir telefon numarası yok, mesaj gönderilemedi.")
+                return redirect(url_for("abone_duzenle", abone_id=abone_id))
+            _mesaj_gonder(
+                db, "abone", abone_id, f"{abone['adi']} {abone['soyadi']}", telefon, kanal, icerik,
+                session.get("kullanici_adi", ""),
+            )
+        flash("Mesaj gönderim isteği oluşturuldu, sonucunu 'Mesajlarım' sayfasından görebilirsiniz.")
+        return redirect(url_for("mesaj_listesi"))
+
+    hedefler = [{
+        "id": abone["id"], "ad": f"{abone['adi']} {abone['soyadi']}",
+        "telefon": abone["telefon"] or abone["telefon2"] or "",
+        "eposta": abone["eposta"] or "",
+    }]
+    return render_template(
+        "mesaj_gonder.html", hedefler=hedefler, tekli=True,
+        baslik=f"Mesaj Gönder - {abone['adi']} {abone['soyadi']}",
+        gonder_url=url_for("abone_mesaj_gonder", abone_id=abone_id),
+        geri_url=url_for("abone_duzenle", abone_id=abone_id) + (f"?geri={_url_quote(geri, safe='')}" if geri else ""),
+        liste_url=url_for("abone_listesi"), netgsm_ayarli_mi=_netgsm_ayarli_mi(),
+        sms_hazir=_netgsm_sms_ayarli_mi(), eposta_hazir=_eposta_ayarli_mi(), geri=geri,
+    )
+
+
+@app.route("/abone/toplu-mesaj", methods=["GET", "POST"])
+@login_required
+def abone_toplu_mesaj():
+    """Abone Listesi'nde o an görülen filtrelenmiş kayıt kümesinin tamamına
+    (Montaj Formu'nun toplu oluşturma özelliğiyle aynı mantıkla) tek seferde
+    WhatsApp/SMS/E-posta mesajı gönderir. GET mesaj yazma ekranını (alıcı
+    listesiyle birlikte) gösterir, POST asıl gönderimi yapar."""
+    db = get_db()
+    sorgu_dizesi = request.form.get("sorgu", "") if request.method == "POST" else request.query_string.decode()
+
+    if request.method == "POST":
+        kanal = request.form.get("kanal", "whatsapp")
+        icerik = request.form.get("icerik", "").strip()
+        abone_idler = [int(x) for x in request.form.getlist("abone_id[]") if x.strip().isdigit()]
+        if not icerik:
+            flash("Mesaj içeriği boş olamaz.")
+            return redirect(url_for("abone_toplu_mesaj") + (f"?{sorgu_dizesi}" if sorgu_dizesi else ""))
+        if not abone_idler:
+            flash("Gönderilecek alıcı bulunamadı.")
+            return redirect(url_for("abone_listesi"))
+
+        cur = db.cursor()
+        gonderilen = 0
+        telefonsuz = 0
+        epostasiz = 0
+        for abone_id in abone_idler:
+            cur.execute("SELECT * FROM abone WHERE id = %s", (abone_id,))
+            abone = cur.fetchone()
+            if not abone:
+                continue
+            if kanal == "eposta":
+                eposta = abone["eposta"]
+                if not eposta:
+                    epostasiz += 1
+                    continue
+                _mesaj_gonder(
+                    db, "abone", abone_id, f"{abone['adi']} {abone['soyadi']}", None, kanal, icerik,
+                    session.get("kullanici_adi", ""), alici_eposta=eposta,
+                )
+            else:
+                telefon = abone["telefon"] or abone["telefon2"]
+                if not telefon:
+                    telefonsuz += 1
+                    continue
+                _mesaj_gonder(
+                    db, "abone", abone_id, f"{abone['adi']} {abone['soyadi']}", telefon, kanal, icerik,
+                    session.get("kullanici_adi", ""),
+                )
+            gonderilen += 1
+        cur.close()
+
+        ozet = f"{gonderilen} alıcıya mesaj gönderim isteği oluşturuldu."
+        if telefonsuz:
+            ozet += f" {telefonsuz} kaydın telefon numarası olmadığı için atlandı."
+        if epostasiz:
+            ozet += f" {epostasiz} kaydın e-posta adresi olmadığı için atlandı."
+        ozet += " Sonuçlarını 'Mesajlarım' sayfasından görebilirsiniz."
+        flash(ozet)
+        return redirect(url_for("mesaj_listesi"))
+
+    # NOT: bu GET isteğinin query string'i, Abone Listesi'nden geldiği haliyle
+    # (q/koy/alan/deger_*/haric_* aynen) forward edildiği için request.args
+    # zaten Abone Listesi'ndeki filtreyle birebir aynı — ayrı bir istek
+    # bağlamı kurmaya gerek yok, _abone_filtreli_kayitlari_getir() doğrudan
+    # bu isteğin request.args'ını kullanır.
+    kayitlar_ham = _abone_filtreli_kayitlari_getir(db)
+    if not kayitlar_ham:
+        flash("Filtreye uyan abone bulunamadı.")
+        return redirect(url_for("abone_listesi"))
+
+    hedefler = [{
+        "id": k["id"], "ad": f"{k['adi']} {k['soyadi']}", "telefon": k["telefon"] or k["telefon2"] or "",
+        "eposta": k["eposta"] or "",
+    } for k in kayitlar_ham]
+
+    return render_template(
+        "mesaj_gonder.html", hedefler=hedefler, tekli=False,
+        baslik=f"Toplu Mesaj Gönder ({len(hedefler)} kayıt)",
+        gonder_url=url_for("abone_toplu_mesaj"), sorgu=sorgu_dizesi,
+        geri_url=url_for("abone_listesi") + (f"?{sorgu_dizesi}" if sorgu_dizesi else ""),
+        liste_url=url_for("abone_listesi"), netgsm_ayarli_mi=_netgsm_ayarli_mi(),
+        sms_hazir=_netgsm_sms_ayarli_mi(), eposta_hazir=_eposta_ayarli_mi(), geri="",
+    )
+
+
 @app.route("/faturalar")
 @login_required
 def fatura_listesi():
@@ -3138,25 +3550,28 @@ def fabrika_listesi():
     ile paketlenebilir."""
     db = get_db()
     durum_filtre = request.args.get("durum", "").strip()
+    koy_filtre = request.args.get("koy", "").strip()
     cur = db.cursor()
+    sql = (
+        "SELECT ft.*, fk.koli_no, fk.gonderim_id AS koli_gonderim_id "
+        "FROM fabrika_tamir ft LEFT JOIN fabrika_koli fk ON fk.id = ft.koli_id WHERE 1=1"
+    )
+    params = []
     if durum_filtre and durum_filtre in FABRIKA_DURUM_ETIKETLERI:
-        cur.execute(
-            "SELECT ft.*, fk.koli_no, fk.gonderim_id AS koli_gonderim_id "
-            "FROM fabrika_tamir ft LEFT JOIN fabrika_koli fk ON fk.id = ft.koli_id "
-            "WHERE ft.durum = %s ORDER BY ft.id DESC",
-            (durum_filtre,),
-        )
-    else:
-        cur.execute(
-            "SELECT ft.*, fk.koli_no, fk.gonderim_id AS koli_gonderim_id "
-            "FROM fabrika_tamir ft LEFT JOIN fabrika_koli fk ON fk.id = ft.koli_id "
-            "ORDER BY ft.id DESC"
-        )
+        sql += " AND ft.durum = %s"
+        params.append(durum_filtre)
+    if koy_filtre:
+        sql += " AND ft.koy_adi = %s"
+        params.append(koy_filtre)
+    sql += " ORDER BY ft.id DESC"
+    cur.execute(sql, params)
     kayitlar = cur.fetchall()
+    cur.execute("SELECT DISTINCT koy_adi FROM fabrika_tamir WHERE koy_adi IS NOT NULL AND koy_adi <> '' ORDER BY koy_adi")
+    koyler = cur.fetchall()
     cur.close()
     return render_template(
         "fabrika_listesi.html", kayitlar=kayitlar, durum_filtre=durum_filtre,
-        durum_etiketleri=FABRIKA_DURUM_ETIKETLERI,
+        durum_etiketleri=FABRIKA_DURUM_ETIKETLERI, koyler=koyler, secili_koy=koy_filtre,
     )
 
 
@@ -3178,7 +3593,7 @@ def fabrika_yeni():
             "(seri_no, abone_adi, koy_adi, telefon, ilk_montaj_tarihi, uretim_yili, "
             "tespit_edilen_ariza, yerine_sayac_takildi, takilan_sayac_serisi, "
             "tamir_ucreti, parca_maliyeti, odeyen, olusturan_kullanici) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
             (
                 seri_no,
                 request.form.get("abone_adi", "").strip(),
@@ -3195,12 +3610,14 @@ def fabrika_yeni():
                 session.get("kullanici_adi", ""),
             ),
         )
+        yeni_id = cur.fetchone()["id"]
         db.commit()
         cur.close()
+        _fabrika_fotograflarini_kaydet(db, yeni_id, request.files.getlist("fotograflar"))
         flash("Tamir kaydı eklendi (Beklemede). Gönderime dahil etmek için Fabrika/Tamir listesinden seçip "
               "'Gönderim Oluştur' deyin.")
         return redirect(url_for("fabrika_listesi"))
-    return render_template("fabrika_form.html", kayit=None)
+    return render_template("fabrika_form.html", kayit=None, fotograflar=[])
 
 
 @app.route("/fabrika/<int:kayit_id>/duzenle", methods=["GET", "POST"])
@@ -3259,6 +3676,7 @@ def fabrika_duzenle(kayit_id):
         )
         db.commit()
         cur.close()
+        _fabrika_fotograflarini_kaydet(db, kayit_id, request.files.getlist("fotograflar"))
         flash("Tamir kaydı güncellendi.")
         return redirect(url_for("fabrika_listesi"))
 
@@ -3272,8 +3690,15 @@ def fabrika_duzenle(kayit_id):
         )
         koli_bilgi = cur.fetchone()
         cur.close()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT id, dosya_adi, content_type FROM fabrika_fotograf WHERE kayit_id = %s ORDER BY id",
+        (kayit_id,),
+    )
+    fotograflar = cur.fetchall()
+    cur.close()
     return render_template(
-        "fabrika_form.html", kayit=kayit, koli_bilgi=koli_bilgi,
+        "fabrika_form.html", kayit=kayit, koli_bilgi=koli_bilgi, fotograflar=fotograflar,
         durum_etiketleri=FABRIKA_DURUM_ETIKETLERI,
     )
 
@@ -3288,6 +3713,37 @@ def fabrika_sil(kayit_id):
     db.commit()
     cur.close()
     flash("Tamir kaydı silindi.")
+    return redirect(url_for("fabrika_listesi"))
+
+
+@app.route("/fabrika-fotograf/<int:foto_id>")
+@login_required
+def fabrika_fotograf_goster(foto_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT content_type, icerik FROM fabrika_fotograf WHERE id = %s", (foto_id,))
+    foto = cur.fetchone()
+    cur.close()
+    if foto is None:
+        return "Fotoğraf bulunamadı.", 404
+    yanit = Response(bytes(foto["icerik"]), mimetype=foto["content_type"] or "application/octet-stream")
+    yanit.headers["X-Content-Type-Options"] = "nosniff"
+    return yanit
+
+
+@app.route("/fabrika-fotograf/<int:foto_id>/sil", methods=["POST"])
+@login_required
+def fabrika_fotograf_sil(foto_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT kayit_id FROM fabrika_fotograf WHERE id = %s", (foto_id,))
+    foto = cur.fetchone()
+    if foto:
+        cur.execute("DELETE FROM fabrika_fotograf WHERE id = %s", (foto_id,))
+        db.commit()
+    cur.close()
+    if foto:
+        return redirect(url_for("fabrika_duzenle", kayit_id=foto["kayit_id"]))
     return redirect(url_for("fabrika_listesi"))
 
 
@@ -4628,13 +5084,14 @@ def abone_yeni():
         yeni_id = _abone_kaydet(None)
         db = get_db()
         _abone_fotograflarini_kaydet(db, yeni_id, request.files.getlist("fotograflar"))
+        _abone_imzalarini_kaydet(db, yeni_id, request.form)
         return redirect(url_for("abone_listesi"))
     db = get_db()
     return render_template(
         "abone_form.html", kayit=None,
         sonraki_s_no=_sonraki_s_no(db),
         sonraki_senet_no=_sonraki_senet_no(db),
-        fotograflar=[],
+        fotograflar=[], imzalar={"montaj": False, "abone": False},
         ozel_alan_harita=_ozel_alan_harita(_ozel_alanlari_getir(db, "abone")),
     )
 
@@ -4652,6 +5109,7 @@ def abone_duzenle(abone_id):
     if request.method == "POST":
         _abone_kaydet(abone_id)
         _abone_fotograflarini_kaydet(db, abone_id, request.files.getlist("fotograflar"))
+        _abone_imzalarini_kaydet(db, abone_id, request.form)
         if sonraki_hedef:
             return redirect(sonraki_hedef)
         hedef = url_for("abone_listesi")
@@ -4674,6 +5132,7 @@ def abone_duzenle(abone_id):
     cur.close()
     return render_template(
         "abone_form.html", kayit=kayit, geri=geri, hedef=sonraki_hedef, fotograflar=fotograflar,
+        imzalar=_abone_imzalari_getir(db, abone_id),
         ozel_alan_harita=_ozel_alan_harita(_ozel_alanlari_getir(db, "abone")),
     )
 
@@ -4816,6 +5275,80 @@ def _abone_kaydet(abone_id):
     cur.close()
     _abone_sira_numaralarini_yenile(db)
     return abone_id
+
+
+def _base64_imza_decode(veri_url):
+    """Bir <canvas>.toDataURL('image/png') çıktısını (data:image/png;base64,...)
+    ham PNG baytlarına çevirir. Geçersiz/boş girdide None döner."""
+    if not veri_url or not veri_url.startswith("data:image/"):
+        return None
+    try:
+        _baslik, b64_kisim = veri_url.split(",", 1)
+        return base64.b64decode(b64_kisim)
+    except Exception:
+        return None
+
+
+def _abone_imzalarini_kaydet(db, abone_id, form):
+    """Montaj Personeli ve Abone imza alanlarını (canvas'tan gelen gizli
+    input'lar) işler; ayrı 'abone_imza' tablosuna yazar (bkz. schema.sql'deki
+    not — abone tablosunun kendisine BYTEA sütun olarak eklenmedi, çünkü o
+    tablo üzerinde her yerde kullanılan "SELECT *" sorgularını yavaşlatırdı).
+    Kayıt formunda imza alanı HER ZAMAN gönderilmez — kullanıcı o imzaya hiç
+    dokunmadıysa gizli input boş kalır ve mevcut imza (varsa) AYNEN KORUNUR;
+    'TEMIZLE' gönderilmişse imza silinir; bir PNG veri-URL'i gönderilmişse
+    yeni imza olarak (varsa üzerine yazılarak) kaydedilir."""
+    cur = db.cursor()
+    for form_alani, tur in (
+        ("imza_montaj_personeli_veri", "montaj"),
+        ("imza_abone_veri", "abone"),
+    ):
+        deger = form.get(form_alani, "")
+        if not deger:
+            continue
+        if deger == "TEMIZLE":
+            cur.execute("DELETE FROM abone_imza WHERE abone_id = %s AND tur = %s", (abone_id, tur))
+        else:
+            png_baytlari = _base64_imza_decode(deger)
+            if png_baytlari:
+                cur.execute(
+                    "INSERT INTO abone_imza (abone_id, tur, icerik) VALUES (%s, %s, %s) "
+                    "ON CONFLICT (abone_id, tur) DO UPDATE SET icerik = EXCLUDED.icerik, created_at = NOW()",
+                    (abone_id, tur, psycopg2.Binary(png_baytlari)),
+                )
+    db.commit()
+    cur.close()
+
+
+def _abone_imzalari_getir(db, abone_id):
+    """Bir abonenin kayıtlı imzalarını {'montaj': True/False, 'abone': True/False}
+    şeklinde döner — formda "imza var, göster" mi yoksa "boş canvas'a imzala"
+    mı gösterileceğine karar vermek için sadece VARLIĞI yeterli, PNG
+    içeriğinin kendisi buradan çekilmiyor (bkz. abone_imza_goster)."""
+    cur = db.cursor()
+    cur.execute("SELECT tur FROM abone_imza WHERE abone_id = %s", (abone_id,))
+    turler = {r["tur"] for r in cur.fetchall()}
+    cur.close()
+    return {"montaj": "montaj" in turler, "abone": "abone" in turler}
+
+
+@app.route("/abone-imza/<int:abone_id>/<hangi>")
+@login_required
+def abone_imza_goster(abone_id, hangi):
+    """Montaj Personeli ('montaj') veya Abone ('abone') imzasının PNG'ini
+    gösterir."""
+    if hangi not in ("montaj", "abone"):
+        return "Geçersiz istek.", 404
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT icerik FROM abone_imza WHERE abone_id = %s AND tur = %s", (abone_id, hangi))
+    kayit = cur.fetchone()
+    cur.close()
+    if not kayit:
+        return "İmza bulunamadı.", 404
+    yanit = Response(bytes(kayit["icerik"]), mimetype="image/png")
+    yanit.headers["X-Content-Type-Options"] = "nosniff"
+    return yanit
 
 
 @app.route("/abone/<int:abone_id>/tahsilat", methods=["GET", "POST"])
@@ -5087,8 +5620,12 @@ def _tahsilat_ciktisi_satirlar():
     kolon_listesi, kolon_bilgi, _sayisal, ozel_alanlar = _abone_kolon_takimi(db)
     kolonlar_secili = request.args.getlist("kolon")
     goster_kolonlari = kolonlar_secili if kolonlar_secili else [k for k, _ in kolon_listesi]
+    koy = request.args.get("koy", "").strip()
     sql = "SELECT * FROM abone WHERE 1=1"
     params = []
+    if koy:
+        sql += " AND koy_adi = %s"
+        params.append(koy)
     for anahtar in goster_kolonlari:
         kosul, param_listesi = _kolon_secim_kosulu(anahtar, kolon_bilgi)
         if kosul:
@@ -5139,6 +5676,8 @@ def tahsilat_ciktisi():
     cur = db.cursor()
     cur.execute("SELECT COUNT(*) AS c FROM abone")
     toplam_kayit = cur.fetchone()["c"]
+    cur.execute("SELECT DISTINCT koy_adi FROM abone ORDER BY koy_adi")
+    koyler = cur.fetchall()
     cur.close()
 
     # Excel çıktısı (tahsilat_ciktisi_excel) TÜM satırları kullanmaya devam
@@ -5151,6 +5690,7 @@ def tahsilat_ciktisi():
         kolon_listesi=kolon_listesi, goster_kolonlari=goster_kolonlari,
         kolon_secim_listesi=kolon_secim_listesi,
         secili_kolonlar=kolonlar_secili,
+        koyler=koyler, secili_koy=request.args.get("koy", "").strip(),
         deger_secili=deger_secili, haric_secili=haric_secili,
         sayisal_kolonlar=sayisal_kolonlar,
         kolon_satir=_izgara_satir(len(kolon_secim_listesi)),
@@ -5306,6 +5846,55 @@ _RESIM_FORMAT_MIME_HARITASI = {
     "WEBP": "image/webp", "BMP": "image/bmp", "HEIF": "image/heif", "TIFF": "image/tiff",
 }
 
+# Telefon kameralarından gelen fotoğraflar genelde birkaç MB (bazen 10+ MB)
+# oluyor ve şimdiye kadar HİÇ küçültülmeden, olduğu gibi veritabanına
+# yazılıyordu — bu yüzden hem kayıt formundaki küçük resim önizlemeleri hem
+# de fotoğrafı açmak, özellikle mobil bağlantıda gözle görülür yavaştı.
+# Aşağıdaki sınır/kalite değerleri, ekranda gösterim için fazlasıyla yeterli
+# ama dosya boyutunu (dolayısıyla açılma süresini) çoğu zaman 5-10 kat
+# küçültecek şekilde seçildi.
+_FOTOGRAF_MAKS_KENAR = 1920  # px — bu boyuttan uzun kenarlar küçültülür
+_FOTOGRAF_JPEG_KALITE = 82
+
+
+def _fotografi_kucult(icerik):
+    """Yüklenen bir fotoğrafı ekranda göstermek için fazlasıyla yeterli ama
+    çok daha küçük bir JPEG'e dönüştürmeyi dener (en uzun kenar
+    _FOTOGRAF_MAKS_KENAR'ı geçmeyecek şekilde küçültülür). GIF'ler
+    (animasyon bozulmasın diye) ve zaten küçük dosyalar olduğu gibi
+    bırakılır; herhangi bir sebeple küçültme başarısız olursa ORİJİNAL
+    içerik korunur — fotoğraf hiçbir durumda kaybolmaz.
+    Döndürdüğü değer: (kullanılacak_icerik, yeni_content_type_veya_None).
+    İkinci değer None ise çağıran, zaten doğrulanmış orijinal content_type'ı
+    kullanmaya devam etmeli."""
+    try:
+        from PIL import Image, ImageOps
+        with Image.open(io.BytesIO(icerik)) as img:
+            if img.format == "GIF":
+                return icerik, None
+            # Telefon fotoğrafları genelde piksel verisini döndürmez, bunun
+            # yerine EXIF Orientation etiketi taşır — PIL'in yeniden
+            # kaydetmesi bu etiketi KORUMUYOR, bu yüzden küçültmeden önce
+            # döndürmeyi gerçek piksellere işlemek gerekiyor (aksi halde
+            # küçültülmüş fotoğraf yanlış yönde görünürdü).
+            img = ImageOps.exif_transpose(img)
+            if img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+            genislik, yukseklik = img.size
+            en_uzun_kenar = max(genislik, yukseklik)
+            if en_uzun_kenar > _FOTOGRAF_MAKS_KENAR:
+                oran = _FOTOGRAF_MAKS_KENAR / en_uzun_kenar
+                yeni_boyut = (max(1, round(genislik * oran)), max(1, round(yukseklik * oran)))
+                img = img.resize(yeni_boyut, Image.LANCZOS)
+            tampon = io.BytesIO()
+            img.save(tampon, format="JPEG", quality=_FOTOGRAF_JPEG_KALITE, optimize=True)
+            yeni_icerik = tampon.getvalue()
+            if len(yeni_icerik) < len(icerik):
+                return yeni_icerik, "image/jpeg"
+            return icerik, None
+    except Exception:
+        return icerik, None
+
 
 def _dosya_gercek_turu_dogrula(icerik, beyan_edilen_tur):
     """Yüklenen dosyanın GERÇEKTEN bir resim/video olup olmadığını dosyanın kendi
@@ -5360,6 +5949,10 @@ def _medya_kaydet(db, tablo, sahip_kolonu, sahip_id, dosyalar):
         if not dogrulanmis_tur:
             flash(f'"{dosya.filename}" dosyasının içeriği bir resim/video ile eşleşmiyor, yüklenmedi.')
             continue
+        if dogrulanmis_tur.startswith("image/"):
+            icerik, kucultulmus_tur = _fotografi_kucult(icerik)
+            if kucultulmus_tur:
+                dogrulanmis_tur = kucultulmus_tur
         cur.execute(
             f"INSERT INTO {tablo} ({sahip_kolonu}, dosya_adi, content_type, icerik) VALUES (%s, %s, %s, %s)",
             (sahip_id, dosya.filename, dogrulanmis_tur, psycopg2.Binary(icerik)),
@@ -5374,6 +5967,10 @@ def _ariza_fotograflarini_kaydet(db, ariza_id, dosyalar):
 
 def _abone_fotograflarini_kaydet(db, abone_id, dosyalar):
     _medya_kaydet(db, "abone_fotograf", "abone_id", abone_id, dosyalar)
+
+
+def _fabrika_fotograflarini_kaydet(db, kayit_id, dosyalar):
+    _medya_kaydet(db, "fabrika_fotograf", "kayit_id", kayit_id, dosyalar)
 
 
 @app.route("/admin/secenek-yonetimi")
@@ -5782,12 +6379,17 @@ def ariza_listesi():
 
     db = get_db()
     q = request.args.get("q", "").strip()
+    koy = request.args.get("koy", "").strip()
     alanlar_secili = request.args.getlist("alan")
     ARIZA_ALAN_HARITASI = {k: (kolon, sayisal) for k, _, kolon, sayisal in ARIZA_ALAN_TANIMLARI}
     alan_listesi = [(k, etiket) for k, etiket, _, _ in ARIZA_ALAN_TANIMLARI]
 
     sql = "SELECT * FROM ariza WHERE 1=1"
     params = []
+
+    if koy:
+        sql += " AND koy_adi = %s"
+        params.append(koy)
 
     if q:
         secili = alanlar_secili if alanlar_secili else [k for k, *_ in ARIZA_ALAN_TANIMLARI]
@@ -5832,6 +6434,8 @@ def ariza_listesi():
     cur = db.cursor()
     cur.execute(sql, params)
     kayitlar_ham = cur.fetchall()
+    cur.execute("SELECT DISTINCT koy_adi FROM ariza ORDER BY koy_adi")
+    koyler = cur.fetchall()
     cur.execute("SELECT COUNT(*) AS c FROM ariza")
     toplam_kayit = cur.fetchone()["c"]
     cur.close()
@@ -5852,7 +6456,7 @@ def ariza_listesi():
     return render_template(
         "ariza_listesi.html", satirlar=satirlar,
         kolon_listesi=kolon_listesi,
-        q=q, secili_alanlar=alanlar_secili, alan_listesi=alan_listesi,
+        q=q, koyler=koyler, secili_koy=koy, secili_alanlar=alanlar_secili, alan_listesi=alan_listesi,
         deger_secili=deger_secili, haric_secili=haric_secili,
         sayisal_kolonlar=sayisal_kolonlar,
         arama_satir=_izgara_satir(len(alan_listesi)),
@@ -5871,8 +6475,12 @@ def _ariza_ciktisi_satirlar():
     kolon_listesi, kolon_bilgi, _sayisal, ozel_alanlar = _ariza_kolon_takimi(db)
     kolonlar_secili = request.args.getlist("kolon")
     goster_kolonlari = kolonlar_secili if kolonlar_secili else [k for k, _ in kolon_listesi]
+    koy = request.args.get("koy", "").strip()
     sql = "SELECT * FROM ariza WHERE 1=1"
     params = []
+    if koy:
+        sql += " AND koy_adi = %s"
+        params.append(koy)
     for anahtar in goster_kolonlari:
         kosul, param_listesi = _kolon_secim_kosulu(anahtar, kolon_bilgi)
         if kosul:
@@ -5924,6 +6532,8 @@ def ariza_ciktisi():
     cur = db.cursor()
     cur.execute("SELECT COUNT(*) AS c FROM ariza")
     toplam_kayit = cur.fetchone()["c"]
+    cur.execute("SELECT DISTINCT koy_adi FROM ariza ORDER BY koy_adi")
+    koyler = cur.fetchall()
     cur.close()
 
     # Excel çıktısı (ariza_ciktisi_excel) TÜM satırları kullanmaya devam
@@ -5936,6 +6546,7 @@ def ariza_ciktisi():
         kolon_listesi=kolon_listesi, goster_kolonlari=goster_kolonlari,
         kolon_secim_listesi=kolon_secim_listesi,
         secili_kolonlar=kolonlar_secili,
+        koyler=koyler, secili_koy=request.args.get("koy", "").strip(),
         deger_secili=deger_secili, haric_secili=haric_secili,
         sayisal_kolonlar=sayisal_kolonlar,
         kolon_satir=_izgara_satir(len(kolon_secim_listesi)),
@@ -6406,6 +7017,91 @@ def tarih_formati_duzelt():
     <html><body style="font-family:sans-serif;max-width:640px;margin:40px auto;line-height:1.5">
     <h2 style="color:#0a0">Başarılı</h2>
     <p><b>{duzeltilen}</b> tarih alanı düzeltildi.</p>
+    <p><a href="/abone">Abone listesine git</a></p>
+    </body></html>
+    """
+
+
+@app.route("/admin/fotograflari-kucult", methods=["GET", "POST"])
+@login_required
+def fotograflari_kucult():
+    """Bu route eklenmeden ÖNCE yüklenmiş, hâlâ orijinal (küçültülmemiş) boyutta
+    duran fotoğrafları tek seferlik olarak küçültür — bkz. _fotografi_kucult ve
+    tarih_formati_duzelt() içindeki aynı desendeki not. SADECE POST (CSRF token
+    doğrulamasıyla) asıl değişikliği yapar; videolara dokunmaz."""
+    onay = request.method == "POST" and request.form.get("onayla") == "1"
+    db = get_db()
+    cur = db.cursor()
+
+    ESIK_BAYT = 300 * 1024  # bu boyutun altındaki fotoğraflar zaten küçük, atlanır
+    hedefler = [("abone_fotograf", "abone_id"), ("ariza_fotograf", "ariza_id")]
+
+    bulunanlar = []
+    toplam_eski_boyut = 0
+    for tablo, _sahip_kolonu in hedefler:
+        cur.execute(
+            f"SELECT id, content_type, octet_length(icerik) AS boyut FROM {tablo} "
+            f"WHERE content_type LIKE %s AND octet_length(icerik) > %s",
+            ("image/%", ESIK_BAYT),
+        )
+        for satir in cur.fetchall():
+            bulunanlar.append((tablo, satir["id"], satir["boyut"]))
+            toplam_eski_boyut += satir["boyut"]
+
+    if not onay:
+        cur.close()
+        if not bulunanlar:
+            return """
+            <html><body style="font-family:sans-serif;max-width:640px;margin:40px auto;line-height:1.5">
+            <h2>Fotoğrafları Küçült</h2>
+            <p>Küçültülmesi gereken (300 KB üstü) fotoğraf bulunamadı. Tüm fotoğraflar zaten küçük boyutta.</p>
+            <p><a href="/abone">Abone listesine git</a></p>
+            </body></html>
+            """
+        return f"""
+        <html><body style="font-family:sans-serif;max-width:640px;margin:40px auto;line-height:1.5">
+        <h2>Fotoğrafları Küçült</h2>
+        <p><b>{len(bulunanlar)}</b> fotoğraf, toplam <b>{toplam_eski_boyut/1024/1024:.1f} MB</b>,
+        bu özellik eklenmeden önce yüklendiği için hâlâ orijinal (küçültülmemiş) boyutta duruyor —
+        bu yüzden hem kayıt formunda hem de fotoğrafı açarken yavaş yükleniyorlar.</p>
+        <p>Bu işlem bu fotoğrafları ekranda göstermek için yeterli ama çok daha küçük boyuta
+        küçültecek — fotoğraflar KAYBOLMAZ, sadece dosya boyutu küçülür. Video dosyalarına dokunulmaz.</p>
+        <form method="post">
+        <input type="hidden" name="csrf_token" value="{generate_csrf()}">
+        <input type="hidden" name="onayla" value="1">
+        <button type="submit" style="font-size:20px;background:none;border:none;text-decoration:underline;cursor:pointer;padding:0;">
+        Evet, {len(bulunanlar)} fotoğrafı küçült</button>
+        </form>
+        </body></html>
+        """
+
+    toplam_yeni_boyut = 0
+    basarisiz = 0
+    for tablo, foto_id, _eski_boyut in bulunanlar:
+        cur.execute(f"SELECT icerik FROM {tablo} WHERE id = %s", (foto_id,))
+        kayit = cur.fetchone()
+        if not kayit:
+            continue
+        icerik = bytes(kayit["icerik"])
+        yeni_icerik, yeni_tur = _fotografi_kucult(icerik)
+        if yeni_tur:
+            cur.execute(
+                f"UPDATE {tablo} SET icerik = %s, content_type = %s WHERE id = %s",
+                (psycopg2.Binary(yeni_icerik), yeni_tur, foto_id),
+            )
+            toplam_yeni_boyut += len(yeni_icerik)
+        else:
+            basarisiz += 1
+            toplam_yeni_boyut += len(icerik)
+    db.commit()
+    kucultulen = len(bulunanlar) - basarisiz
+    cur.close()
+
+    return f"""
+    <html><body style="font-family:sans-serif;max-width:640px;margin:40px auto;line-height:1.5">
+    <h2 style="color:#0a0">Başarılı</h2>
+    <p><b>{kucultulen}</b> fotoğraf küçültüldü: {toplam_eski_boyut/1024/1024:.1f} MB → {toplam_yeni_boyut/1024/1024:.1f} MB.</p>
+    {f'<p style="color:#a13a2e;">{basarisiz} fotoğraf küçültülemedi (bozuk/desteklenmeyen dosya), orijinal haliyle bırakıldı.</p>' if basarisiz else ''}
     <p><a href="/abone">Abone listesine git</a></p>
     </body></html>
     """
