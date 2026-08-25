@@ -117,8 +117,18 @@ h1, h2 { color: #2c3136; margin: 0 0 10px; }
     background: #fff;
     border-radius: 8px;
     border: 1px solid #dfe6e1;
+    /* Kutu, içindeki tablo ne kadar genişse o kadar geniş olsun (fazladan
+       boşluk bırakmasın); ama sayfadan taşmasın diye en fazla %100'e kadar
+       (o zaman içeride yatay kaydırma devreye girer, sağdaki ikon sütunu
+       da normal şekilde sabit kalır). */
+    width: fit-content;
+    max-width: 100%;
 }
-table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }
+/* NOT: table genişliği kasıtlı olarak içeriğe göre bırakılıyor (width:100%
+   YOK) — asıl düzeltme aşağıdaki .tablo-kaydirici kuralında (kutu, tablo
+   ne kadar genişse o kadar dar/geniş oluyor; fazladan boşluk kalmıyor,
+   sağdaki ikon sütunu da "zıplamıyor"). */
+table { border-collapse: collapse; font-size: 11px; white-space: nowrap; }
 th, td { padding: 6px 6px; border-bottom: 1px solid #dde1e4; text-align: left; }
 th { background: #eef0f1; color: #2c3136; }
 thead { position: sticky; top: 0; z-index: 3; }
