@@ -1392,9 +1392,18 @@ _MONTAJ_FORMU_VARSAYILAN_SABLON = """<div class="montaj-formu-kopya" style="bord
     </div>
 
     <div style="display:flex; justify-content:space-between; margin-top:22px; font-size:11.5px; text-align:center;">
-        <div style="flex:1;">Kurum Personeli</div>
-        <div style="flex:1;">{{ montaj_personeli }}<br>ELEKTROMED Yetkili Personeli</div>
-        <div style="flex:1;">{{ adi }} {{ soyadi }}<br>Abone Veya Vekili</div>
+        <div style="flex:1;">
+            <div style="height:46px;"></div>
+            Kurum Personeli
+        </div>
+        <div style="flex:1;">
+            <div style="height:46px; display:flex; align-items:flex-end; justify-content:center;">{{ montaj_imza }}</div>
+            {{ montaj_personeli }}<br>ELEKTROMED Yetkili Personeli
+        </div>
+        <div style="flex:1;">
+            <div style="height:46px; display:flex; align-items:flex-end; justify-content:center;">{{ abone_imza }}</div>
+            {{ adi }} {{ soyadi }}<br>Abone Veya Vekili
+        </div>
     </div>
 </div>"""
 
@@ -1554,10 +1563,42 @@ def _word_tasarimini_onar(html):
     return str(soup)
 
 
+# Montaj Formu Tasarımı ekranındaki önizlemede, gerçek bir abone imzası
+# olmadığı için kullanılan sabit yer tutucu görsel (küçük, gri, italik
+# "Örnek İmza" yazısı) — {{ montaj_imza }} / {{ abone_imza }} alanlarının
+# tasarımda nereye yerleştiğini önceden görebilmek için.
+_ORNEK_IMZA_YER_TUTUCU = (
+    "data:image/svg+xml;utf8,"
+    "<svg xmlns='http://www.w3.org/2000/svg' width='150' height='40'>"
+    "<text x='75' y='26' font-family='cursive' font-size='15' font-style='italic' "
+    "fill='%23999' text-anchor='middle'>(Örnek İmza)</text></svg>"
+)
+
+
+def _imza_veri_url_img_etiketi(veri_url):
+    """Bir imza data: URL'ini ({{ montaj_imza }} / {{ abone_imza }} alanları için),
+    Montaj Formu'na basılmaya hazır bir <img> etiketine çevirir. İmza yoksa (veri_url
+    None/boşsa) boş metin döner, böylece şablonda o alan sessizce boş kalır."""
+    if not veri_url:
+        return ""
+    return (
+        f'<img src="{veri_url}" alt="İmza" '
+        f'style="max-height:44px; max-width:150px; display:inline-block;">'
+    )
+
+
 def _montaj_formu_veri(satir):
     """`_abone_satir_sozlugu()` çıktısından Montaj Formu şablonu için birleştirme
     (mail-merge) verisi hazırlar. montaj_tarihi burada GG/AA/YYYY biçimine çevrilir
-    (satırdaki değer zaten GG.AA.YYYY biçiminde geliyor)."""
+    (satırdaki değer zaten GG.AA.YYYY biçiminde geliyor).
+
+    montaj_imza / abone_imza: abone kaydı sırasında (dokunmatik ekrandan) atılan
+    imzaların hazır <img> etiketleri. Bunların ham veri_url'leri (`abone_imza`
+    tablosundan) çağıran taraf (abone_montaj_formu vb.) tarafından `satir` içine
+    '_montaj_imza_veri_url' / '_abone_imza_veri_url' anahtarlarıyla ÖNCEDEN
+    eklenmiş olmalı — bu fonksiyon burada sadece hazır bulunan veriyi <img>
+    etiketine çeviriyor, kendisi veritabanına gitmiyor (o iş için db bağlantısı
+    gerekir, ama bu fonksiyon bilerek db'siz/saf tutuluyor)."""
     return {
         "adi": satir.get("adi") or "",
         "soyadi": satir.get("soyadi") or "",
@@ -1571,6 +1612,8 @@ def _montaj_formu_veri(satir):
         "tesisat_ucreti": satir.get("malzeme_tutari") or "0,00",
         "tesisat_ucreti_alinan": satir.get("malzeme_alinan") or "0,00",
         "montaj_personeli": satir.get("montaj_personeli") or "",
+        "montaj_imza": _imza_veri_url_img_etiketi(satir.get("_montaj_imza_veri_url")),
+        "abone_imza": _imza_veri_url_img_etiketi(satir.get("_abone_imza_veri_url")),
     }
 
 
@@ -4373,6 +4416,12 @@ def montaj_formu_tasarim():
         "sayac_tutari": "1.500,00", "alinan_tutar": "1.500,00",
         "malzeme_tutari": "750,00", "malzeme_alinan": "750,00",
         "montaj_personeli": "ÖRNEK PERSONEL",
+        # Tasarım ekranındaki önizlemede {{ montaj_imza }} / {{ abone_imza }}
+        # alanlarının nereye yerleştiğini GÖREBİLMEK için, gerçek bir imza
+        # yerine örnek bir yer tutucu görsel kullanılıyor (gerçek üretimde bu
+        # alanlar abone_imza tablosundaki gerçek imzayla doldurulur).
+        "_montaj_imza_veri_url": _ORNEK_IMZA_YER_TUTUCU,
+        "_abone_imza_veri_url": _ORNEK_IMZA_YER_TUTUCU,
     }
     onizleme_html, onizleme_hata = _montaj_formu_render_tek(sablon["icerik"], ornek_satir)
 
@@ -4541,6 +4590,8 @@ def abone_montaj_formu(abone_id):
     sablon_id = _montaj_formu_secili_id(db, request.args.get("sablon_id", type=int))
     sablon = _montaj_formu_sablon_getir(db, sablon_id)
     satir = _abone_satir_sozlugu(kayit)
+    satir["_montaj_imza_veri_url"] = _abone_imza_veri_url(db, abone_id, "montaj")
+    satir["_abone_imza_veri_url"] = _abone_imza_veri_url(db, abone_id, "abone")
     render_edilmis, hata = _montaj_formu_render_tek(sablon["icerik"], satir)
     if hata:
         flash(f"Montaj Formu tasarımında hata var, lütfen tasarımı kontrol edin: {hata}")
@@ -4572,6 +4623,8 @@ def abone_montaj_formu_onizle(abone_id, sablon_id):
 
     sablon = _montaj_formu_sablon_getir(db, sablon_id)
     satir = _abone_satir_sozlugu(kayit)
+    satir["_montaj_imza_veri_url"] = _abone_imza_veri_url(db, abone_id, "montaj")
+    satir["_abone_imza_veri_url"] = _abone_imza_veri_url(db, abone_id, "abone")
     render_edilmis, hata = _montaj_formu_render_tek(sablon["icerik"], satir)
     if hata:
         return f"<p>Bu tasarımda bir hata var: {hata}</p>"
@@ -4590,10 +4643,13 @@ def abone_montaj_formu_toplu():
 
     sablon_id = _montaj_formu_secili_id(db, request.args.get("sablon_id", type=int))
     sablon = _montaj_formu_sablon_getir(db, sablon_id)
+    imzalar = _abone_imzalari_toplu_getir(db, [k["id"] for k in kayitlar_ham])
 
     sayfalar = []
     for kayit in kayitlar_ham:
         satir = _abone_satir_sozlugu(kayit)
+        satir["_montaj_imza_veri_url"] = imzalar.get((kayit["id"], "montaj"))
+        satir["_abone_imza_veri_url"] = imzalar.get((kayit["id"], "abone"))
         render_edilmis, hata = _montaj_formu_render_tek(sablon["icerik"], satir)
         if hata:
             flash(f"Montaj Formu tasarımında hata var, lütfen tasarımı kontrol edin: {hata}")
@@ -5330,6 +5386,41 @@ def _abone_imzalari_getir(db, abone_id):
     turler = {r["tur"] for r in cur.fetchall()}
     cur.close()
     return {"montaj": "montaj" in turler, "abone": "abone" in turler}
+
+
+def _abone_imza_veri_url(db, abone_id, tur):
+    """Bir abonenin TEK bir imzasını (varsa) data: URL (data:image/png;base64,...)
+    olarak döner; imza yoksa None döner. Montaj Formu'nun tekli üretiminde
+    ({{ montaj_imza }} / {{ abone_imza }} alanlarını doldurmak için) kullanılır —
+    toplu üretimde bunun yerine _abone_imzalari_toplu_getir kullanılır (her
+    abone için ayrı ayrı sorgu atmamak için)."""
+    cur = db.cursor()
+    cur.execute("SELECT icerik FROM abone_imza WHERE abone_id = %s AND tur = %s", (abone_id, tur))
+    kayit = cur.fetchone()
+    cur.close()
+    if not kayit:
+        return None
+    b64 = base64.b64encode(bytes(kayit["icerik"])).decode("ascii")
+    return f"data:image/png;base64,{b64}"
+
+
+def _abone_imzalari_toplu_getir(db, abone_idler):
+    """Birden fazla abonenin imzalarını TEK sorguda alıp {(abone_id, tur): data_url}
+    sözlüğü olarak döner — Montaj Formu'nun toplu (çoklu abone) üretiminde her
+    abone için ayrı ayrı imza sorgusu atmamak için kullanılır."""
+    if not abone_idler:
+        return {}
+    cur = db.cursor()
+    cur.execute(
+        "SELECT abone_id, tur, icerik FROM abone_imza WHERE abone_id = ANY(%s)",
+        (list(abone_idler),),
+    )
+    sonuc = {}
+    for r in cur.fetchall():
+        b64 = base64.b64encode(bytes(r["icerik"])).decode("ascii")
+        sonuc[(r["abone_id"], r["tur"])] = f"data:image/png;base64,{b64}"
+    cur.close()
+    return sonuc
 
 
 @app.route("/abone-imza/<int:abone_id>/<hangi>")
