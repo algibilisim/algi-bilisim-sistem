@@ -5251,10 +5251,22 @@ def _abone_kaydet(abone_id):
     db = get_db()
     cur = db.cursor()
 
-    if abone_id is None:
-        alinan_tutar = 0.0
-        malzeme_alinan = 0.0
+    yeni_kayit_mi = abone_id is None
+
+    if yeni_kayit_mi:
+        # Yeni abone kaydında "Alınan Tutar" / "Malzeme Alınan" alanlarına
+        # girilen miktar, montaj sırasında peşin tahsil edilen tutarı temsil
+        # eder — formdan okunup hem abone satırına hem de (aşağıda, kayıt
+        # oluştuktan sonra) tahsilat geçmişine işlenir ki Sayaç/Malzeme Kalan
+        # doğru hesaplansın ve Tahsilat sayfasında da görünsün.
+        alinan_tutar = _sayilastir(f.get("alinan_tutar"))
+        malzeme_alinan = _sayilastir(f.get("malzeme_alinan"))
     else:
+        # Mevcut bir aboneyi düzenlerken bu iki alan kasıtlı olarak formdan
+        # OKUNMAZ — Alınan/Malzeme Alınan tutarları yalnızca "Tahsilat" sayfası
+        # üzerinden güncellenir (orada hem abone satırı hem tahsilat geçmişi
+        # birlikte güncellenir); burada formdaki değeri yazsaydık, geçmişle
+        # tutarsız (tahsilat kaydı olmayan) bir "alınan" miktarı oluşurdu.
         cur.execute("SELECT alinan_tutar, malzeme_alinan FROM abone WHERE id = %s", (abone_id,))
         mevcut = cur.fetchone()
         alinan_tutar = (mevcut["alinan_tutar"] or 0) if mevcut else 0.0
@@ -5313,7 +5325,7 @@ def _abone_kaydet(abone_id):
         else:
             alanlar[oa["kolon_adi"]] = f.get(oa["kolon_adi"], "").strip()
 
-    if abone_id is None:
+    if yeni_kayit_mi:
         kolonlar = ", ".join(alanlar.keys())
         yer_tutucular = ", ".join(["%s"] * len(alanlar))
         cur.execute(
@@ -5321,6 +5333,28 @@ def _abone_kaydet(abone_id):
             list(alanlar.values()),
         )
         abone_id = cur.fetchone()["id"]
+
+        # Kayıt sırasında girilen "Alınan Tutar" / "Malzeme Alınan" miktarlarını
+        # Tahsilat geçmişine de işle (bkz. yukarıdaki not) — böylece abone_tahsilat
+        # sayfasındaki "Tahsilat Geçmişi" listesi ile abone.alinan_tutar /
+        # malzeme_alinan sütunları birbiriyle tutarlı kalır.
+        tahsilat_tarihi = (
+            f.get("odeme_tarihi", "").strip()
+            or f.get("montaj_tarihi", "").strip()
+            or datetime.now().strftime("%Y-%m-%d")
+        )
+        odeme_sekli = f.get("odeme_sekli", "").strip()
+        odemeyi_yapan = f.get("odemeyi_gonderen", "").strip()
+        for tur, tutar, aciklama in (
+            ("sayac", alinan_tutar, "Abone kaydı sırasında alınan (sayaç)"),
+            ("malzeme", malzeme_alinan, "Abone kaydı sırasında alınan (malzeme)"),
+        ):
+            if tutar:
+                cur.execute(
+                    "INSERT INTO tahsilat (abone_id, tarih, tur, tutar, odeme_sekli, odemeyi_yapan, aciklama) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    (abone_id, tahsilat_tarihi, tur, tutar, odeme_sekli, odemeyi_yapan, aciklama),
+                )
     else:
         set_ifadesi = ", ".join([f"{k} = %s" for k in alanlar.keys()])
         cur.execute(
@@ -5450,20 +5484,35 @@ def abone_tahsilat(abone_id):
     geri = request.args.get("geri", "") or request.form.get("geri", "")
 
     if request.method == "POST":
-        tur = request.form.get("tur")
         tutar = _sayilastir(request.form.get("tutar"))
         tarih = request.form.get("tarih", "").strip()
         odeme_sekli = request.form.get("odeme_sekli", "").strip()
         odemeyi_yapan = request.form.get("odemeyi_yapan", "").strip()
         aciklama = request.form.get("aciklama", "").strip()
 
-        if tur in ("sayac", "malzeme") and tutar:
+        if tutar:
+            # Kullanıcı artık "Sayaç" / "Malzeme" türünü elle seçmiyor — girilen
+            # tek bir tutar, önce Malzeme alacağından, kalanı varsa (veya
+            # Malzeme borcu zaten kapanmışsa tamamı) Sayaç alacağından düşülür.
+            # Bu yüzden mevcut kalan tutarları güncel haliyle DB'den okuyoruz.
             cur.execute(
-                "INSERT INTO tahsilat (abone_id, tarih, tur, tutar, odeme_sekli, odemeyi_yapan, aciklama) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (abone_id, tarih, tur, tutar, odeme_sekli, odemeyi_yapan, aciklama),
+                "SELECT sayac_tutari, alinan_tutar, malzeme_tutari, malzeme_alinan FROM abone WHERE id = %s",
+                (abone_id,),
             )
-            kolon = "alinan_tutar" if tur == "sayac" else "malzeme_alinan"
-            cur.execute(f"UPDATE abone SET {kolon} = {kolon} + %s WHERE id = %s", (tutar, abone_id))
+            mevcut = cur.fetchone()
+            malzeme_kalan = (mevcut["malzeme_tutari"] or 0) - (mevcut["malzeme_alinan"] or 0) if mevcut else 0
+
+            malzeme_payi = min(tutar, malzeme_kalan) if malzeme_kalan > 0 else 0
+            sayac_payi = tutar - malzeme_payi
+
+            for tur, pay in (("malzeme", malzeme_payi), ("sayac", sayac_payi)):
+                if pay:
+                    cur.execute(
+                        "INSERT INTO tahsilat (abone_id, tarih, tur, tutar, odeme_sekli, odemeyi_yapan, aciklama) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                        (abone_id, tarih, tur, pay, odeme_sekli, odemeyi_yapan, aciklama),
+                    )
+                    kolon = "alinan_tutar" if tur == "sayac" else "malzeme_alinan"
+                    cur.execute(f"UPDATE abone SET {kolon} = {kolon} + %s WHERE id = %s", (pay, abone_id))
             db.commit()
 
         cur.close()
