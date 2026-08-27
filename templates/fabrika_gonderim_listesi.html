@@ -33,6 +33,11 @@
                 <a href="{{ url_for('fabrika_gonderim_detay', gonderim_id=g['id']) }}" class="ikon-rozet" data-ipucu="Detay" aria-label="Detay">🔍</a>
                 <a href="{{ url_for('fabrika_rapor', gonderim_id=g['id']) }}" class="ikon-rozet" data-ipucu="Sayaç Durum Raporu" aria-label="Sayaç Durum Raporu">📊</a>
                 <a href="{{ url_for('fabrika_rapor_pdf', gonderim_id=g['id']) }}" class="ikon-rozet" data-ipucu="PDF İndir" aria-label="PDF İndir">📥</a>
+                <button type="button" class="ikon-rozet" data-ipucu="Sil" aria-label="Sil"
+                        onclick="var f=document.createElement('form'); f.method='post'; f.action='{{ url_for('fabrika_gonderim_sil', gonderim_id=g['id']) }}';
+                                 var i=document.createElement('input'); i.type='hidden'; i.name='csrf_token'; i.value='{{ csrf_token() }}';
+                                 f.appendChild(i); document.body.appendChild(f);
+                                 if (confirm('Bu gönderim kaydını silmek istediğinize emin misiniz? Kolideki tüm kayıtlar da silinecektir.')) { f.submit(); }">🗑️</button>
             </td>
         </tr>
         {% else %}

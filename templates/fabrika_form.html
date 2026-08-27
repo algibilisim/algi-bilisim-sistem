@@ -72,6 +72,13 @@
         </div>
 
         <div>
+            <label>Abone Kartı</label>
+            <select name="abone_karti" style="width:100%;">
+                <option value="alinmadi" {{ 'selected' if not (kayit and kayit['abone_karti'] == 'alindi') else '' }}>ALINMADI</option>
+                <option value="alindi" {{ 'selected' if kayit and kayit['abone_karti'] == 'alindi' else '' }}>ALINDI</option>
+            </select>
+        </div>
+        <div>
             <label>Yerine Sayaç Takıldı mı?</label>
             <select name="yerine_sayac_takildi" id="fabrika-yerine-takildi-secim" style="width:100%;" onchange="fabrikaTakilanAlaniniGoster()">
                 <option value="takilmadi" {{ 'selected' if not (kayit and kayit['yerine_sayac_takildi']) else '' }}>Takılmadı</option>
