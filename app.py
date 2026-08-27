@@ -3631,12 +3631,15 @@ def fabrika_yeni():
         yerine_takildi = request.form.get("yerine_sayac_takildi") == "takildi"
         db = get_db()
         cur = db.cursor()
+        abone_karti = request.form.get("abone_karti", "").strip()
+        if abone_karti not in ("alindi", "alinmadi"):
+            abone_karti = "alinmadi"
         cur.execute(
             "INSERT INTO fabrika_tamir "
             "(seri_no, abone_adi, koy_adi, telefon, ilk_montaj_tarihi, uretim_yili, "
             "tespit_edilen_ariza, yerine_sayac_takildi, takilan_sayac_serisi, "
-            "tamir_ucreti, parca_maliyeti, odeyen, olusturan_kullanici) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            "tamir_ucreti, parca_maliyeti, odeyen, abone_karti, olusturan_kullanici) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
             (
                 seri_no,
                 request.form.get("abone_adi", "").strip(),
@@ -3650,6 +3653,7 @@ def fabrika_yeni():
                 _sayi_veya(request.form.get("tamir_ucreti"), 0),
                 _sayi_veya(request.form.get("parca_maliyeti"), 0),
                 request.form.get("odeyen", "").strip(),
+                abone_karti,
                 session.get("kullanici_adi", ""),
             ),
         )
@@ -3686,6 +3690,9 @@ def fabrika_duzenle(kayit_id):
             flash("Seri No zorunludur.")
             return redirect(url_for("fabrika_duzenle", kayit_id=kayit_id))
         yerine_takildi = request.form.get("yerine_sayac_takildi") == "takildi"
+        abone_karti = request.form.get("abone_karti", "").strip()
+        if abone_karti not in ("alindi", "alinmadi"):
+            abone_karti = "alinmadi"
 
         yeni_durum = kayit["durum"]
         if kayit["koli_id"] is not None:
@@ -3698,7 +3705,7 @@ def fabrika_duzenle(kayit_id):
             "UPDATE fabrika_tamir SET seri_no=%s, abone_adi=%s, koy_adi=%s, telefon=%s, "
             "ilk_montaj_tarihi=%s, uretim_yili=%s, tespit_edilen_ariza=%s, "
             "yerine_sayac_takildi=%s, takilan_sayac_serisi=%s, durum=%s, donus_tarihi=%s, "
-            "tamir_ucreti=%s, parca_maliyeti=%s, odeyen=%s, updated_at=NOW() WHERE id=%s",
+            "tamir_ucreti=%s, parca_maliyeti=%s, odeyen=%s, abone_karti=%s, updated_at=NOW() WHERE id=%s",
             (
                 seri_no,
                 request.form.get("abone_adi", "").strip(),
@@ -3714,6 +3721,7 @@ def fabrika_duzenle(kayit_id):
                 _sayi_veya(request.form.get("tamir_ucreti"), 0),
                 _sayi_veya(request.form.get("parca_maliyeti"), 0),
                 request.form.get("odeyen", "").strip(),
+                abone_karti,
                 kayit_id,
             ),
         )
@@ -4019,6 +4027,32 @@ def fabrika_rapor_pdf(gonderim_id):
         pdf_bayt, mimetype="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=sayac-durum-raporu-{gonderim_id}.pdf"},
     )
+
+
+@app.route("/fabrika/gonderim/<int:gonderim_id>/sil", methods=["POST"])
+@login_required
+def fabrika_gonderim_sil(gonderim_id):
+    """Bir gönderim kaydını (kargo/koli bilgisiyle birlikte) siler.
+    fabrika_koli tablosu ON DELETE CASCADE ile bağlı olduğu için koliler de
+    otomatik silinir. İçindeki tamir kayıtları (fabrika_tamir) koli_id
+    üzerinden RESTRICT/SET NULL olabileceğinden önce onları koliden ayırıyoruz."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT id FROM fabrika_gonderim WHERE id = %s", (gonderim_id,))
+    if cur.fetchone() is None:
+        cur.close()
+        flash("Gönderim bulunamadı.")
+        return redirect(url_for("fabrika_gonderim_listesi"))
+    cur.execute(
+        "UPDATE fabrika_tamir SET koli_id = NULL, durum = 'beklemede' "
+        "WHERE koli_id IN (SELECT id FROM fabrika_koli WHERE gonderim_id = %s)",
+        (gonderim_id,),
+    )
+    cur.execute("DELETE FROM fabrika_gonderim WHERE id = %s", (gonderim_id,))
+    db.commit()
+    cur.close()
+    flash("Gönderim kaydı silindi.")
+    return redirect(url_for("fabrika_gonderim_listesi"))
 
 
 @app.route("/yedek-al")
