@@ -20,7 +20,7 @@
         </div>
         <div>
             <label>Birim Fiyat (KDV Hariç)</label>
-            <input type="number" name="birim_fiyat" value="{{ kayit['birim_fiyat'] if kayit else 0 }}" min="0" step="0.01" style="width:100%;">
+            <input type="number" name="birim_fiyat" value="{{ kayit['birim_fiyat'] if kayit else '' }}" min="0" step="0.01" style="width:100%;">
         </div>
         <div>
             <label>KDV Oranı %</label>
@@ -28,7 +28,7 @@
         </div>
         <div>
             <label>Stok Miktarı</label>
-            <input type="number" name="stok_miktari" value="{{ kayit['stok_miktari'] if kayit else 0 }}" min="0" step="0.01" style="width:100%;">
+            <input type="number" name="stok_miktari" value="{{ kayit['stok_miktari'] if kayit else '' }}" min="0" step="0.01" style="width:100%;">
             <p style="font-size:12px; color:#888; margin:4px 0 0;">
                 Normal akışta miktar "Hareket Ekle" ile değişir; buradan sadece
                 ilk kurulum ya da sayım düzeltmesi için elle değiştirin.
@@ -36,7 +36,7 @@
         </div>
         <div>
             <label>Min. Stok Seviyesi</label>
-            <input type="number" name="min_stok_seviyesi" value="{{ kayit['min_stok_seviyesi'] if kayit else 0 }}" min="0" step="0.01" style="width:100%;">
+            <input type="number" name="min_stok_seviyesi" value="{{ kayit['min_stok_seviyesi'] if kayit else '' }}" min="0" step="0.01" style="width:100%;">
             <p style="font-size:12px; color:#888; margin:4px 0 0;">
                 Stok miktarı bu seviyenin altına/ona eşit düşünce Stok listesinde
                 kırmızı uyarı gösterilir.

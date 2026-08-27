@@ -111,11 +111,11 @@
 
         <div>
             <label>Tamir Ücreti</label>
-            <input type="number" name="tamir_ucreti" min="0" step="0.01" value="{{ kayit['tamir_ucreti'] if kayit else 0 }}" style="width:100%;">
+            <input type="number" name="tamir_ucreti" min="0" step="0.01" value="{{ kayit['tamir_ucreti'] if kayit else '' }}" style="width:100%;">
         </div>
         <div>
             <label>Parça Maliyeti</label>
-            <input type="number" name="parca_maliyeti" min="0" step="0.01" value="{{ kayit['parca_maliyeti'] if kayit else 0 }}" style="width:100%;">
+            <input type="number" name="parca_maliyeti" min="0" step="0.01" value="{{ kayit['parca_maliyeti'] if kayit else '' }}" style="width:100%;">
         </div>
         <div>
             <label>Ödeyen</label>

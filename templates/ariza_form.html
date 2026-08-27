@@ -121,12 +121,12 @@
 
         <div>
             <label>Arıza Ücret</label>
-            <input type="text" name="ariza_ucret" value="{{ kayit['ariza_ucret'] if kayit and kayit['ariza_ucret'] is not none else '0' }}">
+            <input type="text" name="ariza_ucret" value="{{ kayit['ariza_ucret'] if kayit and kayit['ariza_ucret'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('ariza_ucret') }}
         <div>
             <label>Alınan Ücret</label>
-            <input type="text" name="alinan_ucret" value="{{ kayit['alinan_ucret'] if kayit and kayit['alinan_ucret'] is not none else '0' }}">
+            <input type="text" name="alinan_ucret" value="{{ kayit['alinan_ucret'] if kayit and kayit['alinan_ucret'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('alinan_ucret') }}
 

@@ -106,12 +106,12 @@
 
         <div>
             <label>Sayaç Tutarı</label>
-            <input type="text" name="sayac_tutari" value="{{ kayit['sayac_tutari'] if kayit and kayit['sayac_tutari'] is not none else '0' }}">
+            <input type="text" name="sayac_tutari" value="{{ kayit['sayac_tutari'] if kayit and kayit['sayac_tutari'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('sayac_tutari') }}
         <div>
             <label>Alınan Tutar</label>
-            <input type="text" name="alinan_tutar" value="{{ kayit['alinan_tutar'] if kayit and kayit['alinan_tutar'] is not none else '0' }}">
+            <input type="text" name="alinan_tutar" value="{{ kayit['alinan_tutar'] if kayit and kayit['alinan_tutar'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('alinan_tutar') }}
         {% if not kayit %}
@@ -136,7 +136,7 @@
 
         <div>
             <label>Malzeme Tutarı</label>
-            <input type="text" name="malzeme_tutari" value="{{ kayit['malzeme_tutari'] if kayit and kayit['malzeme_tutari'] is not none else '0' }}">
+            <input type="text" name="malzeme_tutari" value="{{ kayit['malzeme_tutari'] if kayit and kayit['malzeme_tutari'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('malzeme_tutari') }}
         {% if kayit %}
@@ -189,12 +189,12 @@
 
         <div>
             <label>Muhtara Ödenecek</label>
-            <input type="text" name="muhtara_odenecek" value="{{ kayit['muhtara_odenecek'] if kayit and kayit['muhtara_odenecek'] is not none else '0' }}">
+            <input type="text" name="muhtara_odenecek" value="{{ kayit['muhtara_odenecek'] if kayit and kayit['muhtara_odenecek'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('muhtara_odenecek') }}
         <div>
             <label>Muhtara Ödenen</label>
-            <input type="text" name="muhtara_odenen" value="{{ kayit['muhtara_odenen'] if kayit and kayit['muhtara_odenen'] is not none else '0' }}">
+            <input type="text" name="muhtara_odenen" value="{{ kayit['muhtara_odenen'] if kayit and kayit['muhtara_odenen'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('muhtara_odenen') }}
 
