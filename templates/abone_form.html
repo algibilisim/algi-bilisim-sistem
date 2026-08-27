@@ -114,6 +114,13 @@
             <input type="text" name="alinan_tutar" value="{{ kayit['alinan_tutar'] if kayit and kayit['alinan_tutar'] is not none else '0' }}">
         </div>
         {{ ozel_alanlari_bas('alinan_tutar') }}
+        {% if not kayit %}
+        <p class="tam-genislik" style="margin:2px 0 0; font-size:12px; color:#888;">
+            Girdiğiniz tutar otomatik olarak önce Malzeme Tutarı'ndan, kalan varsa
+            (veya Malzeme Tutarı zaten karşılanmışsa tamamı) Sayaç Tutarı'ndan düşülür —
+            ayrıca Malzeme Alınan'ı ayrıca girmenize gerek yok.
+        </p>
+        {% endif %}
         <div>
             <label>Senet Sahibi Adı</label>
             <input type="text" name="senet_sahibi_adi" value="{{ kayit['senet_sahibi_adi'] if kayit and kayit['senet_sahibi_adi'] is not none else '' }}">
@@ -132,17 +139,19 @@
             <input type="text" name="malzeme_tutari" value="{{ kayit['malzeme_tutari'] if kayit and kayit['malzeme_tutari'] is not none else '0' }}">
         </div>
         {{ ozel_alanlari_bas('malzeme_tutari') }}
+        {% if kayit %}
         <div>
             <label>Malzeme Alınan</label>
-            <input type="text" name="malzeme_alinan" value="{{ kayit['malzeme_alinan'] if kayit and kayit['malzeme_alinan'] is not none else '0' }}">
+            <input type="text" name="malzeme_alinan" value="{{ kayit['malzeme_alinan'] if kayit['malzeme_alinan'] is not none else '0' }}">
         </div>
+        {% endif %}
         {{ ozel_alanlari_bas('malzeme_alinan') }}
 
         <div class="ayirici">Tarih / Ödeme</div>
 
         <div>
             <label>Montaj Tarihi</label>
-            <input type="date" name="montaj_tarihi" value="{{ kayit['montaj_tarihi'] if kayit and kayit['montaj_tarihi'] is not none else '' }}">
+            <input type="date" name="montaj_tarihi" value="{{ kayit['montaj_tarihi'] if kayit and kayit['montaj_tarihi'] is not none else (bugun or '') }}">
         </div>
         {{ ozel_alanlari_bas('montaj_tarihi') }}
         <div>
