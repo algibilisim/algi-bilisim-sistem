@@ -5149,6 +5149,7 @@ def abone_yeni():
         sonraki_senet_no=_sonraki_senet_no(db),
         fotograflar=[], imzalar={"montaj": False, "abone": False},
         ozel_alan_harita=_ozel_alan_harita(_ozel_alanlari_getir(db, "abone")),
+        bugun=datetime.now().strftime("%Y-%m-%d"),
     )
 
 
@@ -5254,13 +5255,16 @@ def _abone_kaydet(abone_id):
     yeni_kayit_mi = abone_id is None
 
     if yeni_kayit_mi:
-        # Yeni abone kaydında "Alınan Tutar" / "Malzeme Alınan" alanlarına
-        # girilen miktar, montaj sırasında peşin tahsil edilen tutarı temsil
-        # eder — formdan okunup hem abone satırına hem de (aşağıda, kayıt
-        # oluştuktan sonra) tahsilat geçmişine işlenir ki Sayaç/Malzeme Kalan
-        # doğru hesaplansın ve Tahsilat sayfasında da görünsün.
-        alinan_tutar = _sayilastir(f.get("alinan_tutar"))
-        malzeme_alinan = _sayilastir(f.get("malzeme_alinan"))
+        # Yeni abone kaydında tek bir "Alınan Tutar" alanı girilir (Sayaç ve
+        # Malzeme için ayrı ayrı değil) — Tahsilat sayfasındaki otomatik
+        # dağıtımla aynı mantıkla önce Malzeme Tutarı'ndan, kalanı varsa
+        # Sayaç Tutarı'ndan düşülür. Bu değerler hem abone satırına hem de
+        # (aşağıda, kayıt oluştuktan sonra) tahsilat geçmişine işlenir ki
+        # Sayaç/Malzeme Kalan doğru hesaplansın ve Tahsilat sayfasında da
+        # görünsün.
+        girilen_alinan_toplam = _sayilastir(f.get("alinan_tutar"))
+        malzeme_alinan = min(girilen_alinan_toplam, malzeme_tutari) if malzeme_tutari > 0 else 0.0
+        alinan_tutar = girilen_alinan_toplam - malzeme_alinan
     else:
         # Mevcut bir aboneyi düzenlerken bu iki alan kasıtlı olarak formdan
         # OKUNMAZ — Alınan/Malzeme Alınan tutarları yalnızca "Tahsilat" sayfası
@@ -5954,6 +5958,22 @@ def _ariza_kaydet(ariza_id):
             list(alanlar.values()),
         )
         ariza_id = cur.fetchone()["id"]
+
+        # Yeni arıza kaydı oluşturulurken "Alınan Ücret" alanına girilen tutarı
+        # Tahsilat geçmişine de işle — abone kaydındaki aynı düzeltmeye bkz.
+        # (_abone_kaydet) — böylece ariza_tahsilat sayfasındaki "Tahsilat
+        # Geçmişi" listesi ile ariza.alinan_ucret sütunu tutarlı kalır.
+        if alinan_ucret:
+            tahsilat_tarihi = (
+                f.get("teslim_tarihi", "").strip()
+                or f.get("gelis_tarihi", "").strip()
+                or datetime.now().strftime("%Y-%m-%d")
+            )
+            cur.execute(
+                "INSERT INTO ariza_tahsilat (ariza_id, tarih, tutar, odeme_sekli, odemeyi_yapan, aciklama) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                (ariza_id, tahsilat_tarihi, alinan_ucret, "", "", "Arıza kaydı sırasında alınan"),
+            )
     else:
         set_ifadesi = ", ".join([f"{k} = %s" for k in alanlar.keys()])
         cur.execute(f"UPDATE ariza SET {set_ifadesi}, updated_at = NOW() WHERE id = %s", list(alanlar.values()) + [ariza_id])
