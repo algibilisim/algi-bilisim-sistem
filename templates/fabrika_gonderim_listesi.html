@@ -1,6 +1,9 @@
 {% extends "base.html" %}
-{% block icerik %}
-<h2>Gönderimler</h2>
+{% block title %}Gönderimler - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+<div class="sayfa-basligi">
+    <h2>Gönderimler</h2>
+</div>
 <p><a href="{{ url_for('fabrika_listesi') }}">&larr; Fabrika/Tamir listesine dön</a></p>
 
 <table class="liste-tablo">
