@@ -429,3 +429,11 @@ ALTER TABLE fabrika_gonderim ADD COLUMN IF NOT EXISTS yetkili_bayii TEXT;
 -- Tamir kaydına alınan sayacın abonede kayıtlı "Abone Kartı"nın da beraberinde
 -- alınıp alınmadığını belirtir: alindi / alinmadi.
 ALTER TABLE fabrika_tamir ADD COLUMN IF NOT EXISTS abone_karti TEXT NOT NULL DEFAULT 'alinmadi';
+
+-- Gönderimler listesindeki '#' sırası artık kayıt eklenme sırası (id) değil,
+-- Gönderim Tarihi'ne göre otomatik hesaplanan bir sıra numarasıdır — bkz.
+-- app.py'deki _fabrika_gonderim_sira_numaralarini_yenile. Bir gönderim
+-- sonradan (geçmiş bir tarihle) eklendiğinde ya da bir gönderim silindiğinde
+-- bu sütun otomatik olarak yeniden hesaplanır.
+ALTER TABLE fabrika_gonderim ADD COLUMN IF NOT EXISTS sira_no INTEGER;
+CREATE INDEX IF NOT EXISTS idx_fabrika_gonderim_sira_no ON fabrika_gonderim(sira_no);
