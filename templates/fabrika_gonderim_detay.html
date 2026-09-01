@@ -53,6 +53,11 @@
 <div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:20px;">
     <h3 style="margin-top:0;">Koli {{ koli['koli_no'] }} ({{ koli['kayitlar']|length }} sayaç)</h3>
 
+    <div style="margin-bottom:10px;">
+        <a class="btn" href="{{ url_for('fabrika_koli_kayit_ekle', koli_id=koli['id']) }}">+ Bu Koliye Kayıt Ekle</a>
+    </div>
+
+
     <form method="post" action="{{ url_for('fabrika_koli_duzenle', koli_id=koli['id']) }}" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin-bottom:14px;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div>
