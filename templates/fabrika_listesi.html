@@ -9,6 +9,7 @@
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <a class="btn btn-yesil" href="{{ url_for('fabrika_yeni') }}">+ Yeni Kayıt</a>
         <a class="btn" href="{{ url_for('fabrika_gonderim_listesi') }}">Gönderimler / Sayaç Durum Raporu</a>
+        <a class="btn" href="{{ url_for('fabrika_silinenler') }}">🗑️ Silinenler</a>
     </div>
 </div>
 
@@ -78,7 +79,7 @@
                             onclick="var f=document.createElement('form'); f.method='post'; f.action='{{ url_for('fabrika_sil', kayit_id=k['id']) }}';
                                      var i=document.createElement('input'); i.type='hidden'; i.name='csrf_token'; i.value='{{ csrf_token() }}';
                                      f.appendChild(i); document.body.appendChild(f);
-                                     if (confirm('Bu tamir kaydını silmek istediğinize emin misiniz?')) { f.submit(); }">🗑️</button>
+                                     if (confirm('Bu tamir kaydını silmek istediğinize emin misiniz? (Silinenler sayfasından geri yükleyebilirsiniz)')) { f.submit(); }">🗑️</button>
                 </td>
             </tr>
             {% else %}

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Silinenler - Fabrika / Tamir - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+
+<div class="sayfa-basligi">
+    <h2>Silinenler (Fabrika / Tamir)</h2>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <a class="btn" href="{{ url_for('fabrika_listesi') }}">Fabrika / Tamir'e Dön</a>
+    </div>
+</div>
+
+<p style="font-size:12.5px; color:#888; margin-top:-8px; margin-bottom:16px;">
+    Burada, "Fabrika / Tamir" listesinden silinmiş kayıtlar durur. Yanlışlıkla silinen bir kaydı
+    "Geri Yükle" ile eski haline (koli/gönderim bilgisiyle birlikte) döndürebilirsiniz. "Kalıcı Olarak Sil"
+    ise kaydı veritabanından tamamen kaldırır ve bu işlem geri alınamaz.
+</p>
+
+<div class="tablo-kaydirici">
+<table>
+    <thead>
+        <tr>
+            <th>Seri No</th>
+            <th>Abone Adı</th>
+            <th>Köy Adı</th>
+            <th>Durum (silinmeden önce)</th>
+            <th>Koli / Gönderim</th>
+            <th>Silinme Tarihi</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for k in kayitlar %}
+        <tr>
+            <td>{{ k['seri_no'] }}</td>
+            <td>{{ k['abone_adi'] or '' }}</td>
+            <td>{{ k['koy_adi'] or '' }}</td>
+            <td>{{ durum_etiketleri.get(k['durum'], k['durum']) }}</td>
+            <td>
+                {% if k['koli_gonderim_id'] %}
+                Gönderim #{{ k['koli_gonderim_id'] }} — Koli {{ k['koli_no'] }}
+                {% else %}
+                -
+                {% endif %}
+            </td>
+            <td>{{ k['silinme_tarihi'].strftime('%d.%m.%Y %H:%M') if k['silinme_tarihi'] else '' }}</td>
+            <td class="islem-hucre">
+                <form method="post" action="{{ url_for('fabrika_geri_yukle', kayit_id=k['id']) }}" style="display:inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-yesil">Geri Yükle</button>
+                </form>
+                <button type="button" class="btn btn-kirmizi" data-ipucu="Kalıcı Olarak Sil" aria-label="Kalıcı Olarak Sil"
+                        onclick="var f=document.createElement('form'); f.method='post'; f.action='{{ url_for('fabrika_kalici_sil', kayit_id=k['id']) }}';
+                                 var i=document.createElement('input'); i.type='hidden'; i.name='csrf_token'; i.value='{{ csrf_token() }}';
+                                 f.appendChild(i); document.body.appendChild(f);
+                                 if (confirm('Bu kaydı kalıcı olarak silmek istediğinize emin misiniz? Bu işlem GERİ ALINAMAZ.')) { f.submit(); }">Kalıcı Olarak Sil</button>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7">Silinmiş kayıt yok.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+{% endblock %}
