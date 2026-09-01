@@ -3130,7 +3130,7 @@ def _fabrika_rapor_verisi(db, gonderim_id):
     cur.execute("SELECT * FROM fabrika_koli WHERE gonderim_id = %s ORDER BY koli_no", (gonderim_id,))
     koliler = cur.fetchall()
     for koli in koliler:
-        cur.execute("SELECT * FROM fabrika_tamir WHERE koli_id = %s ORDER BY id", (koli["id"],))
+        cur.execute("SELECT * FROM fabrika_tamir WHERE koli_id = %s AND silindi_mi IS NOT TRUE ORDER BY id", (koli["id"],))
         koli["kayitlar"] = cur.fetchall()
     cur.close()
     satici_unvan = _ayar_getir(db, "fatura_satici_unvan") or ""
@@ -3188,7 +3188,8 @@ def fabrika_listesi():
     cur = db.cursor()
     sql = (
         "SELECT ft.*, fk.koli_no, fk.gonderim_id AS koli_gonderim_id "
-        "FROM fabrika_tamir ft LEFT JOIN fabrika_koli fk ON fk.id = ft.koli_id WHERE 1=1"
+        "FROM fabrika_tamir ft LEFT JOIN fabrika_koli fk ON fk.id = ft.koli_id "
+        "WHERE ft.silindi_mi IS NOT TRUE"
     )
     params = []
     if durum_filtre and durum_filtre in FABRIKA_DURUM_ETIKETLERI:
@@ -3269,6 +3270,9 @@ def fabrika_duzenle(kayit_id):
     if kayit is None:
         flash("Tamir kaydı bulunamadı.")
         return redirect(url_for("fabrika_listesi"))
+    if kayit["silindi_mi"]:
+        flash("Bu kayıt silinmiş durumda. Düzenleyebilmek için önce Silinenler sayfasından geri yükleyin.")
+        return redirect(url_for("fabrika_silinenler"))
 
     if request.method == "POST":
         seri_no = request.form.get("seri_no", "").strip()
@@ -3343,14 +3347,70 @@ def fabrika_duzenle(kayit_id):
 @app.route("/fabrika/<int:kayit_id>/sil", methods=["POST"])
 @login_required
 def fabrika_sil(kayit_id):
-    """Bir tamir kaydını siler."""
+    """Bir tamir kaydını siler. Kayıt veritabanından kalıcı olarak silinmez,
+    'silindi_mi' işaretlenip Silinenler sayfasına taşınır — yanlışlıkla
+    silinen bir kayıt oradan geri yüklenebilir (bkz. fabrika_silinenler /
+    fabrika_geri_yukle)."""
     db = get_db()
     cur = db.cursor()
-    cur.execute("DELETE FROM fabrika_tamir WHERE id = %s", (kayit_id,))
+    cur.execute(
+        "UPDATE fabrika_tamir SET silindi_mi = TRUE, silinme_tarihi = NOW() WHERE id = %s",
+        (kayit_id,),
+    )
     db.commit()
     cur.close()
-    flash("Tamir kaydı silindi.")
+    flash("Tamir kaydı silindi. Yanlışlıkla sildiyseniz 'Silinenler' sayfasından geri yükleyebilirsiniz.")
     return redirect(url_for("fabrika_listesi"))
+
+
+@app.route("/fabrika/silinenler")
+@login_required
+def fabrika_silinenler():
+    """Silinmiş (silindi_mi=TRUE) tamir kayıtlarını listeler; buradan bir
+    kayıt geri yüklenebilir ya da kalıcı olarak silinebilir."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT ft.*, fk.koli_no, fk.gonderim_id AS koli_gonderim_id "
+        "FROM fabrika_tamir ft LEFT JOIN fabrika_koli fk ON fk.id = ft.koli_id "
+        "WHERE ft.silindi_mi IS TRUE ORDER BY ft.silinme_tarihi DESC"
+    )
+    kayitlar = cur.fetchall()
+    cur.close()
+    return render_template(
+        "fabrika_silinenler.html", kayitlar=kayitlar, durum_etiketleri=FABRIKA_DURUM_ETIKETLERI,
+    )
+
+
+@app.route("/fabrika/<int:kayit_id>/geri-yukle", methods=["POST"])
+@login_required
+def fabrika_geri_yukle(kayit_id):
+    """Silinenler sayfasından bir kaydı eski durumuna geri getirir."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "UPDATE fabrika_tamir SET silindi_mi = FALSE, silinme_tarihi = NULL WHERE id = %s",
+        (kayit_id,),
+    )
+    db.commit()
+    cur.close()
+    flash("Tamir kaydı geri yüklendi.")
+    return redirect(url_for("fabrika_silinenler"))
+
+
+@app.route("/fabrika/<int:kayit_id>/kalici-sil", methods=["POST"])
+@login_required
+def fabrika_kalici_sil(kayit_id):
+    """Silinenler sayfasındaki bir kaydı veritabanından kalıcı olarak siler
+    (fotoğrafları da fabrika_fotograf tablosundaki ON DELETE CASCADE ile
+    birlikte gider). Bu işlem geri alınamaz."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM fabrika_tamir WHERE id = %s AND silindi_mi IS TRUE", (kayit_id,))
+    db.commit()
+    cur.close()
+    flash("Tamir kaydı kalıcı olarak silindi.")
+    return redirect(url_for("fabrika_silinenler"))
 
 
 @app.route("/fabrika-fotograf/<int:foto_id>")
@@ -3402,7 +3462,7 @@ def fabrika_gonderim_olustur():
     db = get_db()
     cur = db.cursor()
     cur.execute(
-        "SELECT * FROM fabrika_tamir WHERE id = ANY(%s) AND durum = 'beklemede' AND koli_id IS NULL "
+        "SELECT * FROM fabrika_tamir WHERE id = ANY(%s) AND durum = 'beklemede' AND koli_id IS NULL AND silindi_mi IS NOT TRUE "
         "ORDER BY id", (id_listesi,),
     )
     kayitlar = cur.fetchall()
@@ -3448,7 +3508,7 @@ def fabrika_gonderim_kaydet():
     db = get_db()
     cur = db.cursor()
     cur.execute(
-        "SELECT id FROM fabrika_tamir WHERE id = ANY(%s) AND durum = 'beklemede' AND koli_id IS NULL "
+        "SELECT id FROM fabrika_tamir WHERE id = ANY(%s) AND durum = 'beklemede' AND koli_id IS NULL AND silindi_mi IS NOT TRUE "
         "ORDER BY id", (id_listesi,),
     )
     gecerli_idler = [r["id"] for r in cur.fetchall()]
@@ -3539,7 +3599,7 @@ def fabrika_gonderim_detay(gonderim_id):
     cur.execute("SELECT * FROM fabrika_koli WHERE gonderim_id = %s ORDER BY koli_no", (gonderim_id,))
     koliler = cur.fetchall()
     for koli in koliler:
-        cur.execute("SELECT * FROM fabrika_tamir WHERE koli_id = %s ORDER BY id", (koli["id"],))
+        cur.execute("SELECT * FROM fabrika_tamir WHERE koli_id = %s AND silindi_mi IS NOT TRUE ORDER BY id", (koli["id"],))
         koli["kayitlar"] = cur.fetchall()
     yetkili_bayii_listesi = _fabrika_yetkili_bayii_listesi(db)
     cur.close()
