@@ -3636,6 +3636,80 @@ def fabrika_koli_duzenle(koli_id):
     return redirect(url_for("fabrika_gonderim_detay", gonderim_id=gonderim_id))
 
 
+@app.route("/fabrika/koli/<int:koli_id>/kayit-ekle", methods=["GET", "POST"])
+@login_required
+def fabrika_koli_kayit_ekle(koli_id):
+    """Var olan bir koliye, normal 'Beklemede -> Gönderim Oluştur' akışından
+    geçmeden doğrudan yeni bir tamir kaydı ekler. Özellikle yanlışlıkla
+    kalıcı olarak silinmiş (Silinenler'den bile geri gelemeyen, çünkü bu
+    özellik eklenmeden önce silinmiş) bir kaydı, ait olduğu koliye elle
+    tekrar girmek için kullanılır."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT fk.*, fg.gonderim_tarihi AS gonderim_ana_tarih "
+        "FROM fabrika_koli fk JOIN fabrika_gonderim fg ON fg.id = fk.gonderim_id "
+        "WHERE fk.id = %s", (koli_id,),
+    )
+    koli = cur.fetchone()
+    if koli is None:
+        cur.close()
+        flash("Koli bulunamadı.")
+        return redirect(url_for("fabrika_gonderim_listesi"))
+
+    if request.method == "POST":
+        seri_no = request.form.get("seri_no", "").strip()
+        if not seri_no:
+            flash("Seri No zorunludur.")
+            return redirect(url_for("fabrika_koli_kayit_ekle", koli_id=koli_id))
+        yerine_takildi = request.form.get("yerine_sayac_takildi") == "takildi"
+        abone_karti = request.form.get("abone_karti", "").strip()
+        if abone_karti not in ("alindi", "alinmadi"):
+            abone_karti = "alinmadi"
+        durum = request.form.get("durum", "").strip()
+        if durum not in ("gonderildi", "tamirde", "tamir_edildi", "iade_edildi"):
+            durum = "gonderildi"
+        gonderim_tarihi = koli["koli_tarihi"] or koli["gonderim_ana_tarih"]
+
+        cur.execute(
+            "INSERT INTO fabrika_tamir "
+            "(seri_no, abone_adi, koy_adi, telefon, ilk_montaj_tarihi, uretim_yili, "
+            "tespit_edilen_ariza, yerine_sayac_takildi, takilan_sayac_serisi, durum, "
+            "donus_tarihi, gonderim_tarihi, tamir_ucreti, parca_maliyeti, odeyen, "
+            "abone_karti, koli_id, olusturan_kullanici) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (
+                seri_no,
+                request.form.get("abone_adi", "").strip(),
+                request.form.get("koy_adi", "").strip(),
+                request.form.get("telefon", "").strip(),
+                request.form.get("ilk_montaj_tarihi", "").strip() or None,
+                request.form.get("uretim_yili", "").strip(),
+                request.form.get("tespit_edilen_ariza", "").strip(),
+                yerine_takildi,
+                request.form.get("takilan_sayac_serisi", "").strip() if yerine_takildi else "",
+                durum,
+                request.form.get("donus_tarihi", "").strip() or None,
+                gonderim_tarihi,
+                _sayi_veya(request.form.get("tamir_ucreti"), 0),
+                _sayi_veya(request.form.get("parca_maliyeti"), 0),
+                request.form.get("odeyen", "").strip(),
+                abone_karti,
+                koli_id,
+                session.get("kullanici_adi", ""),
+            ),
+        )
+        db.commit()
+        cur.close()
+        flash(f"Kayıt Koli {koli['koli_no']} içine eklendi.")
+        return redirect(url_for("fabrika_gonderim_detay", gonderim_id=koli["gonderim_id"]))
+
+    cur.close()
+    return render_template(
+        "fabrika_koli_kayit_ekle.html", koli=koli, durum_etiketleri=FABRIKA_DURUM_ETIKETLERI,
+    )
+
+
 @app.route("/fabrika/gonderim/<int:gonderim_id>/rapor")
 @login_required
 def fabrika_rapor(gonderim_id):
