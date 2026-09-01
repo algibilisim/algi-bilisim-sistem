@@ -437,3 +437,12 @@ ALTER TABLE fabrika_tamir ADD COLUMN IF NOT EXISTS abone_karti TEXT NOT NULL DEF
 -- bu sütun otomatik olarak yeniden hesaplanır.
 ALTER TABLE fabrika_gonderim ADD COLUMN IF NOT EXISTS sira_no INTEGER;
 CREATE INDEX IF NOT EXISTS idx_fabrika_gonderim_sira_no ON fabrika_gonderim(sira_no);
+
+-- Bir tamir kaydı "Sil" ile silindiğinde artık veritabanından kalıcı olarak
+-- kaldırılmıyor; silindi_mi=TRUE olarak işaretlenip Silinenler sayfasına
+-- taşınıyor, buradan yanlışlıkla silinen bir kayıt geri yüklenebiliyor
+-- (bkz. app.py'deki fabrika_sil / fabrika_silinenler / fabrika_geri_yukle /
+-- fabrika_kalici_sil).
+ALTER TABLE fabrika_tamir ADD COLUMN IF NOT EXISTS silindi_mi BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE fabrika_tamir ADD COLUMN IF NOT EXISTS silinme_tarihi TIMESTAMP;
+CREATE INDEX IF NOT EXISTS idx_fabrika_tamir_silindi_mi ON fabrika_tamir(silindi_mi);
