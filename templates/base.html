@@ -13,6 +13,27 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ALGI BİLİŞİM">
+
+<style>
+/* Sesli Doldurma — her alanın yanındaki küçük mikrofon ve formun üstündeki
+   genel mikrofon butonu için. Bkz. body sonundaki <script>. */
+.ses-mikrofon-buton {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: 4px 0 0 6px; padding: 0;
+    border-radius: 50%; border: 1px solid #d8dcd9; background: #fff;
+    font-size: 13px; cursor: pointer; line-height: 1; vertical-align: middle;
+}
+.ses-mikrofon-buton.ses-dinliyor { background: #e8720c; border-color: #e8720c; animation: sesNabiz 1s infinite; }
+.ses-genel-mikrofon {
+    display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin-bottom: 12px; padding: 8px 14px; border-radius: 20px;
+    border: 1px solid #d8dcd9; background: #fff; cursor: pointer; font-size: 13px;
+}
+.ses-genel-mikrofon.ses-dinliyor { background: #fdece0; border-color: #e8720c; }
+.ses-genel-durum { font-size: 12px; color: #666; }
+@keyframes sesNabiz { 0%,100% { box-shadow: 0 0 0 0 rgba(232,114,12,0.5); } 50% { box-shadow: 0 0 0 6px rgba(232,114,12,0); } }
+.ses-dolduruldu { transition: background-color .2s; background-color: #e6f4ea !important; border-radius: 6px; }
+</style>
 </head>
 <body>
 {% if session.get('user_id') %}
@@ -392,6 +413,216 @@ function kaydirmaAlanlariniBoyutlandir() {
 document.addEventListener('DOMContentLoaded', kaydirmaAlanlariniBoyutlandir);
 window.addEventListener('load', kaydirmaAlanlariniBoyutlandir);
 window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
+</script>
+
+<script>
+// ============================================================================
+// SESLİ DOLDURMA — tüm formlarda otomatik çalışır, her form için ayrı ayrı
+// kod yazmaya gerek yok. Sayfa açıldığında her <form> içindeki <label>+alan
+// çiftlerini kendisi bulur (bkz. _sesAlanlariniBul), her alanın yanına küçük
+// bir 🎤 butonu ekler VE formun üstüne "Sesli Doldur" adlı genel bir mikrofon
+// koyar. Genel mikrofonla sürekli konuşulabilir; her cümlenin başında
+// söylenen alan adı (etiket) tanınıp değerin o alana yazılması sağlanır
+// (örn. "baba adı Ömer" -> Baba Adı kutusuna "Ömer" yazılır), o an başka bir
+// kutu seçili/tıklı olsa bile.
+//
+// Tarayıcı desteği yoksa (Web Speech API), hiçbir mikrofon butonu eklenmez —
+// sayfa normal şekilde çalışmaya devam eder.
+(function () {
+    var _SesTanima = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!_SesTanima) { return; }
+
+    var _HARIC_TURLER = ['hidden', 'checkbox', 'radio', 'file', 'submit', 'button',
+                          'image', 'reset', 'color', 'range', 'date', 'password'];
+
+    function _sesNormallestir(s) {
+        return (s || '')
+            .toLocaleLowerCase('tr')
+            .replace(/ı/g, 'i').replace(/i̇/g, 'i')
+            .replace(/ş/g, 's').replace(/ğ/g, 'g')
+            .replace(/ü/g, 'u').replace(/ö/g, 'o').replace(/ç/g, 'c')
+            .replace(/[*:]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    function _sesAlanlariniBul(kapsayici) {
+        var harita = [];
+        var gorulenler = [];
+        kapsayici.querySelectorAll('label').forEach(function (etiketEl) {
+            var etiketHam = (etiketEl.textContent || '').replace(/\*/g, '').trim();
+            if (!etiketHam) { return; }
+            var alan = null;
+            var forId = etiketEl.getAttribute('for');
+            if (forId) {
+                try { alan = kapsayici.querySelector('#' + CSS.escape(forId)); } catch (e) {}
+            }
+            if (!alan) { alan = etiketEl.querySelector('input, select, textarea'); }
+            if (!alan) {
+                var sonraki = etiketEl.nextElementSibling;
+                var deneme = 0;
+                while (sonraki && deneme < 3 && !alan) {
+                    if (sonraki.matches && sonraki.matches('input, select, textarea')) {
+                        alan = sonraki;
+                    } else if (sonraki.querySelector) {
+                        alan = sonraki.querySelector('input, select, textarea');
+                    }
+                    sonraki = sonraki.nextElementSibling;
+                    deneme++;
+                }
+            }
+            if (!alan || gorulenler.indexOf(alan) !== -1) { return; }
+            if (alan.disabled || alan.readOnly) { return; }
+            var tur = alan.tagName === 'SELECT' ? 'select' : (alan.tagName === 'TEXTAREA' ? 'textarea' : (alan.type || 'text'));
+            if (_HARIC_TURLER.indexOf(tur) !== -1) { return; }
+            gorulenler.push(alan);
+            harita.push({ etiket: etiketHam, normalize: _sesNormallestir(etiketHam), eleman: alan, tur: tur });
+        });
+        return harita;
+    }
+
+    function _sesDegerAta(alan, tur, metin) {
+        metin = (metin || '').trim();
+        if (!metin) { return false; }
+        if (tur === 'select') {
+            var norm = _sesNormallestir(metin);
+            var eslesen = null;
+            for (var i = 0; i < alan.options.length; i++) {
+                if (_sesNormallestir(alan.options[i].textContent).indexOf(norm) !== -1) { eslesen = alan.options[i]; break; }
+            }
+            if (!eslesen) { return false; }
+            alan.value = eslesen.value;
+        } else {
+            alan.value = metin;
+        }
+        alan.dispatchEvent(new Event('input', { bubbles: true }));
+        alan.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+    }
+
+    function _sesAlaniYanip(alan) {
+        var kutu = alan.closest('div') || alan;
+        kutu.classList.add('ses-dolduruldu');
+        setTimeout(function () { kutu.classList.remove('ses-dolduruldu'); }, 900);
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('form').forEach(function (form) {
+            var alanHaritasi = _sesAlanlariniBul(form);
+            if (alanHaritasi.length === 0) { return; }
+
+            // --- Alan bazlı mikrofonlar ---
+            alanHaritasi.forEach(function (kayit) {
+                var buton = document.createElement('button');
+                buton.type = 'button';
+                buton.className = 'ses-mikrofon-buton no-print';
+                buton.title = 'Sesle Doldur: ' + kayit.etiket;
+                buton.textContent = '🎤';
+                kayit.eleman.insertAdjacentElement('afterend', buton);
+                buton.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    var tan = new _SesTanima();
+                    tan.lang = 'tr-TR';
+                    tan.continuous = false;
+                    tan.interimResults = false;
+                    buton.classList.add('ses-dinliyor');
+                    tan.onresult = function (ev) {
+                        var metin = ev.results[0][0].transcript;
+                        if (_sesDegerAta(kayit.eleman, kayit.tur, metin)) {
+                            _sesAlaniYanip(kayit.eleman);
+                        }
+                    };
+                    tan.onerror = function () { buton.classList.remove('ses-dinliyor'); };
+                    tan.onend = function () { buton.classList.remove('ses-dinliyor'); };
+                    try { tan.start(); } catch (hata) { buton.classList.remove('ses-dinliyor'); }
+                });
+            });
+
+            // --- Genel form mikrofonu: "alan adı ... değer" sürekli dinler ---
+            if (alanHaritasi.length >= 2) {
+                var genelButon = document.createElement('button');
+                genelButon.type = 'button';
+                genelButon.className = 'ses-genel-mikrofon no-print';
+                genelButon.innerHTML = '🎤 Sesli Doldur (Genel) ';
+                var durumEtiketi = document.createElement('span');
+                durumEtiketi.className = 'ses-genel-durum';
+                genelButon.appendChild(durumEtiketi);
+                form.insertAdjacentElement('beforebegin', genelButon);
+
+                var siraliHarita = alanHaritasi.slice().sort(function (a, b) {
+                    return b.normalize.length - a.normalize.length;
+                });
+
+                var dinleniyor = false;
+                var tanima = null;
+
+                function _genelDurdur() {
+                    dinleniyor = false;
+                    genelButon.classList.remove('ses-dinliyor');
+                    durumEtiketi.textContent = '';
+                    if (tanima) { try { tanima.stop(); } catch (e) {} }
+                }
+
+                function _genelBaslat() {
+                    tanima = new _SesTanima();
+                    tanima.lang = 'tr-TR';
+                    tanima.continuous = true;
+                    tanima.interimResults = true;
+                    dinleniyor = true;
+                    genelButon.classList.add('ses-dinliyor');
+                    durumEtiketi.textContent = 'Dinleniyor... (örn: "baba adı Ömer")';
+
+                    tanima.onresult = function (ev) {
+                        for (var i = ev.resultIndex; i < ev.results.length; i++) {
+                            if (!ev.results[i].isFinal) { continue; }
+                            var parca = ev.results[i][0].transcript;
+                            var normParca = _sesNormallestir(parca);
+                            var bulunanKayit = null;
+                            var bulunanDeger = '';
+                            for (var j = 0; j < siraliHarita.length; j++) {
+                                var e = siraliHarita[j];
+                                if (normParca === e.normalize) { bulunanKayit = e; bulunanDeger = ''; break; }
+                                if (normParca.indexOf(e.normalize + ' ') === 0) {
+                                    bulunanKayit = e;
+                                    bulunanDeger = parca.slice(e.etiket.length).replace(/^[\s:,-]+/, '');
+                                    break;
+                                }
+                            }
+                            if (bulunanKayit && bulunanDeger) {
+                                if (_sesDegerAta(bulunanKayit.eleman, bulunanKayit.tur, bulunanDeger)) {
+                                    _sesAlaniYanip(bulunanKayit.eleman);
+                                    durumEtiketi.textContent = bulunanKayit.etiket + ': ' + bulunanDeger.trim();
+                                } else {
+                                    durumEtiketi.textContent = bulunanKayit.etiket + ' — eşleşen seçenek bulunamadı';
+                                }
+                            } else if (bulunanKayit) {
+                                durumEtiketi.textContent = bulunanKayit.etiket + ' — değer duyulamadı, tekrar deneyin';
+                            } else if (normParca) {
+                                durumEtiketi.textContent = 'Eşleşme yok: "' + parca + '"';
+                            }
+                        }
+                    };
+                    tanima.onerror = function (ev) {
+                        if (ev.error === 'no-speech' || ev.error === 'aborted') { return; }
+                        durumEtiketi.textContent = 'Hata: mikrofon izni gerekebilir';
+                        _genelDurdur();
+                    };
+                    tanima.onend = function () {
+                        if (dinleniyor) {
+                            try { tanima.start(); } catch (e) { _genelDurdur(); }
+                        }
+                    };
+                    try { tanima.start(); } catch (hata) { _genelDurdur(); }
+                }
+
+                genelButon.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    if (dinleniyor) { _genelDurdur(); } else { _genelBaslat(); }
+                });
+            }
+        });
+    });
+})();
 </script>
 </body>
 </html>
