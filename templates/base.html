@@ -438,7 +438,7 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
     var _SesTanima = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!_SesTanima) { return; }
 
-    var _HARIC_TURLER = ['hidden', 'checkbox', 'radio', 'file', 'submit', 'button',
+    var _HARIC_TURLER = ['hidden', 'file', 'submit', 'button',
                           'image', 'reset', 'color', 'range', 'password'];
 
     function _sesNormallestir(s) {
@@ -663,11 +663,19 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
 
     document.addEventListener('DOMContentLoaded', function () {
         document.querySelectorAll('form').forEach(function (form) {
-            var alanHaritasi = _sesAlanlariniBul(form);
-            var komutHaritasi = _sesKomutlariniBul(form);
+            var tumAlanlar = _sesAlanlariniBul(form);
+            // Onay kutuları (checkbox/radio) bir "değer" söylenmesini beklemez —
+            // sadece başlıkları söylenince tıklanmış/işaretlenmiş gibi davranır,
+            // bu yüzden bunlar da "komut" (buton) listesine dahil ediliyor.
+            var alanHaritasi = tumAlanlar.filter(function (k) { return k.tur !== 'checkbox' && k.tur !== 'radio'; });
+            var isaretKutulari = tumAlanlar.filter(function (k) { return k.tur === 'checkbox' || k.tur === 'radio'; })
+                .map(function (k) { return { etiket: k.etiket, normalize: k.normalize, eleman: k.eleman }; });
+            var komutHaritasi = _sesKomutlariniBul(form).concat(isaretKutulari);
             if (alanHaritasi.length === 0 && komutHaritasi.length === 0) { return; }
 
-            // --- Alan bazlı mikrofonlar ---
+            // --- Alan bazlı mikrofonlar (sadece değer girilen metin/seçim
+            //     alanları — onay kutuları hariç, onlar için genel mikrofon
+            //     yeterli, sadece adını söylemek işaretler/tıklar) ---
             alanHaritasi.forEach(function (kayit) {
                 var buton = document.createElement('button');
                 buton.type = 'button';
@@ -695,7 +703,8 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
             });
 
             // --- Genel form mikrofonu: "alan adı ... değer" ya da tek başına
-            //     bir düğme adı (örn. "Konum Al") sürekli dinlenir ---
+            //     bir düğme/onay kutusu adı (örn. "Konum Al", "Baba Adı")
+            //     sürekli dinlenir ---
             if (alanHaritasi.length >= 2 || komutHaritasi.length >= 1) {
                 var genelButon = document.createElement('button');
                 genelButon.type = 'button';
