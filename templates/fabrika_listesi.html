@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_sayfalama.html" as sayfalama_araci %}
 {% block title %}Fabrika / Tamir - ALGI BİLİŞİM{% endblock %}
 {% block content %}
 
@@ -6,6 +7,13 @@
 
 <div class="sayfa-basligi">
     <h2>Fabrika / Tamir</h2>
+    <div class="kayit-sayaci">
+        <span>FİLTRELİ KAYIT : {{ filtreli_kayit }}</span>
+        <span>TOPLAM KAYIT : {{ toplam_kayit }}</span>
+    </div>
+    <a class="btn no-print" href="?{{ sira_toggle_qs }}" title="Sıralama yönünü değiştir">
+        Sıra No: {{ 'Küçükten Büyüğe ▲' if sira == 'asc' else 'Büyükten Küçüğe ▼' }}
+    </a>
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <a class="btn btn-yesil" href="{{ url_for('fabrika_yeni') }}">+ Yeni Kayıt</a>
         <a class="btn" href="{{ url_for('fabrika_gonderim_listesi') }}">Gönderimler / Sayaç Durum Raporu</a>
@@ -20,82 +28,138 @@
     {% endfor %}
 </div>
 
-<form method="get" style="margin-bottom:14px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+<form class="filtre-form no-print" method="get" style="flex-direction: column; align-items: stretch;">
     {% if durum_filtre %}<input type="hidden" name="durum" value="{{ durum_filtre }}">{% endif %}
-    <select name="koy" style="min-width:150px;">
-        <option value="">Tüm Köyler</option>
-        {% for k in koyler %}
-        <option value="{{ k['koy_adi'] }}" {% if k['koy_adi']==secili_koy %}selected{% endif %}>{{ k['koy_adi'] }}</option>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <input type="text" name="q" value="{{ q }}" placeholder="Aranacak kelime..." style="flex:2; min-width:200px;">
+        <select name="koy" style="flex:1; min-width:150px;">
+            <option value="">Tüm Köyler</option>
+            {% for k in koyler %}
+            <option value="{{ k['koy_adi'] }}" {% if k['koy_adi']==secili_koy %}selected{% endif %}>{{ k['koy_adi'] }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn">Filtrele</button>
+    </div>
+    <div class="arama-alanlari onay-kutu-grid" style="--satir-sayisi: {{ arama_satir }}; --satir-sayisi-2: {{ arama_satir_2 }};">
+        {% for anahtar, etiket in alan_listesi %}
+        <label>
+            <input type="checkbox" name="alan" value="{{ anahtar }}" {% if anahtar in secili_alanlar %}checked{% endif %}> {{ etiket }}
+        </label>
         {% endfor %}
-    </select>
-    <button type="submit" class="btn">Filtrele</button>
+    </div>
 </form>
 
-<form method="post" action="{{ url_for('fabrika_gonderim_olustur') }}">
+<div class="filtre-butonlari no-print">
+    <button type="button" class="btn" onclick="filtreTemizle('arama')">Arama Filtrelerini Temizle</button>
+    <button type="button" class="btn" onclick="filtreTemizle('sutun')">Sütun Filtrelerini Temizle</button>
+    <button type="button" class="btn" onclick="filtreTemizle('tumu')">Tüm Filtreleri Temizle</button>
+</div>
+
+{{ sayfalama_araci.goster(sayfa, toplam_sayfa, sayfalama_qs) }}
+
+<form method="get" id="kolon-filtre-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="q" value="{{ q }}">
+    <input type="hidden" name="koy" value="{{ secili_koy }}">
+    {% if durum_filtre %}<input type="hidden" name="durum" value="{{ durum_filtre }}">{% endif %}
+    {% for anahtar in secili_alanlar %}<input type="hidden" name="alan" value="{{ anahtar }}">{% endfor %}
+
     <div class="tablo-kaydirici">
     <table>
         <thead>
             <tr>
                 <th></th>
-                <th>Seri No</th>
-                <th>Abone Adı</th>
-                <th>Köy Adı</th>
-                <th>Üretim Yılı</th>
-                <th>Tespit Edilen Arıza</th>
-                <th>Yerine Sayaç</th>
-                <th>Durum</th>
+                {% for anahtar, etiket in kolon_listesi %}
+                <th>{{ etiket }}</th>
+                {% endfor %}
                 <th>Koli / Gönderim</th>
+                <th class="sabit-sutun"></th>
+            </tr>
+            <tr class="no-print">
                 <th></th>
+                {% for anahtar, etiket in kolon_listesi %}
+                <th class="kolon-filtre-th">
+                    <button type="button" class="btn filtre-ac-buton" data-hedef="ffiltre-{{ anahtar }}"
+                            data-tablo="fabrika_tamir" data-anahtar="{{ anahtar }}">
+                        {% if deger_secili[anahtar] %}{{ deger_secili[anahtar]|length }} seçili ▾{% elif haric_secili[anahtar] %}Tümü, {{ haric_secili[anahtar]|length }} hariç ▾{% else %}Tümü ▾{% endif %}
+                    </button>
+                    <div id="ffiltre-{{ anahtar }}" class="filtre-kutu">
+                        <div class="filtre-arama-kutusu">
+                            <input type="text" class="filtre-arama-input" placeholder="Ara..." autocomplete="off">
+                        </div>
+                        <div class="filtre-liste">
+                            <label class="tumu-satir"><input type="checkbox" class="tumu-tik"> Tümü</label>
+                            <p class="filtre-yukleniyor">Yükleniyor...</p>
+                            {% for v in deger_secili[anahtar] %}
+                            <input type="hidden" name="deger_{{ anahtar }}" value="{{ v }}" class="filtre-mevcut-gizli">
+                            {% endfor %}
+                            {% for v in haric_secili[anahtar] %}
+                            <input type="hidden" name="haric_{{ anahtar }}" value="{{ v }}" class="filtre-haric-gizli">
+                            {% endfor %}
+                        </div>
+                        <div class="filtre-kutu-alt">
+                            <button type="submit" class="btn btn-yesil">Filtrele</button>
+                        </div>
+                    </div>
+                </th>
+                {% endfor %}
+                <th></th>
+                <th class="sabit-sutun"></th>
             </tr>
         </thead>
         <tbody>
-            {% for k in kayitlar %}
+            {% for s in satirlar %}
             <tr>
                 <td>
-                    {% if k['durum'] == 'beklemede' %}
-                    <input type="checkbox" name="secili_id" value="{{ k['id'] }}">
+                    {% if s['durum'] == 'beklemede' %}
+                    <input type="checkbox" name="secili_id" value="{{ s['id'] }}">
                     {% endif %}
                 </td>
-                <td>{{ k['seri_no'] }}</td>
-                <td>{{ k['abone_adi'] or '' }}</td>
-                <td>{{ k['koy_adi'] or '' }}</td>
-                <td>{{ k['uretim_yili'] or '' }}</td>
-                <td>{{ (k['tespit_edilen_ariza'] or '')[:60] }}{% if k['tespit_edilen_ariza'] and k['tespit_edilen_ariza']|length > 60 %}…{% endif %}</td>
+                <td class="{{ 'sayi' if 'sira_no' in sayisal_kolonlar else '' }}">{{ s['sira_no'] }}</td>
+                <td>{{ s['seri_no'] }}</td>
+                <td>{{ s['abone_adi'] }}</td>
+                <td>{{ s['koy_adi'] }}</td>
+                <td>{% if s['telefon'] %}<a href="tel:{{ s['telefon']|replace(' ', '') }}" class="tel-link">{{ s['telefon'] }}</a>{% endif %}</td>
+                <td>{{ s['uretim_yili'] }}</td>
+                <td>{{ (s['tespit_edilen_ariza'] or '')[:60] }}{% if s['tespit_edilen_ariza'] and s['tespit_edilen_ariza']|length > 60 %}…{% endif %}</td>
+                <td>{% if s['yerine_sayac_takildi'] %}Takıldı ({{ s['takilan_sayac_serisi'] or '-' }}){% else %}Takılmadı{% endif %}</td>
+                <td>{{ s['abone_karti'] }}</td>
+                <td><span style="color:{{ durum_renk(s['durum']) }}; font-weight:600;">{{ durum_etiketleri.get(s['durum'], s['durum']) }}</span></td>
+                <td>{{ s['gonderim_tarihi'] }}</td>
+                <td>{{ s['donus_tarihi'] }}</td>
+                <td class="sayi">{{ s['tamir_ucreti'] }}</td>
                 <td>
-                    {% if k['yerine_sayac_takildi'] %}Takıldı ({{ k['takilan_sayac_serisi'] or '-' }}){% else %}Takılmadı{% endif %}
-                </td>
-                <td><span style="color:{{ durum_renk(k['durum']) }}; font-weight:600;">{{ durum_etiketleri.get(k['durum'], k['durum']) }}</span></td>
-                <td>
-                    {% if k['koli_gonderim_id'] %}
-                    <a href="{{ url_for('fabrika_gonderim_detay', gonderim_id=k['koli_gonderim_id']) }}">Gönderim #{{ k['koli_gonderim_id'] }} — Koli {{ k['koli_no'] }}</a>
+                    {% if s['koli_gonderim_id'] %}
+                    <a href="{{ url_for('fabrika_gonderim_detay', gonderim_id=s['koli_gonderim_id']) }}">Gönderim #{{ s['koli_gonderim_id'] }} — Koli {{ s['koli_no'] }}</a>
                     {% else %}
                     -
                     {% endif %}
                 </td>
-                <td class="islem-hucre">
-                    <a href="{{ url_for('fabrika_duzenle', kayit_id=k['id']) }}" class="ikon-rozet" data-ipucu="Düzenle" aria-label="Düzenle">✏️</a>
+                <td class="islem-hucre sabit-sutun">
+                    <a href="{{ url_for('fabrika_duzenle', kayit_id=s['id']) }}" class="ikon-rozet" data-ipucu="Düzenle" aria-label="Düzenle">✏️</a>
                     <button type="button" class="ikon-rozet" data-ipucu="Sil" aria-label="Sil"
-                            onclick="var f=document.createElement('form'); f.method='post'; f.action='{{ url_for('fabrika_sil', kayit_id=k['id']) }}';
+                            onclick="var f=document.createElement('form'); f.method='post'; f.action='{{ url_for('fabrika_sil', kayit_id=s['id']) }}';
                                      var i=document.createElement('input'); i.type='hidden'; i.name='csrf_token'; i.value='{{ csrf_token() }}';
                                      f.appendChild(i); document.body.appendChild(f);
                                      if (confirm('Bu tamir kaydını silmek istediğinize emin misiniz? (Silinenler sayfasından geri yükleyebilirsiniz)')) { f.submit(); }">🗑️</button>
                 </td>
             </tr>
             {% else %}
-            <tr><td colspan="10">Henüz kayıt yok.</td></tr>
+            <tr><td colspan="16">Kayıt bulunamadı.</td></tr>
             {% endfor %}
         </tbody>
     </table>
     </div>
 
     <div class="form-butonlar" style="margin-top:16px;">
-        <button type="submit" class="btn btn-yesil">Seçilenler İçin Gönderim Oluştur</button>
+        <button type="submit" class="btn btn-yesil" formmethod="post" formaction="{{ url_for('fabrika_gonderim_olustur') }}">Seçilenler İçin Gönderim Oluştur</button>
     </div>
     <p style="font-size:12.5px; color:#888; margin-top:6px;">
         Sadece "Beklemede" durumundaki kayıtlar işaretlenebilir. İşaretlediğiniz kayıtlar
         otomatik olarak 8'erli gruplara (koli) bölünüp tek bir gönderim altında paketlenir.
     </p>
 </form>
+
+{{ sayfalama_araci.goster(sayfa, toplam_sayfa, sayfalama_qs) }}
 
 {% endblock %}
