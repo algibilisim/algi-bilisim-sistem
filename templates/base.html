@@ -419,12 +419,18 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
 // ============================================================================
 // SESLİ DOLDURMA — tüm formlarda otomatik çalışır, her form için ayrı ayrı
 // kod yazmaya gerek yok. Sayfa açıldığında her <form> içindeki <label>+alan
-// çiftlerini kendisi bulur (bkz. _sesAlanlariniBul), her alanın yanına küçük
-// bir 🎤 butonu ekler VE formun üstüne "Sesli Doldur" adlı genel bir mikrofon
-// koyar. Genel mikrofonla sürekli konuşulabilir; her cümlenin başında
-// söylenen alan adı (etiket) tanınıp değerin o alana yazılması sağlanır
-// (örn. "baba adı Ömer" -> Baba Adı kutusuna "Ömer" yazılır), o an başka bir
-// kutu seçili/tıklı olsa bile.
+// çiftlerini VE "Fotoğraf Çek" / "Konum Al" gibi düğmeleri kendisi bulur,
+// her alanın yanına küçük bir 🎤 butonu ekler VE formun üstüne "Sesli
+// Doldur" adlı genel bir mikrofon koyar. Genel mikrofonla sürekli
+// konuşulabilir; her cümlenin başında söylenen alan adı (etiket) tanınıp
+// değerin o alana yazılması sağlanır (örn. "baba adı Ömer" -> Baba Adı
+// kutusuna "ÖMER" yazılır), o an başka bir kutu seçili/tıklı olsa bile.
+// Bir düğme adı (örn. "Konum Al") tek başına söylenirse o düğme tıklanır.
+//
+// Rakam/sayı içeren her şey (Türkçe sayı kelimeleri dahil, örn. "elli iki
+// bin") daima RAKAM olarak yazılır ve gruplar arasına boşluk konmaz (örn.
+// "52 18 21 76" -> "52182176"). Metin alanları her zaman BÜYÜK HARF yazılır.
+// Tarih (date) kutuları da destekleniyor ("12 eylül 2026" gibi).
 //
 // Tarayıcı desteği yoksa (Web Speech API), hiçbir mikrofon butonu eklenmez —
 // sayfa normal şekilde çalışmaya devam eder.
@@ -433,7 +439,7 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
     if (!_SesTanima) { return; }
 
     var _HARIC_TURLER = ['hidden', 'checkbox', 'radio', 'file', 'submit', 'button',
-                          'image', 'reset', 'color', 'range', 'date', 'password'];
+                          'image', 'reset', 'color', 'range', 'password'];
 
     function _sesNormallestir(s) {
         return (s || '')
@@ -446,6 +452,123 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
             .trim();
     }
 
+    // ---- Türkçe sayı kelimelerini rakama çevirme ----------------------------
+    var _SES_BIRLER = { 'sıfır':0,'bir':1,'iki':2,'üç':3,'dört':4,'beş':5,'altı':6,'yedi':7,'sekiz':8,'dokuz':9,
+                         'on':10,'yirmi':20,'otuz':30,'kırk':40,'elli':50,'altmış':60,'yetmiş':70,'seksen':80,'doksan':90 };
+    var _SES_OLCEKLER = { 'yüz':100,'bin':1000,'milyon':1000000,'milyar':1000000000 };
+    var _SES_AYLAR = { 'ocak':1,'şubat':2,'mart':3,'nisan':4,'mayıs':5,'haziran':6,
+                        'temmuz':7,'ağustos':8,'eylül':9,'ekim':10,'kasım':11,'aralık':12 };
+
+    function _sesKelimeTemiz(k) {
+        return (k || '').toLocaleLowerCase('tr').replace(/[.,!?]+$/, '');
+    }
+
+    function _sesSayiKelimeMi(k) {
+        return (k in _SES_BIRLER) || (k in _SES_OLCEKLER);
+    }
+
+    // Ardışık sayı kelimelerinden oluşan BİR grubu tek bir tam sayıya çevirir.
+    function _sesKelimeDiziGrubunuCevir(kelimeler) {
+        var toplam = 0, grup = 0;
+        for (var i = 0; i < kelimeler.length; i++) {
+            var k = kelimeler[i];
+            if (k in _SES_BIRLER) {
+                grup += _SES_BIRLER[k];
+            } else if (k === 'yüz') {
+                grup = (grup === 0 ? 1 : grup) * 100;
+            } else if (k in _SES_OLCEKLER) {
+                grup = (grup === 0 ? 1 : grup) * _SES_OLCEKLER[k];
+                toplam += grup;
+                grup = 0;
+            }
+        }
+        return toplam + grup;
+    }
+
+    // Bir kelime dizisini gezip, ardışık "sayı kelimesi" bloklarını (ve
+    // "virgül"/"nokta" ile ayrılmış ondalık kısımlarını) TEK bir rakam
+    // dizesine (token) çevirir; sayı olmayan kelimeler oldukları gibi kalır.
+    // "52 18 21 76" gibi ZATEN rakam olan ama boşluklu gelen ardışık sayılar
+    // da (tarih alanları hariç) tek bir tokende birleştirilir.
+    function _sesTokenlariIsle(kelimeler, boslukGlueEt) {
+        var sonuc = [];
+        var i = 0;
+        while (i < kelimeler.length) {
+            var kTemiz = _sesKelimeTemiz(kelimeler[i]);
+            if (_sesSayiKelimeMi(kTemiz)) {
+                var blok = [kTemiz];
+                var j = i + 1;
+                while (j < kelimeler.length && _sesSayiKelimeMi(_sesKelimeTemiz(kelimeler[j]))) {
+                    blok.push(_sesKelimeTemiz(kelimeler[j]));
+                    j++;
+                }
+                var rakam = String(_sesKelimeDiziGrubunuCevir(blok));
+                // "... virgül/nokta <sayı kelimeleri>" -> ondalık
+                if (j < kelimeler.length) {
+                    var baglac = _sesKelimeTemiz(kelimeler[j]);
+                    if (baglac === 'virgül' || baglac === 'nokta') {
+                        var blok2 = [];
+                        var m = j + 1;
+                        while (m < kelimeler.length && _sesSayiKelimeMi(_sesKelimeTemiz(kelimeler[m]))) {
+                            blok2.push(_sesKelimeTemiz(kelimeler[m]));
+                            m++;
+                        }
+                        if (blok2.length) {
+                            rakam += '.' + _sesKelimeDiziGrubunuCevir(blok2);
+                            j = m;
+                        }
+                    }
+                }
+                sonuc.push(rakam);
+                i = j;
+            } else if (/^[0-9]+([.,][0-9]+)?$/.test(kelimeler[i])) {
+                sonuc.push(kelimeler[i].replace(',', '.'));
+                i++;
+            } else {
+                sonuc.push(kelimeler[i]);
+                i++;
+            }
+        }
+        if (!boslukGlueEt) { return sonuc; }
+        // Ardışık, SADECE rakamlardan oluşan (ondalık olmayan) tokenleri
+        // boşluksuz birleştirir: "52" "18" "21" "76" -> "52182176".
+        var birlesmis = [];
+        for (i = 0; i < sonuc.length; i++) {
+            if (/^[0-9]+$/.test(sonuc[i]) && birlesmis.length && /^[0-9]+$/.test(birlesmis[birlesmis.length - 1])) {
+                birlesmis[birlesmis.length - 1] += sonuc[i];
+            } else {
+                birlesmis.push(sonuc[i]);
+            }
+        }
+        return birlesmis;
+    }
+
+    // Tarih alanları için: işlenmiş (sayı kelimeleri rakama çevrilmiş, henüz
+    // boşlukla birleştirilmemiş) token dizisinden gün/ay/yıl çıkarıp
+    // <input type=date> için gereken YYYY-AA-GG biçimini üretir.
+    function _sesTarihCoz(kelimeler) {
+        var tokenler = _sesTokenlariIsle(kelimeler, false);
+        var ayIndex = -1, ay = null;
+        for (var i = 0; i < tokenler.length; i++) {
+            var tTemiz = _sesKelimeTemiz(tokenler[i]);
+            if (tTemiz in _SES_AYLAR) { ayIndex = i; ay = _SES_AYLAR[tTemiz]; break; }
+        }
+        var gun = null, yil = null;
+        if (ayIndex !== -1) {
+            if (ayIndex > 0 && /^[0-9]+$/.test(tokenler[ayIndex - 1])) { gun = parseInt(tokenler[ayIndex - 1], 10); }
+            if (ayIndex + 1 < tokenler.length && /^[0-9]+$/.test(tokenler[ayIndex + 1])) { yil = parseInt(tokenler[ayIndex + 1], 10); }
+        } else {
+            var sayilar = tokenler.filter(function (t) { return /^[0-9]+$/.test(t); }).map(function (t) { return parseInt(t, 10); });
+            if (sayilar.length >= 3) { gun = sayilar[0]; ay = sayilar[1]; yil = sayilar[2]; }
+        }
+        if (!gun || !ay || !yil) { return null; }
+        if (yil < 100) { yil += 2000; }
+        if (gun < 1 || gun > 31 || ay < 1 || ay > 12) { return null; }
+        return yil + '-' + String(ay).padStart(2, '0') + '-' + String(gun).padStart(2, '0');
+    }
+
+    // ---- Form alanlarını ve komut düğmelerini (Fotoğraf Çek, Konum Al...)
+    //      sayfadan otomatik keşfetme ----------------------------------------
     function _sesAlanlariniBul(kapsayici) {
         var harita = [];
         var gorulenler = [];
@@ -481,20 +604,52 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
         return harita;
     }
 
-    function _sesDegerAta(alan, tur, metin) {
+    function _sesKomutlariniBul(kapsayici) {
+        var komutlar = [];
+        kapsayici.querySelectorAll('button, a.btn').forEach(function (el) {
+            if (el.classList.contains('ses-mikrofon-buton') || el.classList.contains('ses-genel-mikrofon')) { return; }
+            var metin = (el.textContent || '').replace(/^[^\p{L}0-9]+/u, '').trim();
+            if (!metin) { return; }
+            komutlar.push({ etiket: metin, normalize: _sesNormallestir(metin), eleman: el });
+        });
+        return komutlar;
+    }
+
+    // ---- Söylenen metni, hedef alanın türüne göre uygun değere çevirir ------
+    function _sesDegerHazirla(alan, tur, metin) {
         metin = (metin || '').trim();
-        if (!metin) { return false; }
-        if (tur === 'select') {
-            var norm = _sesNormallestir(metin);
-            var eslesen = null;
-            for (var i = 0; i < alan.options.length; i++) {
-                if (_sesNormallestir(alan.options[i].textContent).indexOf(norm) !== -1) { eslesen = alan.options[i]; break; }
-            }
-            if (!eslesen) { return false; }
-            alan.value = eslesen.value;
-        } else {
-            alan.value = metin;
+        if (!metin) { return null; }
+        var kelimeler = metin.split(/\s+/);
+
+        if (tur === 'date') {
+            return _sesTarihCoz(kelimeler);
         }
+
+        var islenmisTokenler = _sesTokenlariIsle(kelimeler, true);
+        var islenmisMetin = islenmisTokenler.join(' ');
+
+        if (tur === 'select') {
+            var norm = _sesNormallestir(islenmisMetin);
+            for (var i = 0; i < alan.options.length; i++) {
+                if (_sesNormallestir(alan.options[i].textContent).indexOf(norm) !== -1) { return alan.options[i].value; }
+            }
+            return null;
+        }
+
+        if (tur === 'number') {
+            var eslesme = islenmisMetin.match(/[0-9]+(\.[0-9]+)?/);
+            return eslesme ? eslesme[0] : null;
+        }
+
+        // Metin/textarea/tel/email vb.: rakamlar zaten rakama çevrildi,
+        // geri kalan metin her zaman BÜYÜK HARF yazılır.
+        return islenmisMetin.toLocaleUpperCase('tr');
+    }
+
+    function _sesDegerAta(alan, tur, metin) {
+        var deger = _sesDegerHazirla(alan, tur, metin);
+        if (deger === null || deger === '') { return false; }
+        alan.value = deger;
         alan.dispatchEvent(new Event('input', { bubbles: true }));
         alan.dispatchEvent(new Event('change', { bubbles: true }));
         return true;
@@ -509,7 +664,8 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
     document.addEventListener('DOMContentLoaded', function () {
         document.querySelectorAll('form').forEach(function (form) {
             var alanHaritasi = _sesAlanlariniBul(form);
-            if (alanHaritasi.length === 0) { return; }
+            var komutHaritasi = _sesKomutlariniBul(form);
+            if (alanHaritasi.length === 0 && komutHaritasi.length === 0) { return; }
 
             // --- Alan bazlı mikrofonlar ---
             alanHaritasi.forEach(function (kayit) {
@@ -538,8 +694,9 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
                 });
             });
 
-            // --- Genel form mikrofonu: "alan adı ... değer" sürekli dinler ---
-            if (alanHaritasi.length >= 2) {
+            // --- Genel form mikrofonu: "alan adı ... değer" ya da tek başına
+            //     bir düğme adı (örn. "Konum Al") sürekli dinlenir ---
+            if (alanHaritasi.length >= 2 || komutHaritasi.length >= 1) {
                 var genelButon = document.createElement('button');
                 genelButon.type = 'button';
                 genelButon.className = 'ses-genel-mikrofon no-print';
@@ -570,13 +727,26 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
                     tanima.interimResults = true;
                     dinleniyor = true;
                     genelButon.classList.add('ses-dinliyor');
-                    durumEtiketi.textContent = 'Dinleniyor... (örn: "baba adı Ömer")';
+                    durumEtiketi.textContent = 'Dinleniyor... (örn: "baba adı Ömer" ya da "Konum Al")';
 
                     tanima.onresult = function (ev) {
                         for (var i = ev.resultIndex; i < ev.results.length; i++) {
                             if (!ev.results[i].isFinal) { continue; }
                             var parca = ev.results[i][0].transcript;
                             var normParca = _sesNormallestir(parca);
+
+                            // 1) Önce tam bir KOMUT (düğme) adıyla eşleşiyor mu bak.
+                            var komutBulundu = null;
+                            for (var k = 0; k < komutHaritasi.length; k++) {
+                                if (normParca === komutHaritasi[k].normalize) { komutBulundu = komutHaritasi[k]; break; }
+                            }
+                            if (komutBulundu) {
+                                komutBulundu.eleman.click();
+                                durumEtiketi.textContent = '▶ ' + komutBulundu.etiket;
+                                continue;
+                            }
+
+                            // 2) Yoksa "alan adı ... değer" olarak dene.
                             var bulunanKayit = null;
                             var bulunanDeger = '';
                             for (var j = 0; j < siraliHarita.length; j++) {
@@ -591,9 +761,9 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
                             if (bulunanKayit && bulunanDeger) {
                                 if (_sesDegerAta(bulunanKayit.eleman, bulunanKayit.tur, bulunanDeger)) {
                                     _sesAlaniYanip(bulunanKayit.eleman);
-                                    durumEtiketi.textContent = bulunanKayit.etiket + ': ' + bulunanDeger.trim();
+                                    durumEtiketi.textContent = bulunanKayit.etiket + ': ' + bulunanKayit.eleman.value;
                                 } else {
-                                    durumEtiketi.textContent = bulunanKayit.etiket + ' — eşleşen seçenek bulunamadı';
+                                    durumEtiketi.textContent = bulunanKayit.etiket + ' — eşleşen değer bulunamadı';
                                 }
                             } else if (bulunanKayit) {
                                 durumEtiketi.textContent = bulunanKayit.etiket + ' — değer duyulamadı, tekrar deneyin';
