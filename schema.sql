@@ -446,3 +446,9 @@ CREATE INDEX IF NOT EXISTS idx_fabrika_gonderim_sira_no ON fabrika_gonderim(sira
 ALTER TABLE fabrika_tamir ADD COLUMN IF NOT EXISTS silindi_mi BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE fabrika_tamir ADD COLUMN IF NOT EXISTS silinme_tarihi TIMESTAMP;
 CREATE INDEX IF NOT EXISTS idx_fabrika_tamir_silindi_mi ON fabrika_tamir(silindi_mi);
+
+-- Fabrika/Tamir listesindeki "Sıra No" sütunu — Abone/Arıza'daki s_no ile
+-- aynı mantıkla (bkz. _fabrika_tamir_sira_numaralarini_yenile) kayıt
+-- oluşturuluş sırasına göre 1'den başlayarak boşluksuz tutulur.
+ALTER TABLE fabrika_tamir ADD COLUMN IF NOT EXISTS sira_no INTEGER;
+CREATE INDEX IF NOT EXISTS idx_fabrika_tamir_sira_no ON fabrika_tamir(sira_no);

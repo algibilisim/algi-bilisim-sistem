@@ -439,6 +439,144 @@ ARIZA_KOLON_BILGI = {
 
 ARIZA_SAYISAL_KOLONLAR = {k for k, (_, tur) in ARIZA_KOLON_BILGI.items() if tur == "sayi"}
 
+# Fabrika / Tamir listesi — Abone Listesi / Arıza Takip'teki aynı sütun
+# filtreleme sistemi (üst arama kutusu + "hangi alanlarda aransın" onay
+# kutuları + her sütunun kendi "Tümü ▾" çoklu seçim kutusu) buraya da
+# uygulanıyor. "ft." takısı KULLANILMIYOR — bu ifadeler hem fabrika_listesi()
+# içindeki (alias'lı) sorguda hem de /api/kolon-secenekleri'nin (alias'sız,
+# tek tablo üstünde çalışan) sorgusunda aynen kullanılabilsin diye kasıtlı.
+FABRIKA_DISPLAY_KOLONLARI = [
+    ("sira_no", "Sıra No"),
+    ("seri_no", "Seri No"),
+    ("abone_adi", "Abone Adı"),
+    ("koy_adi", "Köy Adı"),
+    ("telefon", "Telefon"),
+    ("uretim_yili", "Üretim Yılı"),
+    ("tespit_edilen_ariza", "Tespit Edilen Arıza"),
+    ("yerine_sayac_takildi", "Yerine Sayaç"),
+    ("abone_karti", "Abone Kartı"),
+    ("durum", "Durum"),
+    ("gonderim_tarihi", "Gönderim Tarihi"),
+    ("donus_tarihi", "Dönüş Tarihi"),
+    ("tamir_ucreti", "Tamir Ücreti"),
+]
+
+FABRIKA_KOLON_BILGI = {
+    "sira_no": ("sira_no", "sayi"),
+    "seri_no": ("seri_no", "metin"),
+    "abone_adi": ("abone_adi", "metin"),
+    "koy_adi": ("koy_adi", "metin"),
+    "telefon": ("telefon", "metin"),
+    "uretim_yili": ("uretim_yili", "metin"),
+    "tespit_edilen_ariza": ("tespit_edilen_ariza", "metin"),
+    "yerine_sayac_takildi": ("CASE WHEN yerine_sayac_takildi THEN 'Takıldı' ELSE 'Takılmadı' END", "metin"),
+    "abone_karti": ("CASE WHEN abone_karti = 'alindi' THEN 'ALINDI' ELSE 'ALINMADI' END", "metin"),
+    "durum": ("durum", "metin"),
+    "gonderim_tarihi": ("gonderim_tarihi", "tarih"),
+    "donus_tarihi": ("donus_tarihi", "tarih"),
+    "tamir_ucreti": ("tamir_ucreti", "sayi"),
+}
+
+FABRIKA_SAYISAL_KOLONLAR = {k for k, (_, tur) in FABRIKA_KOLON_BILGI.items() if tur == "sayi"}
+
+_FABRIKA_ALAN_TANIMLARI = [
+    ("seri_no", "Seri No", "seri_no", False),
+    ("abone_adi", "Abone Adı", "abone_adi", False),
+    ("koy_adi", "Köy Adı", "koy_adi", False),
+    ("telefon", "Telefon", "telefon", False),
+    ("uretim_yili", "Üretim Yılı", "uretim_yili", False),
+    ("tespit_edilen_ariza", "Tespit Edilen Arıza", "tespit_edilen_ariza", False),
+    ("takilan_sayac_serisi", "Takılan Sayaç Serisi", "takilan_sayac_serisi", False),
+    ("odeyen", "Ödeyen", "odeyen", False),
+    ("tamir_ucreti", "Tamir Ücreti", "tamir_ucreti", True),
+    ("parca_maliyeti", "Parça Maliyeti", "parca_maliyeti", True),
+    ("sira_no", "Sıra No", "sira_no", True),
+]
+_FABRIKA_ALAN_HARITASI = {k: (kolon, sayisal) for k, _, kolon, sayisal in _FABRIKA_ALAN_TANIMLARI}
+
+
+def _fabrika_kolon_takimi(db=None):
+    """Fabrika/Tamir listesi için (kolon_listesi, kolon_bilgi, sayisal_kolonlar,
+    ozel_alanlar) döndürür — abone/arıza'daki özel alan sistemi burada yok,
+    ozel_alanlar her zaman boş liste."""
+    return FABRIKA_DISPLAY_KOLONLARI, FABRIKA_KOLON_BILGI, FABRIKA_SAYISAL_KOLONLAR, []
+
+
+def _fabrika_filtre_kosulu_olustur(disari_anahtar, kolon_bilgi):
+    """fabrika_listesi() sayfasında o an uygulanmış olan TÜM filtreleri (durum
+    sekmesi, köy, arama ve diğer sütun filtreleri) tek bir SQL koşuluna
+    çevirir — /api/kolon-secenekleri bir sütunun seçeneklerini hesaplarken
+    diğer filtrelerle daraltılmış hâli görsün diye kullanılır."""
+    kosul = "silindi_mi IS NOT TRUE"
+    params = []
+    durum_filtre = request.args.get("durum", "").strip()
+    koy = request.args.get("koy", "").strip()
+    q = request.args.get("q", "").strip()
+    alanlar_secili = request.args.getlist("alan")
+    if durum_filtre and durum_filtre in FABRIKA_DURUM_ETIKETLERI:
+        kosul += " AND durum = %s"
+        params.append(durum_filtre)
+    if koy:
+        kosul += " AND koy_adi = %s"
+        params.append(koy)
+    if q:
+        secili = alanlar_secili if alanlar_secili else [k for k, *_ in _FABRIKA_ALAN_TANIMLARI]
+        q_sayi = None
+        q_temiz = q.replace(",", ".").strip()
+        try:
+            q_sayi = float(q_temiz)
+        except ValueError:
+            q_sayi = None
+        kosul_listesi = []
+        kosul_params = []
+        for s in secili:
+            if s in _FABRIKA_ALAN_HARITASI:
+                kolon, sayisal = _FABRIKA_ALAN_HARITASI[s]
+                if sayisal and q_sayi is not None:
+                    kosul_listesi.append(f"ROUND(CAST({kolon} AS NUMERIC), 2) = %s")
+                    kosul_params.append(round(q_sayi, 2))
+                elif sayisal:
+                    kosul_listesi.append(f"{_turkce_esle_kosul(f'CAST({kolon} AS TEXT)')} LIKE %s")
+                    kosul_params.append(_turkce_normallestir(f"%{q}%"))
+                else:
+                    kosul_listesi.append(f"{_turkce_esle_kosul(kolon)} LIKE %s")
+                    kosul_params.append(_turkce_normallestir(f"%{q}%"))
+        if kosul_listesi:
+            kosul += " AND (" + " OR ".join(kosul_listesi) + ")"
+            params += kosul_params
+    for anahtar in kolon_bilgi.keys():
+        if anahtar == disari_anahtar:
+            continue
+        alt_kosul, param_listesi = _kolon_secim_kosulu(anahtar, kolon_bilgi)
+        if alt_kosul:
+            kosul += f" AND {alt_kosul}"
+            params += param_listesi
+    return kosul, params
+
+
+def _fabrika_satir_sozlugu(k):
+    """Fabrika/Tamir listesindeki bir satırı, tabloda gösterileceği hazır
+    (biçimlendirilmiş) hâle çevirir."""
+    return {
+        "id": k["id"],
+        "sira_no": k["sira_no"],
+        "seri_no": k["seri_no"],
+        "abone_adi": k["abone_adi"] or "",
+        "koy_adi": k["koy_adi"] or "",
+        "telefon": _telefon_formatla(k["telefon"]),
+        "uretim_yili": k["uretim_yili"] or "",
+        "tespit_edilen_ariza": k["tespit_edilen_ariza"] or "",
+        "yerine_sayac_takildi": k["yerine_sayac_takildi"],
+        "takilan_sayac_serisi": k["takilan_sayac_serisi"] or "",
+        "abone_karti": "ALINDI" if k["abone_karti"] == "alindi" else "ALINMADI",
+        "durum": k["durum"],
+        "gonderim_tarihi": _gg_aa_yyyy(str(k["gonderim_tarihi"])) if k["gonderim_tarihi"] else "",
+        "donus_tarihi": _gg_aa_yyyy(str(k["donus_tarihi"])) if k["donus_tarihi"] else "",
+        "tamir_ucreti": tl_format(k["tamir_ucreti"]),
+        "koli_no": k["koli_no"],
+        "koli_gonderim_id": k["koli_gonderim_id"],
+    }
+
 ARIZA_ALAN_TANIMLARI = [
     ("adi", "Adı", "adi", False),
     ("alinan_ucret", "Alınan Ücret", "alinan_ucret", True),
@@ -1578,6 +1716,25 @@ def ensure_db():
     )
     conn.commit()
 
+    # Fabrika/Tamir listesindeki "Sıra No" da aynı mantıkla (bkz.
+    # _fabrika_tamir_sira_numaralarini_yenile) kayıt oluşturuluş sırasına göre
+    # 1'den başlayarak boşluksuz tutuluyor; silinmiş (silindi_mi) kayıtlar
+    # sayılmıyor. Burada ilk kurulumda/deploy'da mevcut kayıtlar için bir
+    # kereliğine dolduruluyor.
+    cur.execute(
+        """
+        UPDATE fabrika_tamir ft
+        SET sira_no = t.yeni_sira
+        FROM (
+            SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC NULLS LAST, id ASC) AS yeni_sira
+            FROM fabrika_tamir
+            WHERE silindi_mi IS NOT TRUE
+        ) t
+        WHERE ft.id = t.id AND (ft.sira_no IS DISTINCT FROM t.yeni_sira)
+        """
+    )
+    conn.commit()
+
     cur.close()
     conn.close()
 
@@ -2678,16 +2835,197 @@ def abone_toplu_mesaj():
     )
 
 
+# "fatura" tablosunun kendisinde faturanın KİME kesildiğine dair bilgi
+# (ad/soyad/köy/telefon/adres) tutulmuyor — bunlar kaynak_tur'a göre ('abone'
+# veya 'ariza') abone/ariza tablosunda duruyor. Bu yüzden Faturalarım
+# listesinde ve sütun filtrelerinde bir GERÇEK tablo yerine, bu bilgiyi
+# LEFT JOIN ile önceden birleştiren bir alt sorguyu "tablo" gibi kullanıyoruz
+# — _kolon_secenekleri gibi genel fonksiyonlar zaten "FROM {tablo}" şeklinde
+# çalıştığı için bu alt sorgu metnini oldukları gibi kabul edip çalışıyorlar.
+_FATURA_ALT_SORGU = (
+    "(SELECT f.id, f.kaynak_tur, f.kaynak_id, f.fatura_turu, f.durum, "
+    "f.tutar_kdv_dahil, f.kalemler, f.fatura_tarihi, f.created_at, "
+    "CASE WHEN f.kaynak_tur = 'abone' THEN a.adi ELSE r.adi END AS alici_adi, "
+    "CASE WHEN f.kaynak_tur = 'abone' THEN a.soyadi ELSE r.soyadi END AS alici_soyadi, "
+    "CASE WHEN f.kaynak_tur = 'abone' THEN a.koy_adi ELSE r.koy_adi END AS alici_koy, "
+    "CASE WHEN f.kaynak_tur = 'abone' THEN a.telefon ELSE r.telefon END AS alici_telefon, "
+    "CASE WHEN f.kaynak_tur = 'abone' THEN a.adres ELSE r.adres END AS alici_adres "
+    "FROM fatura f "
+    "LEFT JOIN abone a ON f.kaynak_tur = 'abone' AND a.id = f.kaynak_id "
+    "LEFT JOIN ariza r ON f.kaynak_tur = 'ariza' AND r.id = f.kaynak_id) fv"
+)
+
+FATURA_DISPLAY_KOLONLARI = [
+    ("fatura_tarihi", "Tarih"),
+    ("fatura_turu", "Fatura Türü"),
+    ("alici_ad_soyad", "Alıcı"),
+    ("alici_koy", "Alıcı Köy"),
+    ("alici_telefon", "Alıcı Telefon"),
+    ("kalemler", "Kalemler"),
+    ("tutar_kdv_dahil", "KDV Dahil Tutar"),
+    ("durum", "Durum"),
+]
+
+FATURA_KOLON_BILGI = {
+    "fatura_tarihi": ("fatura_tarihi", "tarih"),
+    "fatura_turu": ("CASE WHEN fatura_turu = 'earsiv' THEN 'e-Arşiv' ELSE 'e-Fatura' END", "metin"),
+    "alici_ad_soyad": ("(COALESCE(alici_adi, '') || ' ' || COALESCE(alici_soyadi, ''))", "metin"),
+    "alici_koy": ("alici_koy", "metin"),
+    "alici_telefon": ("alici_telefon", "metin"),
+    "kalemler": ("kalemler", "metin"),
+    "tutar_kdv_dahil": ("tutar_kdv_dahil", "sayi"),
+    "durum": ("CASE WHEN durum = 'basarili' THEN 'Başarılı' WHEN durum = 'hata' THEN 'Hata' ELSE 'Beklemede' END", "metin"),
+}
+
+FATURA_SAYISAL_KOLONLAR = {k for k, (_, tur) in FATURA_KOLON_BILGI.items() if tur == "sayi"}
+
+_FATURA_ALAN_TANIMLARI = [
+    ("alici_ad_soyad", "Alıcı Adı Soyadı", "(COALESCE(alici_adi, '') || ' ' || COALESCE(alici_soyadi, ''))", False),
+    ("alici_koy", "Alıcı Köy", "alici_koy", False),
+    ("alici_telefon", "Alıcı Telefon", "alici_telefon", False),
+    ("alici_adres", "Alıcı Adres", "alici_adres", False),
+    ("kalemler", "Kalemler", "kalemler", False),
+    ("tutar_kdv_dahil", "KDV Dahil Tutar", "tutar_kdv_dahil", True),
+]
+_FATURA_ALAN_HARITASI = {k: (kolon, sayisal) for k, _, kolon, sayisal in _FATURA_ALAN_TANIMLARI}
+
+
+def _fatura_kolon_takimi(db=None):
+    return FATURA_DISPLAY_KOLONLARI, FATURA_KOLON_BILGI, FATURA_SAYISAL_KOLONLAR, []
+
+
+def _fatura_filtre_kosulu_olustur(disari_anahtar, kolon_bilgi):
+    kosul = "1=1"
+    params = []
+    q = request.args.get("q", "").strip()
+    alanlar_secili = request.args.getlist("alan")
+    if q:
+        secili = alanlar_secili if alanlar_secili else [k for k, *_ in _FATURA_ALAN_TANIMLARI]
+        q_sayi = None
+        q_temiz = q.replace(",", ".").strip()
+        try:
+            q_sayi = float(q_temiz)
+        except ValueError:
+            q_sayi = None
+        kosul_listesi = []
+        kosul_params = []
+        for s in secili:
+            if s in _FATURA_ALAN_HARITASI:
+                kolon, sayisal = _FATURA_ALAN_HARITASI[s]
+                if sayisal and q_sayi is not None:
+                    kosul_listesi.append(f"ROUND(CAST({kolon} AS NUMERIC), 2) = %s")
+                    kosul_params.append(round(q_sayi, 2))
+                elif sayisal:
+                    kosul_listesi.append(f"{_turkce_esle_kosul(f'CAST({kolon} AS TEXT)')} LIKE %s")
+                    kosul_params.append(_turkce_normallestir(f"%{q}%"))
+                else:
+                    kosul_listesi.append(f"{_turkce_esle_kosul(kolon)} LIKE %s")
+                    kosul_params.append(_turkce_normallestir(f"%{q}%"))
+        if kosul_listesi:
+            kosul += " AND (" + " OR ".join(kosul_listesi) + ")"
+            params += kosul_params
+    for anahtar in kolon_bilgi.keys():
+        if anahtar == disari_anahtar:
+            continue
+        alt_kosul, param_listesi = _kolon_secim_kosulu(anahtar, kolon_bilgi)
+        if alt_kosul:
+            kosul += f" AND {alt_kosul}"
+            params += param_listesi
+    return kosul, params
+
+
+def _fatura_satir_sozlugu(k):
+    tarih_kaynagi = k["fatura_tarihi"] or (str(k["created_at"])[:10] if k["created_at"] else None)
+    return {
+        "id": k["id"],
+        "tarih": _gg_aa_yyyy(str(tarih_kaynagi)) if tarih_kaynagi else "",
+        "kaynak_tur": k["kaynak_tur"],
+        "kaynak_id": k["kaynak_id"],
+        "fatura_turu": "e-Arşiv" if k["fatura_turu"] == "earsiv" else "e-Fatura",
+        "alici_ad_soyad": ((k["alici_adi"] or "") + " " + (k["alici_soyadi"] or "")).strip(),
+        "alici_koy": k["alici_koy"] or "",
+        "alici_telefon": _telefon_formatla(k["alici_telefon"]),
+        "kalemler": k["kalemler"] or "",
+        "tutar_kdv_dahil": tl_format(k["tutar_kdv_dahil"]) if k["tutar_kdv_dahil"] is not None else "-",
+        "durum": k["durum"],
+    }
+
+
 @app.route("/faturalar")
 @login_required
 def fatura_listesi():
-    """'Faturalarım' sayfası."""
+    """'Faturalarım' sayfası — artık faturanın KİME kesildiğine dair bilgiler
+    (alıcı adı/köy/telefon) ve Abone Listesi'ndekiyle aynı arama/sütun
+    filtreleme sistemi de burada."""
+    yonlendirme = _filtre_durumu_uygula("fatura_listesi")
+    if yonlendirme:
+        return yonlendirme
+
     db = get_db()
+    q = request.args.get("q", "").strip()
+    alanlar_secili = request.args.getlist("alan")
+    alan_listesi = [(k, etiket) for k, etiket, _, _ in _FATURA_ALAN_TANIMLARI]
+
+    sql = f"SELECT * FROM {_FATURA_ALT_SORGU} WHERE 1=1"
+    params = []
+    if q:
+        secili = alanlar_secili if alanlar_secili else [k for k, *_ in _FATURA_ALAN_TANIMLARI]
+        q_sayi = None
+        q_temiz = q.replace(",", ".").strip()
+        try:
+            q_sayi = float(q_temiz)
+        except ValueError:
+            q_sayi = None
+        kosul_listesi = []
+        kosul_params = []
+        for s in secili:
+            if s in _FATURA_ALAN_HARITASI:
+                kolon, sayisal = _FATURA_ALAN_HARITASI[s]
+                if sayisal and q_sayi is not None:
+                    kosul_listesi.append(f"ROUND(CAST({kolon} AS NUMERIC), 2) = %s")
+                    kosul_params.append(round(q_sayi, 2))
+                elif sayisal:
+                    kosul_listesi.append(f"{_turkce_esle_kosul(f'CAST({kolon} AS TEXT)')} LIKE %s")
+                    kosul_params.append(_turkce_normallestir(f"%{q}%"))
+                else:
+                    kosul_listesi.append(f"{_turkce_esle_kosul(kolon)} LIKE %s")
+                    kosul_params.append(_turkce_normallestir(f"%{q}%"))
+        if kosul_listesi:
+            sql += " AND (" + " OR ".join(kosul_listesi) + ")"
+            params += kosul_params
+
+    kolon_listesi, kolon_bilgi, sayisal_kolonlar, _ozel = _fatura_kolon_takimi()
+    deger_secili = {}
+    haric_secili = {}
+    for anahtar, _e in kolon_listesi:
+        deger_secili[anahtar] = request.args.getlist(f"deger_{anahtar}")
+        haric_secili[anahtar] = request.args.getlist(f"haric_{anahtar}")
+        kosul, param_listesi = _kolon_secim_kosulu(anahtar, kolon_bilgi)
+        if kosul:
+            sql += f" AND {kosul}"
+            params += param_listesi
+
+    sql += f" ORDER BY id {'ASC' if _sira_yonu_al() == 'asc' else 'DESC'} LIMIT 500"
+
     cur = db.cursor()
-    cur.execute("SELECT * FROM fatura ORDER BY created_at DESC LIMIT 500")
-    faturalar = cur.fetchall()
+    cur.execute(sql, params)
+    faturalar_ham = cur.fetchall()
     cur.close()
-    return render_template("fatura_listesi.html", faturalar=faturalar)
+
+    satirlar = [_fatura_satir_sozlugu(k) for k in faturalar_ham]
+    satirlar, filtreli_kayit, sayfa, toplam_sayfa = _sayfala(satirlar)
+
+    return render_template(
+        "fatura_listesi.html", satirlar=satirlar,
+        q=q, secili_alanlar=alanlar_secili, alan_listesi=alan_listesi,
+        kolon_listesi=kolon_listesi, deger_secili=deger_secili, haric_secili=haric_secili,
+        sayisal_kolonlar=sayisal_kolonlar,
+        arama_satir=_izgara_satir(len(alan_listesi)),
+        arama_satir_2=_izgara_satir(len(alan_listesi), 2),
+        filtreli_kayit=filtreli_kayit,
+        sira=_sira_yonu_al(), sira_toggle_qs=_sira_toggle_qs(),
+        sayfa=sayfa, toplam_sayfa=toplam_sayfa, sayfalama_qs=_sayfalama_qs,
+    )
 
 
 @app.route("/fatura/<int:fatura_id>")
@@ -3181,11 +3519,19 @@ def _fabrika_gonderim_sira_numaralarini_yenile(db):
 @app.route("/fabrika")
 @login_required
 def fabrika_listesi():
-    """Fabrikaya/üreticiye tamire gönderilen arızalı sayaç kayıtlarını listeler."""
+    """Fabrikaya/üreticiye tamire gönderilen arızalı sayaç kayıtlarını,
+    Abone Listesi'ndekiyle aynı arama/sütun filtreleme sistemiyle listeler."""
+    yonlendirme = _filtre_durumu_uygula("fabrika_listesi")
+    if yonlendirme:
+        return yonlendirme
+
     db = get_db()
     durum_filtre = request.args.get("durum", "").strip()
-    koy_filtre = request.args.get("koy", "").strip()
-    cur = db.cursor()
+    koy = request.args.get("koy", "").strip()
+    q = request.args.get("q", "").strip()
+    alanlar_secili = request.args.getlist("alan")
+    alan_listesi = [(k, etiket) for k, etiket, _, _ in _FABRIKA_ALAN_TANIMLARI]
+
     sql = (
         "SELECT ft.*, fk.koli_no, fk.gonderim_id AS koli_gonderim_id "
         "FROM fabrika_tamir ft LEFT JOIN fabrika_koli fk ON fk.id = ft.koli_id "
@@ -3195,18 +3541,72 @@ def fabrika_listesi():
     if durum_filtre and durum_filtre in FABRIKA_DURUM_ETIKETLERI:
         sql += " AND ft.durum = %s"
         params.append(durum_filtre)
-    if koy_filtre:
+    if koy:
         sql += " AND ft.koy_adi = %s"
-        params.append(koy_filtre)
-    sql += " ORDER BY ft.id DESC"
+        params.append(koy)
+
+    if q:
+        secili = alanlar_secili if alanlar_secili else [k for k, *_ in _FABRIKA_ALAN_TANIMLARI]
+        q_sayi = None
+        q_temiz = q.replace(",", ".").strip()
+        try:
+            q_sayi = float(q_temiz)
+        except ValueError:
+            q_sayi = None
+        kosul_listesi = []
+        kosul_params = []
+        for s in secili:
+            if s in _FABRIKA_ALAN_HARITASI:
+                kolon, sayisal = _FABRIKA_ALAN_HARITASI[s]
+                if sayisal and q_sayi is not None:
+                    kosul_listesi.append(f"ROUND(CAST({kolon} AS NUMERIC), 2) = %s")
+                    kosul_params.append(round(q_sayi, 2))
+                elif sayisal:
+                    kosul_listesi.append(f"{_turkce_esle_kosul(f'CAST({kolon} AS TEXT)')} LIKE %s")
+                    kosul_params.append(_turkce_normallestir(f"%{q}%"))
+                else:
+                    kosul_listesi.append(f"{_turkce_esle_kosul(kolon)} LIKE %s")
+                    kosul_params.append(_turkce_normallestir(f"%{q}%"))
+        if kosul_listesi:
+            sql += " AND (" + " OR ".join(kosul_listesi) + ")"
+            params += kosul_params
+
+    kolon_listesi, kolon_bilgi, sayisal_kolonlar, _ozel = _fabrika_kolon_takimi()
+    deger_secili = {}
+    haric_secili = {}
+    for anahtar, _e in kolon_listesi:
+        deger_secili[anahtar] = request.args.getlist(f"deger_{anahtar}")
+        haric_secili[anahtar] = request.args.getlist(f"haric_{anahtar}")
+        kosul, param_listesi = _kolon_secim_kosulu(anahtar, kolon_bilgi)
+        if kosul:
+            sql += f" AND {kosul}"
+            params += param_listesi
+
+    sql += f" ORDER BY ft.sira_no {'DESC' if _sira_yonu_al() == 'desc' else 'ASC'}"
+
+    cur = db.cursor()
     cur.execute(sql, params)
-    kayitlar = cur.fetchall()
+    kayitlar_ham = cur.fetchall()
     cur.execute("SELECT DISTINCT koy_adi FROM fabrika_tamir WHERE koy_adi IS NOT NULL AND koy_adi <> '' ORDER BY koy_adi")
     koyler = cur.fetchall()
+    cur.execute("SELECT COUNT(*) AS c FROM fabrika_tamir WHERE silindi_mi IS NOT TRUE")
+    toplam_kayit = cur.fetchone()["c"]
     cur.close()
+
+    satirlar = [_fabrika_satir_sozlugu(k) for k in kayitlar_ham]
+    satirlar, filtreli_kayit, sayfa, toplam_sayfa = _sayfala(satirlar)
+
     return render_template(
-        "fabrika_listesi.html", kayitlar=kayitlar, durum_filtre=durum_filtre,
-        durum_etiketleri=FABRIKA_DURUM_ETIKETLERI, koyler=koyler, secili_koy=koy_filtre,
+        "fabrika_listesi.html", satirlar=satirlar, durum_filtre=durum_filtre,
+        durum_etiketleri=FABRIKA_DURUM_ETIKETLERI, koyler=koyler, secili_koy=koy,
+        q=q, secili_alanlar=alanlar_secili, alan_listesi=alan_listesi,
+        kolon_listesi=kolon_listesi, deger_secili=deger_secili, haric_secili=haric_secili,
+        sayisal_kolonlar=sayisal_kolonlar,
+        arama_satir=_izgara_satir(len(alan_listesi)),
+        arama_satir_2=_izgara_satir(len(alan_listesi), 2),
+        filtreli_kayit=filtreli_kayit, toplam_kayit=toplam_kayit,
+        sira=_sira_yonu_al(), sira_toggle_qs=_sira_toggle_qs(),
+        sayfa=sayfa, toplam_sayfa=toplam_sayfa, sayfalama_qs=_sayfalama_qs,
     )
 
 
@@ -3251,6 +3651,7 @@ def fabrika_yeni():
         yeni_id = cur.fetchone()["id"]
         db.commit()
         cur.close()
+        _fabrika_tamir_sira_numaralarini_yenile(db)
         _fabrika_fotograflarini_kaydet(db, yeni_id, request.files.getlist("fotograflar"))
         flash("Tamir kaydı eklendi (Beklemede). Gönderime dahil etmek için Fabrika/Tamir listesinden seçip "
               "'Gönderim Oluştur' deyin.")
@@ -3359,6 +3760,7 @@ def fabrika_sil(kayit_id):
     )
     db.commit()
     cur.close()
+    _fabrika_tamir_sira_numaralarini_yenile(db)
     flash("Tamir kaydı silindi. Yanlışlıkla sildiyseniz 'Silinenler' sayfasından geri yükleyebilirsiniz.")
     return redirect(url_for("fabrika_listesi"))
 
@@ -3394,6 +3796,7 @@ def fabrika_geri_yukle(kayit_id):
     )
     db.commit()
     cur.close()
+    _fabrika_tamir_sira_numaralarini_yenile(db)
     flash("Tamir kaydı geri yüklendi.")
     return redirect(url_for("fabrika_silinenler"))
 
@@ -3701,6 +4104,7 @@ def fabrika_koli_kayit_ekle(koli_id):
         )
         db.commit()
         cur.close()
+        _fabrika_tamir_sira_numaralarini_yenile(db)
         flash(f"Kayıt Koli {koli['koli_no']} içine eklendi.")
         return redirect(url_for("fabrika_gonderim_detay", gonderim_id=koli["gonderim_id"]))
 
@@ -3928,20 +4332,29 @@ def kolon_secenekleri_api():
     filtre kutusunu AÇTIĞINDA seçenekler bu uç nokta üzerinden istenir."""
     tablo = request.args.get("tablo", "").strip()
     anahtar = request.args.get("anahtar", "").strip()
-    if tablo not in ("abone", "ariza"):
+    if tablo not in ("abone", "ariza", "fabrika_tamir", "fatura"):
         return jsonify({"hata": "geçersiz tablo"}), 400
     db = get_db()
     if tablo == "abone":
         _kolon_listesi, bilgi_sozlugu, _sayisal, _ozel = _abone_kolon_takimi(db)
-    else:
+    elif tablo == "ariza":
         _kolon_listesi, bilgi_sozlugu, _sayisal, _ozel = _ariza_kolon_takimi(db)
+    elif tablo == "fabrika_tamir":
+        _kolon_listesi, bilgi_sozlugu, _sayisal, _ozel = _fabrika_kolon_takimi(db)
+    else:
+        _kolon_listesi, bilgi_sozlugu, _sayisal, _ozel = _fatura_kolon_takimi(db)
     if anahtar not in bilgi_sozlugu:
         return jsonify({"hata": "geçersiz sütun"}), 400
     if tablo == "abone":
         ekstra_kosul, ekstra_params = _abone_filtre_kosulu_olustur(anahtar, bilgi_sozlugu)
-    else:
+    elif tablo == "ariza":
         ekstra_kosul, ekstra_params = _ariza_filtre_kosulu_olustur(anahtar, bilgi_sozlugu)
-    secenekler = _kolon_secenekleri(db, anahtar, tablo, bilgi_sozlugu, ekstra_kosul, ekstra_params)
+    elif tablo == "fabrika_tamir":
+        ekstra_kosul, ekstra_params = _fabrika_filtre_kosulu_olustur(anahtar, bilgi_sozlugu)
+    else:
+        ekstra_kosul, ekstra_params = _fatura_filtre_kosulu_olustur(anahtar, bilgi_sozlugu)
+    gercek_tablo = _FATURA_ALT_SORGU if tablo == "fatura" else tablo
+    secenekler = _kolon_secenekleri(db, anahtar, gercek_tablo, bilgi_sozlugu, ekstra_kosul, ekstra_params)
     return jsonify({"secenekler": secenekler})
 
 
@@ -4776,6 +5189,27 @@ def _abone_sira_numaralarini_yenile(db):
             FROM abone
         ) t
         WHERE a.id = t.id AND a.s_no IS DISTINCT FROM t.yeni_sira
+        """
+    )
+    db.commit()
+    cur.close()
+
+
+def _fabrika_tamir_sira_numaralarini_yenile(db):
+    """Sıra No, Fabrika/Tamir kayıtlarında oluşturuluş sırasına göre (eskiden
+    yeniye) sıralı tutuluyor ve bu sıraya göre 1'den başlayarak boşluksuz
+    yeniden numaralandırılıyor; silinmiş (silindi_mi) kayıtlar sayılmıyor."""
+    cur = db.cursor()
+    cur.execute(
+        """
+        UPDATE fabrika_tamir ft
+        SET sira_no = t.yeni_sira
+        FROM (
+            SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC NULLS LAST, id ASC) AS yeni_sira
+            FROM fabrika_tamir
+            WHERE silindi_mi IS NOT TRUE
+        ) t
+        WHERE ft.id = t.id AND ft.sira_no IS DISTINCT FROM t.yeni_sira
         """
     )
     db.commit()
