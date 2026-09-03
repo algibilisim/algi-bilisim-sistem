@@ -4325,6 +4325,183 @@ def abone_ara():
     return jsonify(sonuc)
 
 
+_SESLI_SORGU_NITELIKLER = [
+    # (anahtar kelime öbekleri — en uzun/özelinden en genele), [(tablo, kolon ifadesi, etiket, biçim), ...]
+    (['telefon numarası', 'telefon numarasi', 'telefonu', 'telefon'],
+        [('abone', 'telefon', 'Telefon', None), ('ariza', 'telefon', 'Telefon', None)]),
+    (['ikinci telefon', 'telefon iki', 'telefon 2'],
+        [('abone', 'telefon2', 'Telefon 2', None), ('ariza', 'telefon2', 'Telefon 2', None)]),
+    (['adresi', 'adres'],
+        [('abone', 'adres', 'Adres', None), ('ariza', 'adres', 'Adres', None)]),
+    (['baba adı', 'baba adi'],
+        [('abone', 'baba_adi', 'Baba Adı', None)]),
+    (['sayaç numarası', 'sayac numarasi', 'sayaç no', 'sayac no'],
+        [('abone', 'sayac_no', 'Sayaç No', None)]),
+    (['seri numarası', 'seri numarasi', 'seri no'],
+        [('ariza', 'seri_no', 'Seri No', None)]),
+    (['senet numarası', 'senet numarasi', 'senet no'],
+        [('abone', 'senet_no', 'Senet No', None)]),
+    (['fatura numarası', 'fatura numarasi', 'fatura no'],
+        [('abone', 'fatura_no', 'Fatura No', None)]),
+    (['kalan bakiyesi', 'bakiyesi kalan', 'kalan bakiye', 'kalan borcu', 'borcu kalan',
+      'bakiyesi', 'borcu', 'bakiye', 'kalan borç', 'kalan'],
+        [('abone', '(sayac_tutari - alinan_tutar)', 'Kalan Bakiye', 'tl'),
+         ('ariza', '(ariza_ucret - alinan_ucret)', 'Kalan Bakiye', 'tl')]),
+    (['sayaç tutarı', 'sayac tutari', 'sayaç ücreti', 'sayac ucreti'],
+        [('abone', 'sayac_tutari', 'Sayaç Tutarı', 'tl')]),
+    (['alınan tutar', 'alinan tutar', 'alınan ücret', 'alinan ucret', 'alınan', 'alinan'],
+        [('abone', 'alinan_tutar', 'Alınan Tutar', 'tl'), ('ariza', 'alinan_ucret', 'Alınan Ücret', 'tl')]),
+    (['malzeme kalanı', 'malzeme kalani'],
+        [('abone', '(malzeme_tutari - malzeme_alinan)', 'Malzeme Kalan', 'tl')]),
+    (['ödeme tarihi', 'odeme tarihi'],
+        [('abone', 'odeme_tarihi', 'Ödeme Tarihi', None)]),
+    (['ödeme şekli', 'odeme sekli'],
+        [('abone', 'odeme_sekli', 'Ödeme Şekli', None)]),
+    (['montaj tarihi'],
+        [('abone', 'montaj_tarihi', 'Montaj Tarihi', None)]),
+    (['geliş tarihi', 'gelis tarihi'],
+        [('ariza', 'gelis_tarihi', 'Geliş Tarihi', None)]),
+    (['tespit edilen arıza', 'tespit edilen ariza', 'arızası', 'arizasi'],
+        [('ariza', 'tespit_edilen_ariza', 'Tespit Edilen Arıza', None)]),
+    (['yapılan işlemler', 'yapilan islemler', 'yapılan işlem', 'yapilan islem'],
+        [('ariza', 'yapilan_islemler', 'Yapılan İşlemler', None)]),
+    (['açıklaması', 'aciklamasi', 'açıklama', 'aciklama'],
+        [('abone', 'aciklama', 'Açıklama', None)]),
+]
+
+
+@app.route("/api/sesli-sorgu", methods=["POST"])
+@login_required
+def sesli_sorgu_api():
+    """Genel sesli mikrofonun, hiçbir form alanı/düğmesiyle eşleşmeyen bir
+    söylemi (örn. \"Ahmet Yılmaz'ın telefon numarası\" ya da \"Sarıhasanlı
+    köyü kalan bakiyesi\") DOĞAL BİR SORU olarak yorumlamaya çalıştığı uç
+    nokta. Basit bir örüntü tanıma kullanır (apostrof/olmuş kelime öbeği +
+    isim ya da köy adı ayrıştırma) — tam bir yapay zekâ değildir, bu yüzden
+    her ifadeyi anlayamayabilir."""
+    veri = request.get_json(silent=True) or {}
+    sorgu_ham = (veri.get("sorgu") or "").strip()
+    if not sorgu_ham:
+        return jsonify({"tur": "bulunamadi", "mesaj": "Boş sorgu"})
+
+    db = get_db()
+    cur = db.cursor()
+    sorgu_norm = _turkce_normallestir(sorgu_ham)
+
+    # --- Köy modu: "... köy(ü) ..." kalıbı -----------------------------------
+    koy_eslesme = re.search(r'\bköyü?\b', sorgu_norm)
+    if not koy_eslesme:
+        # normalize edilmiş metinde 'ö' de katlanmış olabileceğinden (bkz.
+        # _turkce_normallestir SADECE İ/I/ı/i, Ç/Ş/Ğ/Ö/Ü içindir; 'köy'
+        # zaten Latin harflerle yazılabildiği için katlanmıyor) — yine de
+        # güvenlik amaçlı iki biçimi de deniyoruz.
+        koy_eslesme = re.search(r'\bkoyu?\b', sorgu_norm)
+    if koy_eslesme:
+        koy_adi_ham = sorgu_ham[:koy_eslesme.start()].strip(" '").strip()
+        kalan_metin_norm = sorgu_norm[koy_eslesme.end():].strip()
+        if not koy_adi_ham:
+            cur.close()
+            return jsonify({"tur": "bulunamadi", "mesaj": "Köy adı anlaşılamadı"})
+        sadece_kalanlar = any(k in kalan_metin_norm for k in ("kalan", "bakiye", "borc"))
+        sql = (
+            "SELECT id, adi, soyadi, koy_adi, (sayac_tutari - alinan_tutar) AS kalan "
+            "FROM abone WHERE " + _turkce_esle_kosul("koy_adi") + " LIKE %s"
+        )
+        params = [_turkce_normallestir(f"%{koy_adi_ham}%")]
+        if sadece_kalanlar:
+            sql += " AND (sayac_tutari - alinan_tutar) > 0"
+        sql += " ORDER BY (sayac_tutari - alinan_tutar) DESC LIMIT 50"
+        cur.execute(sql, params)
+        satirlar = cur.fetchall()
+        cur.close()
+        if not satirlar:
+            return jsonify({"tur": "bulunamadi", "mesaj": f'"{koy_adi_ham}" için kayıt bulunamadı'})
+        sonuclar = [{
+            "baslik": f"{s['adi']} {s['soyadi']}",
+            "alt": f"{s['koy_adi']} — Kalan: {tl_format(s['kalan'])}",
+            "url": url_for("abone_duzenle", abone_id=s["id"]),
+        } for s in satirlar]
+        return jsonify({
+            "tur": "liste",
+            "baslik": (koy_adi_ham + " — Kalan Bakiyesi Olanlar") if sadece_kalanlar else (koy_adi_ham + " Köyü"),
+            "sonuclar": sonuclar,
+        })
+
+    # --- Kişi modu -----------------------------------------------------------
+    # Konuşma tanıma, Türkçe imla kuralı gereği özel isim + iyelik ekini
+    # genelde bir kesme işaretiyle ayırır (örn. "Ahmet Yılmaz'ın telefonu").
+    # Bu işaret varsa isim/nitelik sınırı olarak öncelikli kullanılır.
+    isim_kismi_ham = None
+    nitelik_metin_norm = sorgu_norm
+    if "'" in sorgu_ham:
+        parcalar = sorgu_ham.split("'", 1)
+        isim_kismi_ham = parcalar[0].strip()
+        kalan_norm = _turkce_normallestir(parcalar[1])
+        kalan_kelimeler = kalan_norm.split(None, 1)  # ilk kelime = iyelik eki (nın/nin/ın/in vb.), atılır
+        nitelik_metin_norm = kalan_kelimeler[1] if len(kalan_kelimeler) > 1 else ""
+
+    bulunan_nitelik = None
+    for anahtarlar, hedefler in _SESLI_SORGU_NITELIKLER:
+        for anahtar in sorted(anahtarlar, key=len, reverse=True):
+            if _turkce_normallestir(anahtar) in nitelik_metin_norm:
+                bulunan_nitelik = (anahtar, hedefler)
+                break
+        if bulunan_nitelik:
+            break
+
+    if isim_kismi_ham is None:
+        # Kesme işareti yoksa: bulunan nitelik ifadesini metinden çıkarıp
+        # geri kalanını isim/konu olarak kullan.
+        if bulunan_nitelik:
+            isim_kismi_ham = re.sub(re.escape(_turkce_normallestir(bulunan_nitelik[0])), "", sorgu_norm, count=1).strip()
+        else:
+            isim_kismi_ham = sorgu_ham
+
+    if not bulunan_nitelik:
+        cur.close()
+        return jsonify({"tur": "bulunamadi", "mesaj": "Ne sorduğunuz anlaşılamadı"})
+
+    isim_kelimeler = [k for k in _turkce_normallestir(isim_kismi_ham).split() if k]
+    if not isim_kelimeler:
+        cur.close()
+        return jsonify({"tur": "bulunamadi", "mesaj": "İsim anlaşılamadı"})
+
+    _anahtar, hedefler = bulunan_nitelik
+    sonuc_listesi = []
+    for tablo, kolon_ifadesi, etiket, bicim in hedefler:
+        ad_ifadesi = "(COALESCE(adi, '') || ' ' || COALESCE(soyadi, ''))"
+        kosul_parcalari = []
+        params = []
+        for k in isim_kelimeler:
+            kosul_parcalari.append(_turkce_esle_kosul(ad_ifadesi) + " LIKE %s")
+            params.append(_turkce_normallestir(f"%{k}%"))
+        sql = (
+            f"SELECT id, adi, soyadi, koy_adi, {kolon_ifadesi} AS deger FROM {tablo} "
+            "WHERE " + " AND ".join(kosul_parcalari) + " LIMIT 20"
+        )
+        cur.execute(sql, params)
+        for satir in cur.fetchall():
+            deger = satir["deger"]
+            if bicim == "tl":
+                deger_metin = tl_format(deger) if deger is not None else "-"
+            elif deger in (None, ""):
+                deger_metin = "(boş)"
+            else:
+                deger_metin = str(deger)
+            url_fonk = "abone_duzenle" if tablo == "abone" else "ariza_duzenle"
+            id_param = "abone_id" if tablo == "abone" else "ariza_id"
+            sonuc_listesi.append({
+                "baslik": f"{satir['adi']} {satir['soyadi']}",
+                "alt": f"{etiket}: {deger_metin}" + (f" ({satir['koy_adi']})" if satir["koy_adi"] else ""),
+                "url": url_for(url_fonk, **{id_param: satir["id"]}),
+            })
+    cur.close()
+
+    if not sonuc_listesi:
+        return jsonify({"tur": "bulunamadi", "mesaj": "Eşleşen kayıt bulunamadı"})
+    return jsonify({"tur": "liste", "baslik": bulunan_nitelik[1][0][2], "sonuclar": sonuc_listesi})
+
+
 @app.route("/api/kolon-secenekleri")
 @login_required
 def kolon_secenekleri_api():
