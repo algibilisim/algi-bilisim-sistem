@@ -4327,10 +4327,11 @@ def abone_ara():
 
 _SESLI_SORGU_NITELIKLER = [
     # (anahtar kelime öbekleri — en uzun/özelinden en genele), [(tablo, kolon ifadesi, etiket, biçim), ...]
+    # biçim: None (düz metin), 'tl' (para), 'tel' (telefon — sonuçta "tıklayınca ara" davranışı tetikler)
     (['telefon numarası', 'telefon numarasi', 'telefonu', 'telefon'],
-        [('abone', 'telefon', 'Telefon', None), ('ariza', 'telefon', 'Telefon', None)]),
+        [('abone', 'telefon', 'Telefon', 'tel'), ('ariza', 'telefon', 'Telefon', 'tel')]),
     (['ikinci telefon', 'telefon iki', 'telefon 2'],
-        [('abone', 'telefon2', 'Telefon 2', None), ('ariza', 'telefon2', 'Telefon 2', None)]),
+        [('abone', 'telefon2', 'Telefon 2', 'tel'), ('ariza', 'telefon2', 'Telefon 2', 'tel')]),
     (['adresi', 'adres'],
         [('abone', 'adres', 'Adres', None), ('ariza', 'adres', 'Adres', None)]),
     (['baba adı', 'baba adi'],
@@ -4351,7 +4352,7 @@ _SESLI_SORGU_NITELIKLER = [
         [('abone', 'sayac_tutari', 'Sayaç Tutarı', 'tl')]),
     (['alınan tutar', 'alinan tutar', 'alınan ücret', 'alinan ucret', 'alınan', 'alinan'],
         [('abone', 'alinan_tutar', 'Alınan Tutar', 'tl'), ('ariza', 'alinan_ucret', 'Alınan Ücret', 'tl')]),
-    (['malzeme kalanı', 'malzeme kalani'],
+    (['malzeme alacağı', 'malzeme alacagi', 'malzeme alacak', 'malzeme kalanı', 'malzeme kalani'],
         [('abone', '(malzeme_tutari - malzeme_alinan)', 'Malzeme Kalan', 'tl')]),
     (['ödeme tarihi', 'odeme tarihi'],
         [('abone', 'odeme_tarihi', 'Ödeme Tarihi', None)]),
@@ -4368,6 +4369,31 @@ _SESLI_SORGU_NITELIKLER = [
     (['açıklaması', 'aciklamasi', 'açıklama', 'aciklama'],
         [('abone', 'aciklama', 'Açıklama', None)]),
 ]
+
+
+def _sesli_sorgu_nitelik_bul(metin_norm):
+    """Bir nitelik öbeğinin (örn. "kalan borcu") metinde geçip geçmediğini üç
+    farklı şekilde dener: düz alt-dize, kelime kümesi (sıra/araya başka
+    kelime girmesi önemsiz) ve bitişik yazım (konuşma tanımanın kelimeleri
+    birleştirmesi durumunda). En uzun (en özel) eşleşen öbeği döndürür. Hem
+    kişi hem köy sorgularında (aynı nitelik sözlüğü üzerinden) kullanılır."""
+    kelime_kumesi = set(metin_norm.split())
+    metin_bitisik = metin_norm.replace(" ", "")
+    en_iyi = None
+    en_iyi_uzunluk = -1
+    for anahtarlar, hedefler in _SESLI_SORGU_NITELIKLER:
+        for anahtar in anahtarlar:
+            anahtar_norm = _turkce_normallestir(anahtar)
+            anahtar_kelimeleri = anahtar_norm.split()
+            eslesti = (
+                anahtar_norm in metin_norm
+                or anahtar_norm.replace(" ", "") in metin_bitisik
+                or all(k in kelime_kumesi for k in anahtar_kelimeleri)
+            )
+            if eslesti and len(anahtar_norm) > en_iyi_uzunluk:
+                en_iyi = (anahtar, hedefler)
+                en_iyi_uzunluk = len(anahtar_norm)
+    return en_iyi
 
 
 @app.route("/api/sesli-sorgu", methods=["POST"])
@@ -4398,32 +4424,61 @@ def sesli_sorgu_api():
         koy_eslesme = re.search(r'\bkoyu?\b', sorgu_norm)
     if koy_eslesme:
         koy_adi_ham = sorgu_ham[:koy_eslesme.start()].strip(" '").strip()
-        kalan_metin_norm = sorgu_norm[koy_eslesme.end():].strip()
+        koy_kalan_metin_norm = sorgu_norm[koy_eslesme.end():].strip()
         if not koy_adi_ham:
             cur.close()
             return jsonify({"tur": "bulunamadi", "mesaj": "Köy adı anlaşılamadı"})
-        sadece_kalanlar = any(k in kalan_metin_norm for k in ("kalan", "bakiye", "borc"))
+
+        if not koy_kalan_metin_norm:
+            # Sadece "... köyü" denmiş, belirli bir bilgi istenmemiş —
+            # varsayılan olarak kalan bakiyeyi göster (filtre uygulamadan,
+            # köydeki HERKESİ listele).
+            koy_nitelik = ("kalan bakiye", [("abone", "(sayac_tutari - alinan_tutar)", "Kalan Bakiye", "tl")])
+            koy_filtrele = False
+        else:
+            koy_nitelik = _sesli_sorgu_nitelik_bul(koy_kalan_metin_norm)
+            if not koy_nitelik:
+                # Bilinmeyen bir bilgi istenmiş — YANLIŞLIKLA "herkesi listele"
+                # gibi görünüp yanıltmak yerine net şekilde anlaşılmadığını
+                # söylüyoruz.
+                cur.close()
+                return jsonify({"tur": "bulunamadi", "mesaj": f'Anlaşılamadı: "{sorgu_ham}"'})
+            koy_filtrele = True
+
+        koy_abone_hedefi = next((h for h in koy_nitelik[1] if h[0] == "abone"), None)
+        if not koy_abone_hedefi:
+            cur.close()
+            return jsonify({"tur": "bulunamadi", "mesaj": f'Bu bilgi köy sorgusunda henüz desteklenmiyor: "{sorgu_ham}"'})
+        _tablo, kolon_ifadesi, etiket, bicim = koy_abone_hedefi
+
         sql = (
-            "SELECT id, adi, soyadi, koy_adi, (sayac_tutari - alinan_tutar) AS kalan "
+            f"SELECT id, adi, soyadi, koy_adi, {kolon_ifadesi} AS deger "
             "FROM abone WHERE " + _turkce_esle_kosul("koy_adi") + " LIKE %s"
         )
         params = [_turkce_normallestir(f"%{koy_adi_ham}%")]
-        if sadece_kalanlar:
-            sql += " AND (sayac_tutari - alinan_tutar) > 0"
-        sql += " ORDER BY (sayac_tutari - alinan_tutar) DESC LIMIT 50"
+        if koy_filtrele and bicim == "tl":
+            sql += f" AND {kolon_ifadesi} > 0"
+        sql += f" ORDER BY {kolon_ifadesi} DESC LIMIT 50" if bicim == "tl" else " ORDER BY adi LIMIT 50"
         cur.execute(sql, params)
         satirlar = cur.fetchall()
         cur.close()
         if not satirlar:
             return jsonify({"tur": "bulunamadi", "mesaj": f'"{koy_adi_ham}" için kayıt bulunamadı'})
-        sonuclar = [{
-            "baslik": f"{s['adi']} {s['soyadi']}",
-            "alt": f"{s['koy_adi']} — Kalan: {tl_format(s['kalan'])}",
-            "url": url_for("abone_duzenle", abone_id=s["id"]),
-        } for s in satirlar]
+        sonuclar = []
+        for s in satirlar:
+            deger = s["deger"]
+            deger_metin = tl_format(deger) if bicim == "tl" else (str(deger) if deger not in (None, "") else "(boş)")
+            sonuc = {
+                "baslik": f"{s['adi']} {s['soyadi']}",
+                "alt": f"{s['koy_adi']} — {etiket}: {deger_metin}",
+                "url": url_for("abone_duzenle", abone_id=s["id"]),
+            }
+            if bicim == "tel" and deger:
+                sonuc["tel"] = "".join(ch for ch in str(deger) if ch.isdigit())
+            sonuclar.append(sonuc)
         return jsonify({
             "tur": "liste",
-            "baslik": (koy_adi_ham + " — Kalan Bakiyesi Olanlar") if sadece_kalanlar else (koy_adi_ham + " Köyü"),
+            "baslik": (koy_adi_ham + " — " + etiket + " Olanlar") if koy_filtrele else (koy_adi_ham + " Köyü"),
             "sonuclar": sonuclar,
         })
 
@@ -4447,31 +4502,7 @@ def sesli_sorgu_api():
         kalan_kelimeler = kalan_norm.split(None, 1)  # ilk kelime = iyelik eki (nın/nin/ın/in vb.), atılır
         nitelik_metin_norm = kalan_kelimeler[1] if len(kalan_kelimeler) > 1 else ""
 
-    def _nitelik_bul(metin_norm):
-        """Bir nitelik öbeğinin (örn. "kalan borcu") metinde geçip
-        geçmediğini üç farklı şekilde dener: düz alt-dize, kelime kümesi
-        (sıra/araya başka kelime girmesi önemsiz) ve bitişik yazım
-        (konuşma tanımanın kelimeleri birleştirmesi durumunda). En uzun
-        (en özel) eşleşen öbeği döndürür."""
-        kelime_kumesi = set(metin_norm.split())
-        metin_bitisik = metin_norm.replace(" ", "")
-        en_iyi = None
-        en_iyi_uzunluk = -1
-        for anahtarlar, hedefler in _SESLI_SORGU_NITELIKLER:
-            for anahtar in anahtarlar:
-                anahtar_norm = _turkce_normallestir(anahtar)
-                anahtar_kelimeleri = anahtar_norm.split()
-                eslesti = (
-                    anahtar_norm in metin_norm
-                    or anahtar_norm.replace(" ", "") in metin_bitisik
-                    or all(k in kelime_kumesi for k in anahtar_kelimeleri)
-                )
-                if eslesti and len(anahtar_norm) > en_iyi_uzunluk:
-                    en_iyi = (anahtar, hedefler)
-                    en_iyi_uzunluk = len(anahtar_norm)
-        return en_iyi
-
-    bulunan_nitelik = _nitelik_bul(nitelik_metin_norm)
+    bulunan_nitelik = _sesli_sorgu_nitelik_bul(nitelik_metin_norm)
 
     if isim_kismi_ham is None:
         # Kesme işareti yoksa: bulunan niteliğin kelimelerini metinden tek
@@ -4519,11 +4550,14 @@ def sesli_sorgu_api():
                 deger_metin = str(deger)
             url_fonk = "abone_duzenle" if tablo == "abone" else "ariza_duzenle"
             id_param = "abone_id" if tablo == "abone" else "ariza_id"
-            sonuc_listesi.append({
+            sonuc = {
                 "baslik": f"{satir['adi']} {satir['soyadi']}",
                 "alt": f"{etiket}: {deger_metin}" + (f" ({satir['koy_adi']})" if satir["koy_adi"] else ""),
                 "url": url_for(url_fonk, **{id_param: satir["id"]}),
-            })
+            }
+            if bicim == "tel" and deger:
+                sonuc["tel"] = "".join(ch for ch in str(deger) if ch.isdigit())
+            sonuc_listesi.append(sonuc)
     cur.close()
 
     if not sonuc_listesi:
