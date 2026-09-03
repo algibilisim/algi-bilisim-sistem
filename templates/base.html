@@ -33,6 +33,18 @@
 .ses-genel-durum { font-size: 12px; color: #666; }
 @keyframes sesNabiz { 0%,100% { box-shadow: 0 0 0 0 rgba(232,114,12,0.5); } 50% { box-shadow: 0 0 0 6px rgba(232,114,12,0); } }
 .ses-dolduruldu { transition: background-color .2s; background-color: #e6f4ea !important; border-radius: 6px; }
+.ses-sorgu-sonuc {
+    margin: 0 0 12px; padding: 10px 14px; border-radius: 10px;
+    border: 1px solid #d8dcd9; background: #fff; font-size: 13.5px;
+}
+.ses-sorgu-sonuc .ses-sorgu-baslik { font-weight: 700; margin-bottom: 6px; }
+.ses-sorgu-sonuc a.ses-sorgu-satir {
+    display: block; padding: 7px 8px; border-radius: 6px; text-decoration: none;
+    color: inherit; border-top: 1px solid #eee;
+}
+.ses-sorgu-sonuc a.ses-sorgu-satir:first-of-type { border-top: none; }
+.ses-sorgu-sonuc a.ses-sorgu-satir:active { background: #f1f4f2; }
+.ses-sorgu-sonuc .ses-sorgu-satir .ses-sorgu-alt { color: #666; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -447,9 +459,26 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
             .replace(/ı/g, 'i').replace(/i̇/g, 'i')
             .replace(/ş/g, 's').replace(/ğ/g, 'g')
             .replace(/ü/g, 'u').replace(/ö/g, 'o').replace(/ç/g, 'c')
-            .replace(/[*:]/g, '')
+            .replace(/[*:'’‘]/g, '')
             .replace(/\s+/g, ' ')
             .trim();
+    }
+
+    // kucukKelimeler dizisinin, buyukKelimeler dizisi içinde ARDIŞIK bir alt
+    // dizi (kelime sınırlarına saygılı) olarak geçip geçmediğini kontrol eder.
+    // Komut eşleştirmede kısmi söylemleri (örn. tam başlık yerine sadece bir
+    // kısmını söylemek) kelime bazında, yanlışlıkla kelime-içi parçaları
+    // eşleştirmeden güvenli şekilde yakalamak için kullanılır.
+    function _sesKelimeDizisiIcinde(kucukKelimeler, buyukKelimeler) {
+        if (kucukKelimeler.length === 0 || kucukKelimeler.length > buyukKelimeler.length) { return false; }
+        for (var basla = 0; basla <= buyukKelimeler.length - kucukKelimeler.length; basla++) {
+            var uydu = true;
+            for (var i = 0; i < kucukKelimeler.length; i++) {
+                if (buyukKelimeler[basla + i] !== kucukKelimeler[i]) { uydu = false; break; }
+            }
+            if (uydu) { return true; }
+        }
+        return false;
     }
 
     // ---- Türkçe sayı kelimelerini rakama çevirme ----------------------------
@@ -604,12 +633,33 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
         return harita;
     }
 
+    function _sesFiltreButonEtiketi(el) {
+        // Tablo başlıklarındaki "Tümü ▾" sütun filtre düğmelerinin kendi
+        // metni anlamsız (hepsi aynı yazıyor) — bunun yerine bir üstteki
+        // gerçek sütun başlığını (örn. "Sayaç No") buluyoruz.
+        var th = el.closest('th');
+        if (!th) { return null; }
+        var tr = th.parentElement;
+        var index = Array.prototype.indexOf.call(tr.children, th);
+        var oncekiTr = tr.previousElementSibling;
+        if (!oncekiTr || index === -1 || !oncekiTr.children[index]) { return null; }
+        var metin = (oncekiTr.children[index].textContent || '').trim();
+        return metin || null;
+    }
+
     function _sesKomutlariniBul(kapsayici) {
         var komutlar = [];
-        kapsayici.querySelectorAll('button, a.btn').forEach(function (el) {
+        kapsayici.querySelectorAll('button, a, input[type="submit"], input[type="button"]').forEach(function (el) {
             if (el.classList.contains('ses-mikrofon-buton') || el.classList.contains('ses-genel-mikrofon')) { return; }
-            var metin = (el.textContent || '').replace(/^[^\p{L}0-9]+/u, '').trim();
-            if (!metin) { return; }
+            if (el.closest('.ses-genel-mikrofon')) { return; }
+            var metin;
+            if (el.classList.contains('filtre-ac-buton')) {
+                metin = _sesFiltreButonEtiketi(el);
+            } else {
+                metin = (el.tagName === 'INPUT' ? (el.value || '') : (el.textContent || ''))
+                    .replace(/^[^\p{L}0-9]+/u, '').trim();
+            }
+            if (!metin || metin.length < 2) { return; }
             komutlar.push({ etiket: metin, normalize: _sesNormallestir(metin), eleman: el });
         });
         return komutlar;
@@ -661,17 +711,77 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
         setTimeout(function () { kutu.classList.remove('ses-dolduruldu'); }, 900);
     }
 
+    // ---- Sesli sorgu (soru-cevap) sonuç kutusu -------------------------------
+    function _sesSorguKutusuGetirOlustur(oncekiEleman) {
+        var kutu = document.getElementById('ses-sorgu-kutusu');
+        if (kutu) { return kutu; }
+        kutu = document.createElement('div');
+        kutu.id = 'ses-sorgu-kutusu';
+        kutu.className = 'ses-sorgu-sonuc no-print';
+        kutu.style.display = 'none';
+        oncekiEleman.insertAdjacentElement('afterend', kutu);
+        return kutu;
+    }
+
+    function _sesSorguSonucGoster(kutu, veri) {
+        kutu.innerHTML = '';
+        if (veri.tur === 'liste' && veri.sonuclar && veri.sonuclar.length) {
+            var baslik = document.createElement('div');
+            baslik.className = 'ses-sorgu-baslik';
+            baslik.textContent = veri.baslik || 'Sonuçlar';
+            kutu.appendChild(baslik);
+            veri.sonuclar.forEach(function (s) {
+                var a = document.createElement('a');
+                a.className = 'ses-sorgu-satir';
+                a.href = s.url;
+                a.innerHTML = '<strong>' + s.baslik + '</strong><div class="ses-sorgu-alt">' + s.alt + '</div>';
+                kutu.appendChild(a);
+            });
+        } else {
+            var mesaj = document.createElement('div');
+            mesaj.textContent = veri.mesaj || 'Sonuç bulunamadı.';
+            kutu.appendChild(mesaj);
+        }
+        kutu.style.display = 'block';
+    }
+
+    function _sesSorguGonder(kutu, metin, durumEtiketi) {
+        var csrfGirdisi = document.querySelector('input[name="csrf_token"]');
+        durumEtiketi.textContent = 'Aranıyor: "' + metin + '"...';
+        fetch('/api/sesli-sorgu', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfGirdisi ? csrfGirdisi.value : ''
+            },
+            body: JSON.stringify({ sorgu: metin })
+        }).then(function (r) { return r.json(); }).then(function (veri) {
+            _sesSorguSonucGoster(kutu, veri);
+            durumEtiketi.textContent = veri.tur === 'liste' ? (veri.sonuclar.length + ' sonuç bulundu') : (veri.mesaj || 'Sonuç yok');
+        }).catch(function () {
+            durumEtiketi.textContent = 'Sorgu sırasında bir hata oluştu.';
+        });
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
-        document.querySelectorAll('form').forEach(function (form) {
+        var formlar = Array.prototype.slice.call(document.querySelectorAll('form'));
+        // Sayfa genelinde TEK bir genel mikrofon olacak — her formun kendi
+        // alan/onay-kutusu haritası ayrı toplanıp birleştiriliyor, komutlar
+        // (düğmeler/linkler) zaten sayfa genelinde aranıyor.
+        var sayfaAlanHaritasi = [];
+        var sayfaKomutHaritasi = [];
+
+        formlar.forEach(function (form) {
             var tumAlanlar = _sesAlanlariniBul(form);
             // Onay kutuları (checkbox/radio) bir "değer" söylenmesini beklemez —
             // sadece başlıkları söylenince tıklanmış/işaretlenmiş gibi davranır,
-            // bu yüzden bunlar da "komut" (buton) listesine dahil ediliyor.
+            // bu yüzden bunlar "komut" (buton) listesine dahil ediliyor.
             var alanHaritasi = tumAlanlar.filter(function (k) { return k.tur !== 'checkbox' && k.tur !== 'radio'; });
             var isaretKutulari = tumAlanlar.filter(function (k) { return k.tur === 'checkbox' || k.tur === 'radio'; })
                 .map(function (k) { return { etiket: k.etiket, normalize: k.normalize, eleman: k.eleman }; });
-            var komutHaritasi = _sesKomutlariniBul(form).concat(isaretKutulari);
-            if (alanHaritasi.length === 0 && komutHaritasi.length === 0) { return; }
+
+            sayfaAlanHaritasi = sayfaAlanHaritasi.concat(alanHaritasi);
+            sayfaKomutHaritasi = sayfaKomutHaritasi.concat(isaretKutulari);
 
             // --- Alan bazlı mikrofonlar (sadece değer girilen metin/seçim
             //     alanları — onay kutuları hariç, onlar için genel mikrofon
@@ -701,104 +811,141 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
                     try { tan.start(); } catch (hata) { buton.classList.remove('ses-dinliyor'); }
                 });
             });
+        });
 
-            // --- Genel form mikrofonu: "alan adı ... değer" ya da tek başına
-            //     bir düğme/onay kutusu adı (örn. "Konum Al", "Baba Adı")
-            //     sürekli dinlenir ---
-            if (alanHaritasi.length >= 2 || komutHaritasi.length >= 1) {
-                var genelButon = document.createElement('button');
-                genelButon.type = 'button';
-                genelButon.className = 'ses-genel-mikrofon no-print';
-                genelButon.innerHTML = '🎤 Sesli Doldur (Genel) ';
-                var durumEtiketi = document.createElement('span');
-                durumEtiketi.className = 'ses-genel-durum';
-                genelButon.appendChild(durumEtiketi);
-                form.insertAdjacentElement('beforebegin', genelButon);
+        // Sayfa genelindeki TÜM düğme/linkler (üst menü, "Özel Alan
+        // Ayarları", "Excel'e Aktar", "S.No: Küçükten Büyüğe", sütun filtre
+        // düğmeleri...) — form içinde olsun olmasın.
+        sayfaKomutHaritasi = sayfaKomutHaritasi.concat(_sesKomutlariniBul(document));
 
-                var siraliHarita = alanHaritasi.slice().sort(function (a, b) {
-                    return b.normalize.length - a.normalize.length;
-                });
+        if (sayfaAlanHaritasi.length === 0 && sayfaKomutHaritasi.length === 0) { return; }
+        if (formlar.length === 0) { return; }
 
-                var dinleniyor = false;
-                var tanima = null;
+        // --- TEK genel mikrofon: "alan adı ... değer", tek başına bir
+        //     düğme/onay kutusu adı (örn. "Konum Al", "Baba Adı", "Sayaç
+        //     No"), ya da hiçbiriyle eşleşmezse bir SORU olarak (örn.
+        //     "Ahmet Yılmaz'ın telefon numarası") sunucuya sorulur. ---
+        var genelButon = document.createElement('button');
+        genelButon.type = 'button';
+        genelButon.className = 'ses-genel-mikrofon no-print';
+        genelButon.innerHTML = '🎤 Sesli Doldur (Genel) ';
+        var durumEtiketi = document.createElement('span');
+        durumEtiketi.className = 'ses-genel-durum';
+        genelButon.appendChild(durumEtiketi);
+        formlar[0].insertAdjacentElement('beforebegin', genelButon);
+        var sorguKutusu = _sesSorguKutusuGetirOlustur(genelButon);
 
-                function _genelDurdur() {
-                    dinleniyor = false;
-                    genelButon.classList.remove('ses-dinliyor');
-                    durumEtiketi.textContent = '';
-                    if (tanima) { try { tanima.stop(); } catch (e) {} }
+        var siraliAlanHaritasi = sayfaAlanHaritasi.slice().sort(function (a, b) {
+            return b.normalize.length - a.normalize.length;
+        });
+        var siraliKomutHaritasi = sayfaKomutHaritasi.slice().sort(function (a, b) {
+            return b.normalize.length - a.normalize.length;
+        });
+
+        var dinleniyor = false;
+        var tanima = null;
+
+        function _genelDurdur() {
+            dinleniyor = false;
+            genelButon.classList.remove('ses-dinliyor');
+            durumEtiketi.textContent = '';
+            if (tanima) { try { tanima.stop(); } catch (e) {} }
+        }
+
+        function _komutEslesmesiBul(normParca) {
+            var buyukKelimeler = normParca.split(' ');
+            var enIyi = null;
+            for (var k = 0; k < siraliKomutHaritasi.length; k++) {
+                var komut = siraliKomutHaritasi[k];
+                if (normParca === komut.normalize) { return komut; }
+                var kucukKelimeler = komut.normalize.split(' ');
+                // Söylenen, düğme adının bir alt-dizisiyse (örn. sadece
+                // "küçükten büyüğe" demek, "s.no küçükten büyüğe" düğmesini
+                // bulur) ya da düğme adı söylenenin bir alt-dizisiyse
+                // (fazladan kelime söylenmişse) eşleşme sayılır. En az 2
+                // kelime ya da 5+ karakter şartı, tek kelimelik yanlışlıkla
+                // eşleşmeleri azaltmak için.
+                if ((buyukKelimeler.length >= 2 || normParca.length >= 5) &&
+                    (_sesKelimeDizisiIcinde(kucukKelimeler, buyukKelimeler) || _sesKelimeDizisiIcinde(buyukKelimeler, kucukKelimeler))) {
+                    if (!enIyi || komut.normalize.length > enIyi.normalize.length) { enIyi = komut; }
                 }
-
-                function _genelBaslat() {
-                    tanima = new _SesTanima();
-                    tanima.lang = 'tr-TR';
-                    tanima.continuous = true;
-                    tanima.interimResults = true;
-                    dinleniyor = true;
-                    genelButon.classList.add('ses-dinliyor');
-                    durumEtiketi.textContent = 'Dinleniyor... (örn: "baba adı Ömer" ya da "Konum Al")';
-
-                    tanima.onresult = function (ev) {
-                        for (var i = ev.resultIndex; i < ev.results.length; i++) {
-                            if (!ev.results[i].isFinal) { continue; }
-                            var parca = ev.results[i][0].transcript;
-                            var normParca = _sesNormallestir(parca);
-
-                            // 1) Önce tam bir KOMUT (düğme) adıyla eşleşiyor mu bak.
-                            var komutBulundu = null;
-                            for (var k = 0; k < komutHaritasi.length; k++) {
-                                if (normParca === komutHaritasi[k].normalize) { komutBulundu = komutHaritasi[k]; break; }
-                            }
-                            if (komutBulundu) {
-                                komutBulundu.eleman.click();
-                                durumEtiketi.textContent = '▶ ' + komutBulundu.etiket;
-                                continue;
-                            }
-
-                            // 2) Yoksa "alan adı ... değer" olarak dene.
-                            var bulunanKayit = null;
-                            var bulunanDeger = '';
-                            for (var j = 0; j < siraliHarita.length; j++) {
-                                var e = siraliHarita[j];
-                                if (normParca === e.normalize) { bulunanKayit = e; bulunanDeger = ''; break; }
-                                if (normParca.indexOf(e.normalize + ' ') === 0) {
-                                    bulunanKayit = e;
-                                    bulunanDeger = parca.slice(e.etiket.length).replace(/^[\s:,-]+/, '');
-                                    break;
-                                }
-                            }
-                            if (bulunanKayit && bulunanDeger) {
-                                if (_sesDegerAta(bulunanKayit.eleman, bulunanKayit.tur, bulunanDeger)) {
-                                    _sesAlaniYanip(bulunanKayit.eleman);
-                                    durumEtiketi.textContent = bulunanKayit.etiket + ': ' + bulunanKayit.eleman.value;
-                                } else {
-                                    durumEtiketi.textContent = bulunanKayit.etiket + ' — eşleşen değer bulunamadı';
-                                }
-                            } else if (bulunanKayit) {
-                                durumEtiketi.textContent = bulunanKayit.etiket + ' — değer duyulamadı, tekrar deneyin';
-                            } else if (normParca) {
-                                durumEtiketi.textContent = 'Eşleşme yok: "' + parca + '"';
-                            }
-                        }
-                    };
-                    tanima.onerror = function (ev) {
-                        if (ev.error === 'no-speech' || ev.error === 'aborted') { return; }
-                        durumEtiketi.textContent = 'Hata: mikrofon izni gerekebilir';
-                        _genelDurdur();
-                    };
-                    tanima.onend = function () {
-                        if (dinleniyor) {
-                            try { tanima.start(); } catch (e) { _genelDurdur(); }
-                        }
-                    };
-                    try { tanima.start(); } catch (hata) { _genelDurdur(); }
-                }
-
-                genelButon.addEventListener('click', function (e) {
-                    e.preventDefault();
-                    if (dinleniyor) { _genelDurdur(); } else { _genelBaslat(); }
-                });
             }
+            return enIyi;
+        }
+
+        function _genelBaslat() {
+            tanima = new _SesTanima();
+            tanima.lang = 'tr-TR';
+            tanima.continuous = true;
+            tanima.interimResults = true;
+            dinleniyor = true;
+            genelButon.classList.add('ses-dinliyor');
+            durumEtiketi.textContent = 'Dinleniyor... (örn: "baba adı Ömer", "Konum Al" ya da "Ahmet Yılmaz\'ın telefonu")';
+            sorguKutusu.style.display = 'none';
+
+            tanima.onresult = function (ev) {
+                for (var i = ev.resultIndex; i < ev.results.length; i++) {
+                    if (!ev.results[i].isFinal) { continue; }
+                    var parca = ev.results[i][0].transcript;
+                    var normParca = _sesNormallestir(parca);
+                    if (!normParca) { continue; }
+
+                    // 1) Önce bir KOMUT (düğme/onay kutusu) adıyla eşleşiyor mu bak.
+                    var komutBulundu = _komutEslesmesiBul(normParca);
+                    if (komutBulundu) {
+                        komutBulundu.eleman.click();
+                        durumEtiketi.textContent = '▶ ' + komutBulundu.etiket;
+                        sorguKutusu.style.display = 'none';
+                        continue;
+                    }
+
+                    // 2) Yoksa "alan adı ... değer" olarak dene.
+                    var bulunanKayit = null;
+                    var bulunanDeger = '';
+                    for (var j = 0; j < siraliAlanHaritasi.length; j++) {
+                        var e = siraliAlanHaritasi[j];
+                        if (normParca === e.normalize) { bulunanKayit = e; bulunanDeger = ''; break; }
+                        if (normParca.indexOf(e.normalize + ' ') === 0) {
+                            bulunanKayit = e;
+                            bulunanDeger = parca.slice(e.etiket.length).replace(/^[\s:,-]+/, '');
+                            break;
+                        }
+                    }
+                    if (bulunanKayit && bulunanDeger) {
+                        if (_sesDegerAta(bulunanKayit.eleman, bulunanKayit.tur, bulunanDeger)) {
+                            _sesAlaniYanip(bulunanKayit.eleman);
+                            durumEtiketi.textContent = bulunanKayit.etiket + ': ' + bulunanKayit.eleman.value;
+                        } else {
+                            durumEtiketi.textContent = bulunanKayit.etiket + ' — eşleşen değer bulunamadı';
+                        }
+                        sorguKutusu.style.display = 'none';
+                        continue;
+                    }
+                    if (bulunanKayit) {
+                        durumEtiketi.textContent = bulunanKayit.etiket + ' — değer duyulamadı, tekrar deneyin';
+                        continue;
+                    }
+
+                    // 3) Hiçbiri değilse: bir SORU olabilir, sunucuya sor.
+                    _sesSorguGonder(sorguKutusu, parca, durumEtiketi);
+                }
+            };
+            tanima.onerror = function (ev) {
+                if (ev.error === 'no-speech' || ev.error === 'aborted') { return; }
+                durumEtiketi.textContent = 'Hata: mikrofon izni gerekebilir';
+                _genelDurdur();
+            };
+            tanima.onend = function () {
+                if (dinleniyor) {
+                    try { tanima.start(); } catch (e) { _genelDurdur(); }
+                }
+            };
+            try { tanima.start(); } catch (hata) { _genelDurdur(); }
+        }
+
+        genelButon.addEventListener('click', function (e) {
+            e.preventDefault();
+            if (dinleniyor) { _genelDurdur(); } else { _genelBaslat(); }
         });
     });
 })();
