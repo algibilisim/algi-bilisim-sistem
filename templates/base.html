@@ -865,19 +865,29 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
         }
 
         function _komutEslesmesiBul(normParca) {
-            // GÜVENLİK: sadece TAM eşleşme kabul edilir. Daha önce denenen
-            // "kısmi eşleşme" (örn. sadece "küçükten büyüğe" demek "S.No:
-            // Küçükten Büyüğe" düğmesini bulsun) YANLIŞ eşleşmelere yol
-            // açtı — örn. tek kelimelik "Telefon" onay kutusu, "...telefon
-            // numarası" diye sorulan bir cümlenin içinde geçtiği için
-            // yanlışlıkla işaretleniyordu; benzer şekilde "Abone Listesi"
-            // demek "Köy Abone Listeleri" düğmesini buluyordu. Bu yüzden
-            // artık düğme/onay kutusu adının BİREBİR aynısının söylenmesi
-            // gerekiyor.
+            // Önce TAM eşleşme aranır. Bulunamazsa, SADECE "söylenen metin
+            // TAMAMIYLA bir düğme adının İÇİNDE (bir alt-dizisi olarak)
+            // geçiyor mu" yönü denenir — örn. sadece "küçükten büyüğe"
+            // demek "S.No: Küçükten Büyüğe" düğmesini bulur. Bu yön GÜVENLİ,
+            // çünkü söylenen metin düğme adından uzunsa (normal bir cümle/
+            // isim sorgusu gibi) otomatik olarak eşleşmez.
+            //
+            // TERSİ yön (bir düğme adının söylenen UZUN bir cümlenin içinde
+            // geçip geçmediğine bakmak) KASITLI OLARAK YOK — daha önce
+            // denenmişti ve YANLIŞ eşleşmelere yol açmıştı: tek kelimelik
+            // "Telefon" onay kutusu "...telefon numarası" diye sorulan bir
+            // cümlenin içinde geçtiği için yanlışlıkla işaretleniyordu.
+            var buyukKelimeler = normParca.split(' ');
+            var enIyi = null;
             for (var k = 0; k < siraliKomutHaritasi.length; k++) {
-                if (normParca === siraliKomutHaritasi[k].normalize) { return siraliKomutHaritasi[k]; }
+                var komut = siraliKomutHaritasi[k];
+                if (normParca === komut.normalize) { return komut; }
+                var kucukKelimeler = komut.normalize.split(' ');
+                if (_sesKelimeDizisiIcinde(buyukKelimeler, kucukKelimeler)) {
+                    if (!enIyi || komut.normalize.length > enIyi.normalize.length) { enIyi = komut; }
+                }
             }
-            return null;
+            return enIyi;
         }
 
         function _genelBaslat() {
