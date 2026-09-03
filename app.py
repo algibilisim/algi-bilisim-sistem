@@ -4325,50 +4325,89 @@ def abone_ara():
     return jsonify(sonuc)
 
 
-_SESLI_SORGU_NITELIKLER = [
-    # (anahtar kelime öbekleri — en uzun/özelinden en genele), [(tablo, kolon ifadesi, etiket, biçim), ...]
-    # biçim: None (düz metin), 'tl' (para), 'tel' (telefon — sonuçta "tıklayınca ara" davranışı tetikler)
-    (['telefon numarası', 'telefon numarasi', 'telefonu', 'telefon'],
+_SES_DOLGU_KELIMELER = {
+    "listesi", "liste", "hepsi", "tumu", "tum", "bilgileri", "bilgisi",
+    "bilgi", "nedir", "kimdir", "kim", "kaydi", "kaydını", "kaydini",
+}
+
+
+def _ses_dolgu_kelimeleri_cikar(ham_metin, norm_metin):
+    """`ham_metin`den (orijinal harflerle), `norm_metin`deki (normalize
+    edilmiş) karşılığı dolgu kelimesi olan kelimeleri çıkarır — örn.
+    "İrfan Özsevgeç listesi" -> "İrfan Özsevgeç"."""
+    kelimeler_ham = ham_metin.split()
+    kelimeler_norm = norm_metin.split()
+    if len(kelimeler_ham) != len(kelimeler_norm):
+        return ham_metin
+    return " ".join(k for k, kn in zip(kelimeler_ham, kelimeler_norm) if kn not in _SES_DOLGU_KELIMELER)
+
+
+_SESLI_SORGU_NITELIKLER_EK = [
+    # Sütun başlıklarının birebir aynısı zaten otomatik olarak aşağıda
+    # (_sesli_sorgu_nitelik_sozlugu_olustur) ekleniyor — burada sadece
+    # günlük konuşmada başlıktan FARKLI söylenebilecek EK eş anlamlılar var.
+    # (anahtar kelime öbekleri), [(tablo, kolon ifadesi, etiket, biçim), ...]
+    (['telefon numarası', 'telefon numarasi', 'telefonu'],
         [('abone', 'telefon', 'Telefon', 'tel'), ('ariza', 'telefon', 'Telefon', 'tel')]),
-    (['ikinci telefon', 'telefon iki', 'telefon 2'],
+    (['ikinci telefon', 'telefon iki'],
         [('abone', 'telefon2', 'Telefon 2', 'tel'), ('ariza', 'telefon2', 'Telefon 2', 'tel')]),
-    (['adresi', 'adres'],
-        [('abone', 'adres', 'Adres', None), ('ariza', 'adres', 'Adres', None)]),
-    (['baba adı', 'baba adi'],
-        [('abone', 'baba_adi', 'Baba Adı', None)]),
-    (['sayaç numarası', 'sayac numarasi', 'sayaç no', 'sayac no'],
-        [('abone', 'sayac_no', 'Sayaç No', None)]),
-    (['seri numarası', 'seri numarasi', 'seri no'],
-        [('ariza', 'seri_no', 'Seri No', None)]),
-    (['senet numarası', 'senet numarasi', 'senet no'],
-        [('abone', 'senet_no', 'Senet No', None)]),
-    (['fatura numarası', 'fatura numarasi', 'fatura no'],
-        [('abone', 'fatura_no', 'Fatura No', None)]),
+    (['adresi'], [('abone', 'adres', 'Adres', None), ('ariza', 'adres', 'Adres', None)]),
+    (['sayaç numarası', 'sayac numarasi'], [('abone', 'sayac_no', 'Sayaç No', None)]),
+    (['seri numarası', 'seri numarasi'], [('ariza', 'seri_no', 'Seri No', None)]),
+    (['senet numarası', 'senet numarasi'], [('abone', 'senet_no', 'Senet No', None)]),
+    (['fatura numarası', 'fatura numarasi'], [('abone', 'fatura_no', 'Fatura No', None)]),
     (['kalan bakiyesi', 'bakiyesi kalan', 'kalan bakiye', 'kalan borcu', 'borcu kalan',
-      'bakiyesi', 'borcu', 'bakiye', 'kalan borç', 'kalan'],
-        [('abone', '(sayac_tutari - alinan_tutar)', 'Kalan Bakiye', 'tl'),
-         ('ariza', '(ariza_ucret - alinan_ucret)', 'Kalan Bakiye', 'tl')]),
-    (['sayaç tutarı', 'sayac tutari', 'sayaç ücreti', 'sayac ucreti'],
-        [('abone', 'sayac_tutari', 'Sayaç Tutarı', 'tl')]),
-    (['alınan tutar', 'alinan tutar', 'alınan ücret', 'alinan ucret', 'alınan', 'alinan'],
-        [('abone', 'alinan_tutar', 'Alınan Tutar', 'tl'), ('ariza', 'alinan_ucret', 'Alınan Ücret', 'tl')]),
-    (['malzeme alacağı', 'malzeme alacagi', 'malzeme alacak', 'malzeme kalanı', 'malzeme kalani'],
+      'bakiyesi', 'borcu', 'bakiye', 'kalan borç'],
+        [('abone', '(sayac_tutari - alinan_tutar)', 'Sayaç Kalan', 'tl'),
+         ('ariza', '(ariza_ucret - alinan_ucret)', 'Kalan Ücret', 'tl')]),
+    (['sayaç ücreti', 'sayac ucreti'], [('abone', 'sayac_tutari', 'Sayaç Tutarı', 'tl')]),
+    (['alınan ücret', 'alinan ucret'],
+        [('abone', 'alinan_tutar', 'Alınan', 'tl'), ('ariza', 'alinan_ucret', 'Alınan Ücret', 'tl')]),
+    (['malzeme alacağı', 'malzeme alacagi', 'malzeme alacak'],
         [('abone', '(malzeme_tutari - malzeme_alinan)', 'Malzeme Kalan', 'tl')]),
-    (['ödeme tarihi', 'odeme tarihi'],
-        [('abone', 'odeme_tarihi', 'Ödeme Tarihi', None)]),
-    (['ödeme şekli', 'odeme sekli'],
-        [('abone', 'odeme_sekli', 'Ödeme Şekli', None)]),
-    (['montaj tarihi'],
-        [('abone', 'montaj_tarihi', 'Montaj Tarihi', None)]),
-    (['geliş tarihi', 'gelis tarihi'],
-        [('ariza', 'gelis_tarihi', 'Geliş Tarihi', None)]),
-    (['tespit edilen arıza', 'tespit edilen ariza', 'arızası', 'arizasi'],
-        [('ariza', 'tespit_edilen_ariza', 'Tespit Edilen Arıza', None)]),
-    (['yapılan işlemler', 'yapilan islemler', 'yapılan işlem', 'yapilan islem'],
-        [('ariza', 'yapilan_islemler', 'Yapılan İşlemler', None)]),
-    (['açıklaması', 'aciklamasi', 'açıklama', 'aciklama'],
-        [('abone', 'aciklama', 'Açıklama', None)]),
+    (['arızası', 'arizasi'], [('ariza', 'tespit_edilen_ariza', 'Tespit Edilen Arıza', None)]),
 ]
+
+
+def _sesli_sorgu_nitelik_sozlugu_olustur():
+    """Sesli sorgu nitelik sözlüğünü, Abone Listesi ve Arıza Takip'te ZATEN
+    var olan sütun tanımlarından (DISPLAY_KOLONLARI/KOLON_BILGI,
+    ARIZA_DISPLAY_KOLONLARI/ARIZA_KOLON_BILGI — "Sayaç Kalan", "Muhtara
+    Ödenen", "Malzeme Kalan" gibi hesaplanan sütunlar dahil) OTOMATİK olarak
+    üretir, böylece tek tek elle eklemeyi unuttuğum bir alan kalmaz. Aynı
+    başlıkla iki tabloda da geçen sütunlar (örn. "Telefon") tek bir girdide
+    birleştirilir. Ardından _SESLI_SORGU_NITELIKLER_EK'teki günlük konuşma
+    eş anlamlıları (örn. "telefon numarası") ekleniyor."""
+    birlesik = {}  # etiket_norm -> {"etiket": ilk_gorulen_ham_etiket, "hedefler": [...]}
+    kaynaklar = (
+        (DISPLAY_KOLONLARI, KOLON_BILGI, "abone"),
+        (ARIZA_DISPLAY_KOLONLARI, ARIZA_KOLON_BILGI, "ariza"),
+    )
+    for kolon_listesi, kolon_bilgi, tablo in kaynaklar:
+        for anahtar_kod, etiket in kolon_listesi:
+            if anahtar_kod in ("adi", "soyadi"):
+                # İsim/soyisim, "kim" sorusunun kendisi — nitelik değil, bu
+                # yüzden hariç tutuluyor (aksi halde "Ahmet'in adı" gibi
+                # anlamsız bir eşleşme oluşurdu).
+                continue
+            ifade, tur = kolon_bilgi[anahtar_kod]
+            if tur == "sayi":
+                bicim = "tl"
+            elif anahtar_kod in ("telefon", "telefon2"):
+                bicim = "tel"
+            else:
+                bicim = None
+            etiket_norm = _turkce_normallestir(etiket)
+            if etiket_norm not in birlesik:
+                birlesik[etiket_norm] = {"etiket": etiket, "hedefler": []}
+            birlesik[etiket_norm]["hedefler"].append((tablo, ifade, etiket, bicim))
+
+    sozluk = [([kayit["etiket"]], kayit["hedefler"]) for kayit in birlesik.values()]
+    sozluk += _SESLI_SORGU_NITELIKLER_EK
+    return sozluk
+
+
+_SESLI_SORGU_NITELIKLER = _sesli_sorgu_nitelik_sozlugu_olustur()
 
 
 def _sesli_sorgu_nitelik_bul(metin_norm):
@@ -4429,14 +4468,16 @@ def sesli_sorgu_api():
             cur.close()
             return jsonify({"tur": "bulunamadi", "mesaj": "Köy adı anlaşılamadı"})
 
-        if not koy_kalan_metin_norm:
-            # Sadece "... köyü" denmiş, belirli bir bilgi istenmemiş —
-            # varsayılan olarak kalan bakiyeyi göster (filtre uygulamadan,
-            # köydeki HERKESİ listele).
+        koy_kalan_kelimeler = [k for k in koy_kalan_metin_norm.split() if k not in _SES_DOLGU_KELIMELER]
+        if not koy_kalan_kelimeler:
+            # Sadece "... köyü" (ya da + "listesi"/"hepsi" gibi dolgu
+            # kelimeler) denmiş, belirli bir bilgi istenmemiş — varsayılan
+            # olarak kalan bakiyeyi göster (filtre uygulamadan, köydeki
+            # HERKESİ listele).
             koy_nitelik = ("kalan bakiye", [("abone", "(sayac_tutari - alinan_tutar)", "Kalan Bakiye", "tl")])
             koy_filtrele = False
         else:
-            koy_nitelik = _sesli_sorgu_nitelik_bul(koy_kalan_metin_norm)
+            koy_nitelik = _sesli_sorgu_nitelik_bul(" ".join(koy_kalan_kelimeler))
             if not koy_nitelik:
                 # Bilinmeyen bir bilgi istenmiş — YANLIŞLIKLA "herkesi listele"
                 # gibi görünüp yanıltmak yerine net şekilde anlaşılmadığını
@@ -4502,29 +4543,72 @@ def sesli_sorgu_api():
         kalan_kelimeler = kalan_norm.split(None, 1)  # ilk kelime = iyelik eki (nın/nin/ın/in vb.), atılır
         nitelik_metin_norm = kalan_kelimeler[1] if len(kalan_kelimeler) > 1 else ""
 
-    bulunan_nitelik = _sesli_sorgu_nitelik_bul(nitelik_metin_norm)
+    bulunan_nitelik = _sesli_sorgu_nitelik_bul(nitelik_metin_norm) if nitelik_metin_norm.strip() else None
 
-    if isim_kismi_ham is None:
-        # Kesme işareti yoksa: bulunan niteliğin kelimelerini metinden tek
-        # tek çıkarıp geri kalanını isim/konu olarak kullan (nitelik
-        # kelimeleri bitişik ya da araya başka kelime girmiş olsa bile).
-        if bulunan_nitelik:
+    genel_mod = not bulunan_nitelik
+    if genel_mod:
+        # Belirli bir bilgi türü anlaşılamadı (örn. sadece "İrfan Özsevgeç"
+        # ya da "İrfan Özsevgeç listesi" denmiş) — başarısız olmak yerine,
+        # kişi hakkında genel bir özet (köy, telefon, kalan bakiye) gösterip
+        # HER ZAMAN bir sonuç bulmaya çalışıyoruz.
+        if isim_kismi_ham is None:
+            isim_kismi_ham = _ses_dolgu_kelimeleri_cikar(sorgu_ham, sorgu_norm)
+        hedefler = [
+            ("abone", "koy_adi", "Köy", None),
+            ("abone", "telefon", "Telefon", "tel"),
+            ("abone", "(sayac_tutari - alinan_tutar)", "Kalan Bakiye", "tl"),
+        ]
+    else:
+        if isim_kismi_ham is None:
+            # Kesme işareti yoksa: bulunan niteliğin kelimelerini metinden
+            # tek tek çıkarıp geri kalanını isim/konu olarak kullan (nitelik
+            # kelimeleri bitişik ya da araya başka kelime girmiş olsa bile).
             kalan_kelimeler = sorgu_norm.split()
             for k in _turkce_normallestir(bulunan_nitelik[0]).split():
                 if k in kalan_kelimeler:
                     kalan_kelimeler.remove(k)
             isim_kismi_ham = " ".join(kalan_kelimeler)
-        else:
-            isim_kismi_ham = sorgu_ham
-
-    if not bulunan_nitelik:
-        cur.close()
-        return jsonify({"tur": "bulunamadi", "mesaj": f'Anlaşılamadı: "{sorgu_ham}"'})
+        hedefler = bulunan_nitelik[1]
 
     isim_kelimeler = [k for k in _turkce_normallestir(isim_kismi_ham).split() if k]
     if not isim_kelimeler:
         cur.close()
         return jsonify({"tur": "bulunamadi", "mesaj": f'İsim anlaşılamadı: "{sorgu_ham}"'})
+
+    if genel_mod:
+        # Genel modda tek bir sorguda üç alanı birden çekip TEK bir kart
+        # üretiyoruz (ayrı ayrı 3 kart yerine, daha kullanışlı).
+        ad_ifadesi = "(COALESCE(adi, '') || ' ' || COALESCE(soyadi, ''))"
+        kosul_parcalari = []
+        params = []
+        for k in isim_kelimeler:
+            kosul_parcalari.append(_turkce_esle_kosul(ad_ifadesi) + " LIKE %s")
+            params.append(_turkce_normallestir(f"%{k}%"))
+        sql = (
+            "SELECT id, adi, soyadi, koy_adi, telefon, (sayac_tutari - alinan_tutar) AS kalan "
+            "FROM abone WHERE " + " AND ".join(kosul_parcalari) + " LIMIT 20"
+        )
+        cur.execute(sql, params)
+        sonuc_listesi = []
+        for satir in cur.fetchall():
+            parcalar = []
+            if satir["koy_adi"]:
+                parcalar.append(satir["koy_adi"])
+            if satir["telefon"]:
+                parcalar.append("Tel: " + str(satir["telefon"]))
+            parcalar.append("Kalan: " + tl_format(satir["kalan"]))
+            sonuc = {
+                "baslik": f"{satir['adi']} {satir['soyadi']}",
+                "alt": " — ".join(parcalar),
+                "url": url_for("abone_duzenle", abone_id=satir["id"]),
+            }
+            if satir["telefon"]:
+                sonuc["tel"] = "".join(ch for ch in str(satir["telefon"]) if ch.isdigit())
+            sonuc_listesi.append(sonuc)
+        cur.close()
+        if not sonuc_listesi:
+            return jsonify({"tur": "bulunamadi", "mesaj": f'"{isim_kismi_ham}" için kayıt bulunamadı'})
+        return jsonify({"tur": "liste", "baslik": isim_kismi_ham, "sonuclar": sonuc_listesi})
 
     _anahtar, hedefler = bulunan_nitelik
     sonuc_listesi = []
