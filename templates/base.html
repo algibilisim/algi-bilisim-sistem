@@ -723,8 +723,14 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
         return kutu;
     }
 
+    // Son gösterilen sesli sorgu sonuçları — "ara" komutu için hatırlanır
+    // (telefon içeren TEK bir sonuç varsa, "ara" dendiğinde onu arar).
+    var _sonSesSorguSonuclari = [];
+    var _SES_ARA_KOMUTLARI = ['ara', 'onu ara', 'ara onu', 'numarayi ara', 'numarasini ara', 'telefon et'];
+
     function _sesSorguSonucGoster(kutu, veri) {
         kutu.innerHTML = '';
+        _sonSesSorguSonuclari = (veri.tur === 'liste' && veri.sonuclar) ? veri.sonuclar : [];
         if (veri.tur === 'liste' && veri.sonuclar && veri.sonuclar.length) {
             var baslik = document.createElement('div');
             baslik.className = 'ses-sorgu-baslik';
@@ -733,7 +739,13 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
             veri.sonuclar.forEach(function (s) {
                 var a = document.createElement('a');
                 a.className = 'ses-sorgu-satir';
-                a.href = s.url;
+                if (s.tel) {
+                    // Telefon numarası sorulmuşsa: tıklayınca kayda gitmek
+                    // yerine doğrudan aramayı başlat.
+                    a.href = 'tel:' + s.tel;
+                } else {
+                    a.href = s.url;
+                }
                 a.innerHTML = '<strong>' + s.baslik + '</strong><div class="ses-sorgu-alt">' + s.alt + '</div>';
                 kutu.appendChild(a);
             });
@@ -853,29 +865,19 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
         }
 
         function _komutEslesmesiBul(normParca) {
-            var buyukKelimeler = normParca.split(' ');
-            var enIyi = null;
+            // GÜVENLİK: sadece TAM eşleşme kabul edilir. Daha önce denenen
+            // "kısmi eşleşme" (örn. sadece "küçükten büyüğe" demek "S.No:
+            // Küçükten Büyüğe" düğmesini bulsun) YANLIŞ eşleşmelere yol
+            // açtı — örn. tek kelimelik "Telefon" onay kutusu, "...telefon
+            // numarası" diye sorulan bir cümlenin içinde geçtiği için
+            // yanlışlıkla işaretleniyordu; benzer şekilde "Abone Listesi"
+            // demek "Köy Abone Listeleri" düğmesini buluyordu. Bu yüzden
+            // artık düğme/onay kutusu adının BİREBİR aynısının söylenmesi
+            // gerekiyor.
             for (var k = 0; k < siraliKomutHaritasi.length; k++) {
-                var komut = siraliKomutHaritasi[k];
-                if (normParca === komut.normalize) { return komut; }
-                var kucukKelimeler = komut.normalize.split(' ');
-                // "Düğme adı, söylenenin İÇİNDE geçiyor" yönü (örn. sadece
-                // "özel alan ayarları aç" gibi fazladan kelimeyle söylenmişse
-                // yine bulunsun) SADECE düğme adı en az 2 kelimeliyse
-                // kullanılır — tek kelimelik bir düğme/onay kutusu adı (örn.
-                // "Telefon") normal bir cümlenin/isim aramasının içinde de
-                // geçebileceğinden, o durumda SADECE tam eşleşme sayılır.
-                // "Söylenen, düğme adının İÇİNDE geçiyor" yönü (örn. sadece
-                // "küçükten büyüğe" demek "S.No: Küçükten Büyüğe" düğmesini
-                // bulur) bu riski taşımaz çünkü söylenen metin düğme adından
-                // uzunsa zaten eşleşmez.
-                var buyukIcindeKucuk = kucukKelimeler.length >= 2 && _sesKelimeDizisiIcinde(kucukKelimeler, buyukKelimeler);
-                var kucukIcindeBuyuk = _sesKelimeDizisiIcinde(buyukKelimeler, kucukKelimeler);
-                if ((buyukKelimeler.length >= 2 || normParca.length >= 5) && (buyukIcindeKucuk || kucukIcindeBuyuk)) {
-                    if (!enIyi || komut.normalize.length > enIyi.normalize.length) { enIyi = komut; }
-                }
+                if (normParca === siraliKomutHaritasi[k].normalize) { return siraliKomutHaritasi[k]; }
             }
-            return enIyi;
+            return null;
         }
 
         function _genelBaslat() {
@@ -894,6 +896,20 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
                     var parca = ev.results[i][0].transcript;
                     var normParca = _sesNormallestir(parca);
                     if (!normParca) { continue; }
+
+                    // 0) "Ara" gibi bir komut mu? Son gösterilen sesli sorgu
+                    //    sonucunda telefon numarası varsa (tek sonuçsa
+                    //    doğrudan, birden fazla sonuç varsa ilkini) hemen arar.
+                    if (_SES_ARA_KOMUTLARI.indexOf(normParca) !== -1) {
+                        var aranacakSonuc = _sonSesSorguSonuclari.find(function (s) { return s.tel; });
+                        if (aranacakSonuc) {
+                            durumEtiketi.textContent = '📞 ' + aranacakSonuc.baslik + ' aranıyor...';
+                            window.location.href = 'tel:' + aranacakSonuc.tel;
+                        } else {
+                            durumEtiketi.textContent = 'Aranacak bir telefon numarası bulunamadı.';
+                        }
+                        continue;
+                    }
 
                     // 1) Önce bir KOMUT (düğme/onay kutusu) adıyla eşleşiyor mu bak.
                     var komutBulundu = _komutEslesmesiBul(normParca);
