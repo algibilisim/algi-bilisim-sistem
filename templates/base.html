@@ -859,14 +859,19 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
                 var komut = siraliKomutHaritasi[k];
                 if (normParca === komut.normalize) { return komut; }
                 var kucukKelimeler = komut.normalize.split(' ');
-                // Söylenen, düğme adının bir alt-dizisiyse (örn. sadece
-                // "küçükten büyüğe" demek, "s.no küçükten büyüğe" düğmesini
-                // bulur) ya da düğme adı söylenenin bir alt-dizisiyse
-                // (fazladan kelime söylenmişse) eşleşme sayılır. En az 2
-                // kelime ya da 5+ karakter şartı, tek kelimelik yanlışlıkla
-                // eşleşmeleri azaltmak için.
-                if ((buyukKelimeler.length >= 2 || normParca.length >= 5) &&
-                    (_sesKelimeDizisiIcinde(kucukKelimeler, buyukKelimeler) || _sesKelimeDizisiIcinde(buyukKelimeler, kucukKelimeler))) {
+                // "Düğme adı, söylenenin İÇİNDE geçiyor" yönü (örn. sadece
+                // "özel alan ayarları aç" gibi fazladan kelimeyle söylenmişse
+                // yine bulunsun) SADECE düğme adı en az 2 kelimeliyse
+                // kullanılır — tek kelimelik bir düğme/onay kutusu adı (örn.
+                // "Telefon") normal bir cümlenin/isim aramasının içinde de
+                // geçebileceğinden, o durumda SADECE tam eşleşme sayılır.
+                // "Söylenen, düğme adının İÇİNDE geçiyor" yönü (örn. sadece
+                // "küçükten büyüğe" demek "S.No: Küçükten Büyüğe" düğmesini
+                // bulur) bu riski taşımaz çünkü söylenen metin düğme adından
+                // uzunsa zaten eşleşmez.
+                var buyukIcindeKucuk = kucukKelimeler.length >= 2 && _sesKelimeDizisiIcinde(kucukKelimeler, buyukKelimeler);
+                var kucukIcindeBuyuk = _sesKelimeDizisiIcinde(buyukKelimeler, kucukKelimeler);
+                if ((buyukKelimeler.length >= 2 || normParca.length >= 5) && (buyukIcindeKucuk || kucukIcindeBuyuk)) {
                     if (!enIyi || komut.normalize.length > enIyi.normalize.length) { enIyi = komut; }
                 }
             }
