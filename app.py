@@ -4430,41 +4430,70 @@ def sesli_sorgu_api():
     # --- Kişi modu -----------------------------------------------------------
     # Konuşma tanıma, Türkçe imla kuralı gereği özel isim + iyelik ekini
     # genelde bir kesme işaretiyle ayırır (örn. "Ahmet Yılmaz'ın telefonu").
-    # Bu işaret varsa isim/nitelik sınırı olarak öncelikli kullanılır.
+    # Bu işaret varsa isim/nitelik sınırı olarak öncelikli kullanılır. Ayrıca
+    # konuşma tanıma bazen düz (') yerine eğik (' ' gibi) bir kesme işareti
+    # üretebiliyor, o yüzden birkaç türü birden deniyoruz.
     isim_kismi_ham = None
     nitelik_metin_norm = sorgu_norm
-    if "'" in sorgu_ham:
-        parcalar = sorgu_ham.split("'", 1)
-        isim_kismi_ham = parcalar[0].strip()
-        kalan_norm = _turkce_normallestir(parcalar[1])
+    kesme_isaretleri = ("'", "\u2019", "\u2018")
+    kesme_konumu = -1
+    for isaret in kesme_isaretleri:
+        pos = sorgu_ham.find(isaret)
+        if pos != -1 and (kesme_konumu == -1 or pos < kesme_konumu):
+            kesme_konumu = pos
+    if kesme_konumu != -1:
+        isim_kismi_ham = sorgu_ham[:kesme_konumu].strip()
+        kalan_norm = _turkce_normallestir(sorgu_ham[kesme_konumu + 1:])
         kalan_kelimeler = kalan_norm.split(None, 1)  # ilk kelime = iyelik eki (nın/nin/ın/in vb.), atılır
         nitelik_metin_norm = kalan_kelimeler[1] if len(kalan_kelimeler) > 1 else ""
 
-    bulunan_nitelik = None
-    for anahtarlar, hedefler in _SESLI_SORGU_NITELIKLER:
-        for anahtar in sorted(anahtarlar, key=len, reverse=True):
-            if _turkce_normallestir(anahtar) in nitelik_metin_norm:
-                bulunan_nitelik = (anahtar, hedefler)
-                break
-        if bulunan_nitelik:
-            break
+    def _nitelik_bul(metin_norm):
+        """Bir nitelik öbeğinin (örn. "kalan borcu") metinde geçip
+        geçmediğini üç farklı şekilde dener: düz alt-dize, kelime kümesi
+        (sıra/araya başka kelime girmesi önemsiz) ve bitişik yazım
+        (konuşma tanımanın kelimeleri birleştirmesi durumunda). En uzun
+        (en özel) eşleşen öbeği döndürür."""
+        kelime_kumesi = set(metin_norm.split())
+        metin_bitisik = metin_norm.replace(" ", "")
+        en_iyi = None
+        en_iyi_uzunluk = -1
+        for anahtarlar, hedefler in _SESLI_SORGU_NITELIKLER:
+            for anahtar in anahtarlar:
+                anahtar_norm = _turkce_normallestir(anahtar)
+                anahtar_kelimeleri = anahtar_norm.split()
+                eslesti = (
+                    anahtar_norm in metin_norm
+                    or anahtar_norm.replace(" ", "") in metin_bitisik
+                    or all(k in kelime_kumesi for k in anahtar_kelimeleri)
+                )
+                if eslesti and len(anahtar_norm) > en_iyi_uzunluk:
+                    en_iyi = (anahtar, hedefler)
+                    en_iyi_uzunluk = len(anahtar_norm)
+        return en_iyi
+
+    bulunan_nitelik = _nitelik_bul(nitelik_metin_norm)
 
     if isim_kismi_ham is None:
-        # Kesme işareti yoksa: bulunan nitelik ifadesini metinden çıkarıp
-        # geri kalanını isim/konu olarak kullan.
+        # Kesme işareti yoksa: bulunan niteliğin kelimelerini metinden tek
+        # tek çıkarıp geri kalanını isim/konu olarak kullan (nitelik
+        # kelimeleri bitişik ya da araya başka kelime girmiş olsa bile).
         if bulunan_nitelik:
-            isim_kismi_ham = re.sub(re.escape(_turkce_normallestir(bulunan_nitelik[0])), "", sorgu_norm, count=1).strip()
+            kalan_kelimeler = sorgu_norm.split()
+            for k in _turkce_normallestir(bulunan_nitelik[0]).split():
+                if k in kalan_kelimeler:
+                    kalan_kelimeler.remove(k)
+            isim_kismi_ham = " ".join(kalan_kelimeler)
         else:
             isim_kismi_ham = sorgu_ham
 
     if not bulunan_nitelik:
         cur.close()
-        return jsonify({"tur": "bulunamadi", "mesaj": "Ne sorduğunuz anlaşılamadı"})
+        return jsonify({"tur": "bulunamadi", "mesaj": f'Anlaşılamadı: "{sorgu_ham}"'})
 
     isim_kelimeler = [k for k in _turkce_normallestir(isim_kismi_ham).split() if k]
     if not isim_kelimeler:
         cur.close()
-        return jsonify({"tur": "bulunamadi", "mesaj": "İsim anlaşılamadı"})
+        return jsonify({"tur": "bulunamadi", "mesaj": f'İsim anlaşılamadı: "{sorgu_ham}"'})
 
     _anahtar, hedefler = bulunan_nitelik
     sonuc_listesi = []
@@ -4498,7 +4527,7 @@ def sesli_sorgu_api():
     cur.close()
 
     if not sonuc_listesi:
-        return jsonify({"tur": "bulunamadi", "mesaj": "Eşleşen kayıt bulunamadı"})
+        return jsonify({"tur": "bulunamadi", "mesaj": f'"{isim_kismi_ham}" için kayıt bulunamadı (Anlaşılan: "{sorgu_ham}")'})
     return jsonify({"tur": "liste", "baslik": bulunan_nitelik[1][0][2], "sonuclar": sonuc_listesi})
 
 
