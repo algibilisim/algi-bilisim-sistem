@@ -4328,6 +4328,8 @@ def abone_ara():
 _SES_DOLGU_KELIMELER = {
     "listesi", "liste", "hepsi", "tumu", "tum", "bilgileri", "bilgisi",
     "bilgi", "nedir", "kimdir", "kim", "kaydi", "kaydını", "kaydini",
+    "olan", "olanlar", "olanlari", "kayitlar", "kayit", "kayitlari",
+    "kisiler", "kisi", "abonelerin", "aboneler", "abone",
 }
 
 
@@ -4453,42 +4455,25 @@ def sesli_sorgu_api():
     cur = db.cursor()
     sorgu_norm = _turkce_normallestir(sorgu_ham)
 
-    # --- Köy modu: "... köy(ü) ..." kalıbı -----------------------------------
-    koy_eslesme = re.search(r'\bköyü?\b', sorgu_norm)
-    if not koy_eslesme:
-        # normalize edilmiş metinde 'ö' de katlanmış olabileceğinden (bkz.
-        # _turkce_normallestir SADECE İ/I/ı/i, Ç/Ş/Ğ/Ö/Ü içindir; 'köy'
-        # zaten Latin harflerle yazılabildiği için katlanmıyor) — yine de
-        # güvenlik amaçlı iki biçimi de deniyoruz.
-        koy_eslesme = re.search(r'\bkoyu?\b', sorgu_norm)
-    if koy_eslesme:
-        koy_adi_ham = sorgu_ham[:koy_eslesme.start()].strip(" '").strip()
-        koy_kalan_metin_norm = sorgu_norm[koy_eslesme.end():].strip()
-        if not koy_adi_ham:
-            cur.close()
-            return jsonify({"tur": "bulunamadi", "mesaj": "Köy adı anlaşılamadı"})
-
-        koy_kalan_kelimeler = [k for k in koy_kalan_metin_norm.split() if k not in _SES_DOLGU_KELIMELER]
+    def _koy_sorgu_yaniti(koy_adi_ham, kalan_metin_norm):
+        """Bir köy adı + (varsa) bilgi türü için sonuç JSON'ı üretir.
+        Bilinmeyen bir bilgi türü istenmişse None döner (çağıran taraf
+        başka bir yorum — örn. kişi modu — deneyebilsin diye)."""
+        koy_kalan_kelimeler = [k for k in kalan_metin_norm.split() if k not in _SES_DOLGU_KELIMELER]
         if not koy_kalan_kelimeler:
-            # Sadece "... köyü" (ya da + "listesi"/"hepsi" gibi dolgu
-            # kelimeler) denmiş, belirli bir bilgi istenmemiş — varsayılan
-            # olarak kalan bakiyeyi göster (filtre uygulamadan, köydeki
-            # HERKESİ listele).
+            # Sadece köy adı (ya da + "listesi"/"hepsi" gibi dolgu kelimeler)
+            # denmiş, belirli bir bilgi istenmemiş — varsayılan olarak kalan
+            # bakiyeyi göster (filtre uygulamadan, köydeki HERKESİ listele).
             koy_nitelik = ("kalan bakiye", [("abone", "(sayac_tutari - alinan_tutar)", "Kalan Bakiye", "tl")])
             koy_filtrele = False
         else:
             koy_nitelik = _sesli_sorgu_nitelik_bul(" ".join(koy_kalan_kelimeler))
             if not koy_nitelik:
-                # Bilinmeyen bir bilgi istenmiş — YANLIŞLIKLA "herkesi listele"
-                # gibi görünüp yanıltmak yerine net şekilde anlaşılmadığını
-                # söylüyoruz.
-                cur.close()
-                return jsonify({"tur": "bulunamadi", "mesaj": f'Anlaşılamadı: "{sorgu_ham}"'})
+                return None
             koy_filtrele = True
 
         koy_abone_hedefi = next((h for h in koy_nitelik[1] if h[0] == "abone"), None)
         if not koy_abone_hedefi:
-            cur.close()
             return jsonify({"tur": "bulunamadi", "mesaj": f'Bu bilgi köy sorgusunda henüz desteklenmiyor: "{sorgu_ham}"'})
         _tablo, kolon_ifadesi, etiket, bicim = koy_abone_hedefi
 
@@ -4502,7 +4487,6 @@ def sesli_sorgu_api():
         sql += f" ORDER BY {kolon_ifadesi} DESC LIMIT 50" if bicim == "tl" else " ORDER BY adi LIMIT 50"
         cur.execute(sql, params)
         satirlar = cur.fetchall()
-        cur.close()
         if not satirlar:
             return jsonify({"tur": "bulunamadi", "mesaj": f'"{koy_adi_ham}" için kayıt bulunamadı'})
         sonuclar = []
@@ -4522,6 +4506,102 @@ def sesli_sorgu_api():
             "baslik": (koy_adi_ham + " — " + etiket + " Olanlar") if koy_filtrele else (koy_adi_ham + " Köyü"),
             "sonuclar": sonuclar,
         })
+
+    def _sesli_sorgu_genel_liste_yaniti(hedefler):
+        """Belirli bir isim/köy söylenmemiş, sadece bir bilgi türü istenmiş
+        (örn. "telefon numarası olan kayıtlar") durumunda, o bilgiye SAHİP
+        (boş/sıfır olmayan) tüm kayıtları (en fazla 50) listeler."""
+        sonuc_listesi = []
+        for tablo, kolon_ifadesi, etiket, bicim in hedefler:
+            if bicim == "tl":
+                kosul = f"{kolon_ifadesi} > 0"
+                sira = f"ORDER BY {kolon_ifadesi} DESC"
+            else:
+                kosul = f"{kolon_ifadesi} IS NOT NULL AND {kolon_ifadesi} != ''"
+                sira = "ORDER BY adi"
+            sql = (
+                f"SELECT id, adi, soyadi, koy_adi, {kolon_ifadesi} AS deger FROM {tablo} "
+                f"WHERE {kosul} {sira} LIMIT 50"
+            )
+            cur.execute(sql)
+            for satir in cur.fetchall():
+                deger = satir["deger"]
+                deger_metin = tl_format(deger) if bicim == "tl" else str(deger)
+                url_fonk = "abone_duzenle" if tablo == "abone" else "ariza_duzenle"
+                id_param = "abone_id" if tablo == "abone" else "ariza_id"
+                sonuc = {
+                    "baslik": f"{satir['adi']} {satir['soyadi']}",
+                    "alt": f"{etiket}: {deger_metin}" + (f" ({satir['koy_adi']})" if satir["koy_adi"] else ""),
+                    "url": url_for(url_fonk, **{id_param: satir["id"]}),
+                }
+                if bicim == "tel" and deger:
+                    sonuc["tel"] = "".join(ch for ch in str(deger) if ch.isdigit())
+                sonuc_listesi.append(sonuc)
+        cur.close()
+        if not sonuc_listesi:
+            return jsonify({"tur": "bulunamadi", "mesaj": f'"{hedefler[0][2]}" bilgisine sahip kayıt bulunamadı'})
+        return jsonify({"tur": "liste", "baslik": hedefler[0][2] + " Olan Kayıtlar", "sonuclar": sonuc_listesi})
+
+    # --- Köy modu (1. yol): "... köy(ü) ..." kalıbı açıkça söylenmişse -------
+    koy_eslesme = re.search(r'\bköyü?\b', sorgu_norm)
+    if not koy_eslesme:
+        # normalize edilmiş metinde 'ö' de katlanmış olabileceğinden (bkz.
+        # _turkce_normallestir SADECE İ/I/ı/i, Ç/Ş/Ğ/Ö/Ü içindir; 'köy'
+        # zaten Latin harflerle yazılabildiği için katlanmıyor) — yine de
+        # güvenlik amaçlı iki biçimi de deniyoruz.
+        koy_eslesme = re.search(r'\bkoyu?\b', sorgu_norm)
+    if koy_eslesme:
+        koy_adi_ham = sorgu_ham[:koy_eslesme.start()].strip(" '").strip()
+        koy_kalan_metin_norm = sorgu_norm[koy_eslesme.end():].strip()
+        if not koy_adi_ham:
+            cur.close()
+            return jsonify({"tur": "bulunamadi", "mesaj": "Köy adı anlaşılamadı"})
+        yanit = _koy_sorgu_yaniti(koy_adi_ham, koy_kalan_metin_norm)
+        cur.close()
+        if yanit is None:
+            # Bilinmeyen bir bilgi istenmiş — YANLIŞLIKLA "herkesi listele"
+            # gibi görünüp yanıltmak yerine net şekilde anlaşılmadığını
+            # söylüyoruz.
+            return jsonify({"tur": "bulunamadi", "mesaj": f'Anlaşılamadı: "{sorgu_ham}"'})
+        return yanit
+
+    # --- "... olan(lar)" modu: belirli bir bilgisi olan TÜM kayıtlar -------
+    # (örn. "telefon numarası olan kayıtlar", "kalan bakiyesi olanlar") —
+    # ne isim ne köy adı içerir, bir niteliğe SAHİP OLAN her kaydı arar.
+    olan_eslesme = re.search(r"\bolan(lar)?\b", sorgu_norm)
+    if olan_eslesme:
+        nitelik_aday_norm = sorgu_norm[:olan_eslesme.start()].strip()
+        olan_nitelik = _sesli_sorgu_nitelik_bul(nitelik_aday_norm) if nitelik_aday_norm else None
+        if not olan_nitelik:
+            cur.close()
+            return jsonify({"tur": "bulunamadi", "mesaj": f'Anlaşılamadı: "{sorgu_ham}"'})
+        sonuclar = []
+        for tablo, kolon_ifadesi, etiket, bicim in olan_nitelik[1]:
+            if bicim == "tl":
+                kosul = f"{kolon_ifadesi} > 0"
+                siralama = f"ORDER BY {kolon_ifadesi} DESC"
+            else:
+                kosul = f"{kolon_ifadesi} IS NOT NULL AND {kolon_ifadesi} != ''"
+                siralama = "ORDER BY adi"
+            sql = f"SELECT id, adi, soyadi, koy_adi, {kolon_ifadesi} AS deger FROM {tablo} WHERE {kosul} {siralama} LIMIT 50"
+            cur.execute(sql)
+            url_fonk = "abone_duzenle" if tablo == "abone" else "ariza_duzenle"
+            id_param = "abone_id" if tablo == "abone" else "ariza_id"
+            for s in cur.fetchall():
+                deger = s["deger"]
+                deger_metin = tl_format(deger) if bicim == "tl" else str(deger)
+                sonuc = {
+                    "baslik": f"{s['adi']} {s['soyadi']}",
+                    "alt": f"{etiket}: {deger_metin}" + (f" ({s['koy_adi']})" if s["koy_adi"] else ""),
+                    "url": url_for(url_fonk, **{id_param: s["id"]}),
+                }
+                if bicim == "tel" and deger:
+                    sonuc["tel"] = "".join(ch for ch in str(deger) if ch.isdigit())
+                sonuclar.append(sonuc)
+        cur.close()
+        if not sonuclar:
+            return jsonify({"tur": "bulunamadi", "mesaj": f'"{olan_nitelik[0]}" olan kayıt bulunamadı'})
+        return jsonify({"tur": "liste", "baslik": olan_nitelik[1][0][2] + " Olanlar", "sonuclar": sonuclar})
 
     # --- Kişi modu -----------------------------------------------------------
     # Konuşma tanıma, Türkçe imla kuralı gereği özel isim + iyelik ekini
@@ -4568,12 +4648,44 @@ def sesli_sorgu_api():
                 if k in kalan_kelimeler:
                     kalan_kelimeler.remove(k)
             isim_kismi_ham = " ".join(kalan_kelimeler)
+        # Nitelik kelimeleri çıkarıldıktan sonra geriye kalan "olan
+        # kayıtlar", "olanlar" gibi dolgu kelimeleri de temizle — bunlar bir
+        # isim değil, "bu bilgiye sahip TÜM kayıtları göster" anlamına gelir.
+        isim_kismi_ham = _ses_dolgu_kelimeleri_cikar(isim_kismi_ham, _turkce_normallestir(isim_kismi_ham))
         hedefler = bulunan_nitelik[1]
 
     isim_kelimeler = [k for k in _turkce_normallestir(isim_kismi_ham).split() if k]
+
     if not isim_kelimeler:
+        if genel_mod:
+            # Ne bir isim ne de bilinen bir bilgi türü anlaşıldı — gerçekten
+            # elde hiçbir şey yok.
+            cur.close()
+            return jsonify({"tur": "bulunamadi", "mesaj": f'İsim anlaşılamadı: "{sorgu_ham}"'})
+        # Belirli bir bilgi türü var ama isim/köy YOK (örn. "telefon
+        # numarası olan kayıtlar") — belirli bir kişiye/köye bağlı olmadan,
+        # bu bilgiye sahip TÜM kayıtları (ilk 50) listele.
+        return _sesli_sorgu_genel_liste_yaniti(hedefler)
+
+    # "Köy" kelimesi hiç söylenmemiş olsa bile (örn. "Avlunlar bakiye"),
+    # eğer bulunan "isim" aslında var olan bir köyün TAM adıysa köy
+    # sorgusuna yönlendir — kişi adıyla karışmasın diye yalnızca TAM eşleşme
+    # kabul ediliyor (LIKE değil).
+    konu_norm = _turkce_normallestir(isim_kismi_ham).strip()
+    cur.execute("SELECT 1 FROM abone WHERE " + _turkce_esle_kosul("koy_adi") + " = %s LIMIT 1", (konu_norm,))
+    if cur.fetchone() is not None:
+        kalan_kelimeler_liste = nitelik_metin_norm.split()
+        for k in konu_norm.split():
+            if k in kalan_kelimeler_liste:
+                kalan_kelimeler_liste.remove(k)
+        yanit = _koy_sorgu_yaniti(isim_kismi_ham, " ".join(kalan_kelimeler_liste))
         cur.close()
-        return jsonify({"tur": "bulunamadi", "mesaj": f'İsim anlaşılamadı: "{sorgu_ham}"'})
+        if yanit is not None:
+            return yanit
+        # Köy olduğu belli ama bilgi türü anlaşılamadıysa, kişi modunda da
+        # bulunamayacağı için (köy adı bir kişi ismi değil) net şekilde
+        # anlaşılmadığını söylüyoruz.
+        return jsonify({"tur": "bulunamadi", "mesaj": f'Anlaşılamadı: "{sorgu_ham}"'})
 
     if genel_mod:
         # Genel modda tek bir sorguda üç alanı birden çekip TEK bir kart
