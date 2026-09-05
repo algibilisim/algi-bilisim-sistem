@@ -377,6 +377,78 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
+// ---- Çift Kayıt Engelleme -------------------------------------------------
+// İnternet yavaşken Kaydet'e birden fazla basılırsa formun iki kez
+// gönderilip aynı kaydın iki kez oluşmasını önler: form gönderilir
+// gönderilmez (ve geçerlilik kontrolünden geçtiyse) içindeki Kaydet
+// butonları hemen devre dışı bırakılır. Bir form bu davranıştan muaf
+// tutulmak isterse <form data-cift-gonderim-yok> eklenebilir.
+document.addEventListener('submit', function(e) {
+    var form = e.target;
+    if (!form || form.tagName !== 'FORM' || form.hasAttribute('data-cift-gonderim-yok')) { return; }
+    setTimeout(function() {
+        if (e.defaultPrevented) { return; }
+        var butonlar = form.querySelectorAll('button[type=submit], input[type=submit]');
+        butonlar.forEach(function(b) {
+            if (b.disabled) { return; }
+            b.disabled = true;
+            b.style.opacity = '0.6';
+            b.style.pointerEvents = 'none';
+            if (b.tagName === 'BUTTON') {
+                b.dataset.orjinalMetin = b.innerHTML;
+                b.innerHTML = 'Kaydediliyor...';
+            } else {
+                b.dataset.orjinalMetin = b.value;
+                b.value = 'Kaydediliyor...';
+            }
+            // Beklenmedik bir durumda (ör. sayfa gerçekten gönderilmediyse)
+            // buton sonsuza dek kilitli kalmasın diye bir güvenlik payı.
+            setTimeout(function() {
+                b.disabled = false;
+                b.style.opacity = '';
+                b.style.pointerEvents = '';
+                if (b.dataset.orjinalMetin !== undefined) {
+                    if (b.tagName === 'BUTTON') { b.innerHTML = b.dataset.orjinalMetin; }
+                    else { b.value = b.dataset.orjinalMetin; }
+                }
+            }, 15000);
+        });
+    }, 0);
+});
+
+// ---- Otomatik Büyük Harf ---------------------------------------------------
+// Tüm metin/textarea alanlarına yazılan (veya yapıştırılan) her şey,
+// yazarken anında Türkçe kurallarına göre büyük harfe çevrilir. Şifre,
+// e-posta, sayı, tarih, arama kutusu, kullanıcı adı gibi alanlar muaf
+// tutulur; bir alan <... data-buyukharf-yok> ile de muaf tutulabilir.
+function _buyukHarfMuafMi(el) {
+    if (!el || !el.tagName) { return true; }
+    var etiket = el.tagName.toLowerCase();
+    if (etiket !== 'input' && etiket !== 'textarea') { return true; }
+    var tur = (el.getAttribute('type') || 'text').toLowerCase();
+    if (["password", "email", "number", "date", "datetime-local", "time",
+         "file", "hidden", "checkbox", "radio", "range", "color", "month",
+         "week", "url", "search"].indexOf(tur) !== -1) { return true; }
+    var oto = (el.getAttribute('autocomplete') || '').toLowerCase();
+    if (["username", "current-password", "new-password", "email"].indexOf(oto) !== -1) { return true; }
+    if (el.classList.contains('filtre-arama-input')) { return true; }
+    if (el.hasAttribute('data-buyukharf-yok')) { return true; }
+    return false;
+}
+
+document.addEventListener('input', function(e) {
+    var el = e.target;
+    if (_buyukHarfMuafMi(el)) { return; }
+    var basStart = el.selectionStart, basEnd = el.selectionEnd;
+    var yeni = el.value.toLocaleUpperCase('tr');
+    if (yeni !== el.value) {
+        el.value = yeni;
+        if (basStart !== null && basStart !== undefined && document.activeElement === el) {
+            try { el.setSelectionRange(basStart, basEnd); } catch (hata) {}
+        }
+    }
+});
+
 // Not: sadece 'resize' olayına bakıp filtre kutularını kapatmak, mobilde
 // ekran klavyesi açıldığında da (pencere yüksekliği değiştiği için) tetiklenir
 // ve az önce açılan filtre kutusunu anında kapatırdı. Bunu önlemek için
