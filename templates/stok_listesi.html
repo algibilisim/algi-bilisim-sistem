@@ -1,10 +1,22 @@
 {% extends "base.html" %}
+{% import "_sayfalama.html" as sayfalama_araci %}
 {% block title %}Stok - ALGI BİLİŞİM{% endblock %}
 {% block content %}
 
 <div class="sayfa-basligi">
     <h2>Stok</h2>
+    <div class="kayit-sayaci">
+        <span>FİLTRELİ KAYIT : {{ filtreli_kayit }}</span>
+        <span>TOPLAM KAYIT : {{ toplam_kayit }}</span>
+    </div>
+    <a class="btn no-print" href="?{{ sira_toggle_qs }}" title="Sıralama yönünü değiştir">
+        Sıra No: {{ 'Küçükten Büyüğe ▲' if sira == 'asc' else 'Büyükten Küçüğe ▼' }}
+    </a>
     <a class="btn btn-yesil" href="{{ url_for('stok_yeni') }}">+ Yeni Ürün</a>
+</div>
+
+<div style="background:#fff;padding:16px;border-radius:8px;margin-bottom:20px;">
+    <strong>TOPLAM STOK TUTARI (KDV Hariç):</strong> {{ toplam_stok_tutari }} TL
 </div>
 
 {% if dusuk_stok_sayisi > 0 %}
@@ -17,47 +29,110 @@
 </div>
 {% endif %}
 
-<div class="tablo-kaydirici">
-<table>
-    <thead>
-        <tr>
-            <th>Ürün Adı</th>
-            <th>Birim</th>
-            <th>Birim Fiyat (KDV Hariç)</th>
-            <th>KDV Oranı</th>
-            <th>Stok Miktarı</th>
-            <th>Min. Stok Seviyesi</th>
-            <th>Açıklama</th>
-            <th></th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for u in urunler %}
-        {% set dusuk = u['stok_miktari']|float <= u['min_stok_seviyesi']|float %}
-        <tr class="{{ 'kirmizi' if dusuk else '' }}">
-            <td>{{ u['urun_adi'] }}{% if dusuk %} ⚠{% endif %}</td>
-            <td>{{ u['birim'] }}</td>
-            <td class="sayi">{{ u['birim_fiyat']|tl }}</td>
-            <td class="sayi">%{{ u['kdv_orani']|int }}</td>
-            <td class="sayi">{{ u['stok_miktari']|tl }}</td>
-            <td class="sayi">{{ u['min_stok_seviyesi']|tl }}</td>
-            <td>{{ u['aciklama'] or '' }}</td>
-            <td class="islem-hucre">
-                <a href="{{ url_for('stok_duzenle', urun_id=u['id']) }}" class="ikon-rozet" data-ipucu="Düzenle" aria-label="Düzenle">✏️</a>
-                <a href="{{ url_for('stok_hareket_ekle', urun_id=u['id']) }}" class="ikon-rozet" data-ipucu="Hareket Ekle" aria-label="Hareket Ekle">➕</a>
-                <a href="{{ url_for('stok_hareketleri', urun_id=u['id']) }}" class="ikon-rozet" data-ipucu="Hareketler" aria-label="Hareketler">🔄</a>
-                <button type="submit" class="ikon-rozet"
-                        formaction="{{ url_for('stok_sil', urun_id=u['id']) }}"
-                        formmethod="post"
-                        data-ipucu="Sil" aria-label="Sil"
-                        onclick="return confirm('Bu ürünü ve tüm hareket geçmişini silmek istediğinize emin misiniz?');">🗑️</button>
-            </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="8">Henüz ürün eklenmemiş.</td></tr>
+<form class="filtre-form no-print" method="get" style="flex-direction: column; align-items: stretch;">
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <input type="text" name="q" value="{{ q }}" placeholder="Aranacak kelime..." style="flex:2; min-width:200px;">
+        <button type="submit" class="btn">Filtrele</button>
+    </div>
+    <div class="arama-alanlari onay-kutu-grid" style="--satir-sayisi: {{ arama_satir }}; --satir-sayisi-2: {{ arama_satir_2 }};">
+        {% for anahtar, etiket in alan_listesi %}
+        <label>
+            <input type="checkbox" name="alan" value="{{ anahtar }}" {% if anahtar in secili_alanlar %}checked{% endif %}> {{ etiket }}
+        </label>
         {% endfor %}
-    </tbody>
-</table>
+    </div>
+</form>
+
+<div class="filtre-butonlari no-print">
+    <button type="button" class="btn" onclick="filtreTemizle('arama')">Arama Filtrelerini Temizle</button>
+    <button type="button" class="btn" onclick="filtreTemizle('sutun')">Sütun Filtrelerini Temizle</button>
+    <button type="button" class="btn" onclick="filtreTemizle('tumu')">Tüm Filtreleri Temizle</button>
 </div>
+
+{{ sayfalama_araci.goster(sayfa, toplam_sayfa, sayfalama_qs) }}
+
+<form method="get" id="kolon-filtre-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="q" value="{{ q }}">
+    {% for anahtar in secili_alanlar %}<input type="hidden" name="alan" value="{{ anahtar }}">{% endfor %}
+
+    <div class="tablo-kaydirici">
+    <table>
+        <thead>
+            <tr>
+                {% for anahtar, etiket in kolon_listesi %}
+                <th>{{ etiket|replace(' ', '<br>', 1)|safe }}</th>
+                {% endfor %}
+                <th class="sabit-sutun"></th>
+            </tr>
+            <tr class="no-print">
+                {% for anahtar, etiket in kolon_listesi %}
+                <th class="kolon-filtre-th">
+                    <button type="button" class="btn filtre-ac-buton" data-hedef="sfiltre-{{ anahtar }}"
+                            data-tablo="stok_urun" data-anahtar="{{ anahtar }}">
+                        {% if deger_secili[anahtar] %}{{ deger_secili[anahtar]|length }} seçili ▾{% elif haric_secili[anahtar] %}Tümü, {{ haric_secili[anahtar]|length }} hariç ▾{% else %}Tümü ▾{% endif %}
+                    </button>
+                    <div id="sfiltre-{{ anahtar }}" class="filtre-kutu">
+                        <div class="filtre-arama-kutusu">
+                            <input type="text" class="filtre-arama-input" placeholder="Ara..." autocomplete="off">
+                        </div>
+                        <div class="filtre-liste">
+                            <label class="tumu-satir"><input type="checkbox" class="tumu-tik"> Tümü</label>
+                            <p class="filtre-yukleniyor">Yükleniyor...</p>
+                            {% for v in deger_secili[anahtar] %}
+                            <input type="hidden" name="deger_{{ anahtar }}" value="{{ v }}" class="filtre-mevcut-gizli">
+                            {% endfor %}
+                            {% for v in haric_secili[anahtar] %}
+                            <input type="hidden" name="haric_{{ anahtar }}" value="{{ v }}" class="filtre-haric-gizli">
+                            {% endfor %}
+                        </div>
+                        <div class="filtre-kutu-alt">
+                            <button type="submit" class="btn btn-yesil">Filtrele</button>
+                        </div>
+                    </div>
+                </th>
+                {% endfor %}
+                <th class="sabit-sutun"></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in satirlar %}
+            <tr class="{{ 'kirmizi' if s['dusuk'] else '' }}">
+                <td class="sayi">{{ s['sira_no'] }}</td>
+                <td>
+                    {% if s['foto_id'] %}
+                    <img src="{{ url_for('stok_fotograf_goster', foto_id=s['foto_id']) }}" alt=""
+                         style="width:22px;height:22px;object-fit:cover;border-radius:4px;vertical-align:middle;margin-right:6px;">
+                    {% endif %}
+                    {{ s['urun_adi'] }}{% if s['dusuk'] %} ⚠{% endif %}
+                </td>
+                <td>{{ s['birim'] }}</td>
+                <td class="sayi">{{ s['birim_fiyat'] }}</td>
+                <td class="sayi">%{{ s['kdv_orani']|int }}</td>
+                <td class="sayi">{{ s['stok_miktari'] }}</td>
+                <td class="sayi">{{ s['min_stok_seviyesi'] }}</td>
+                <td class="sayi">{{ s['toplam_tutar'] }}</td>
+                <td class="sayi">{{ s['kdv_dahil_toplam'] }}</td>
+                <td>{{ s['aciklama'] }}</td>
+                <td class="islem-hucre sabit-sutun">
+                    <a href="{{ url_for('stok_duzenle', urun_id=s['id']) }}" class="ikon-rozet" data-ipucu="Düzenle" aria-label="Düzenle">✏️</a>
+                    <a href="{{ url_for('stok_hareket_ekle', urun_id=s['id']) }}" class="ikon-rozet" data-ipucu="Hareket Ekle" aria-label="Hareket Ekle">➕</a>
+                    <a href="{{ url_for('stok_hareketleri', urun_id=s['id']) }}" class="ikon-rozet" data-ipucu="Hareketler" aria-label="Hareketler">🔄</a>
+                    <button type="button" class="ikon-rozet" data-ipucu="Sil" aria-label="Sil"
+                            onclick="var f=document.createElement('form'); f.method='post'; f.action='{{ url_for('stok_sil', urun_id=s['id']) }}';
+                                     var i=document.createElement('input'); i.type='hidden'; i.name='csrf_token'; i.value='{{ csrf_token() }}';
+                                     f.appendChild(i); document.body.appendChild(f);
+                                     if (confirm('Bu ürünü ve tüm hareket geçmişini silmek istediğinize emin misiniz?')) { f.submit(); }">🗑️</button>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="11">Henüz ürün eklenmemiş.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</form>
+
+{{ sayfalama_araci.goster(sayfa, toplam_sayfa, sayfalama_qs) }}
 
 {% endblock %}

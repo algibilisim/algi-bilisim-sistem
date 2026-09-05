@@ -7,7 +7,7 @@
     <a class="btn" href="{{ url_for('stok_listesi') }}">Stok Listesi'ne Dön</a>
 </div>
 
-<form method="post" style="max-width:520px;">
+<form method="post" enctype="multipart/form-data" style="max-width:520px;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="form-grid">
         <div>
@@ -19,7 +19,7 @@
             <input type="text" name="birim" value="{{ kayit['birim'] if kayit else 'ADET' }}" style="width:100%;">
         </div>
         <div>
-            <label>Birim Fiyat (KDV Hariç)</label>
+            <label>Birim Fiyat</label>
             <input type="number" name="birim_fiyat" value="{{ kayit['birim_fiyat'] if kayit else '' }}" min="0" step="0.01" style="width:100%;">
         </div>
         <div>
@@ -46,6 +46,30 @@
             <label>Açıklama</label>
             <input type="text" name="aciklama" value="{{ kayit['aciklama'] if kayit else '' }}" style="width:100%;">
         </div>
+        <div class="tam-genislik">
+            <label>Ürün Fotoğrafı</label>
+            <input type="file" name="fotograflar" accept="image/*" capture="environment" multiple style="width:100%;">
+            <p style="font-size:12px; color:#888; margin:4px 0 0;">
+                Ürünü tanımak için bir fotoğraf çekebilirsiniz — Stok listesinde
+                ürün adının yanında küçük bir simge olarak görünür.
+            </p>
+        </div>
+        {% if fotograflar %}
+        <div class="tam-genislik" style="display:flex; gap:10px; flex-wrap:wrap;">
+            {% for f in fotograflar %}
+            <div style="position:relative;">
+                <img src="{{ url_for('stok_fotograf_goster', foto_id=f['id']) }}" alt=""
+                     style="width:72px;height:72px;object-fit:cover;border-radius:6px;border:1px solid #ddd;">
+                <button type="button" class="ikon-rozet" data-ipucu="Sil" aria-label="Sil"
+                        style="position:absolute; top:-8px; right:-8px;"
+                        onclick="var f=document.createElement('form'); f.method='post'; f.action='{{ url_for('stok_fotograf_sil', foto_id=f['id']) }}';
+                                 var i=document.createElement('input'); i.type='hidden'; i.name='csrf_token'; i.value='{{ csrf_token() }}';
+                                 f.appendChild(i); document.body.appendChild(f);
+                                 if (confirm('Bu fotoğrafı silmek istediğinize emin misiniz?')) { f.submit(); }">🗑️</button>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
     </div>
     <div class="form-butonlar" style="margin-top:16px;">
         <button type="submit" class="btn btn-yesil">Kaydet</button>

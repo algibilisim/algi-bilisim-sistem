@@ -122,7 +122,7 @@
                 <td>{% if s['telefon'] %}<a href="tel:{{ s['telefon']|replace(' ', '') }}" class="tel-link">{{ s['telefon'] }}</a>{% endif %}</td>
                 <td>{{ s['uretim_yili'] }}</td>
                 <td>{{ (s['tespit_edilen_ariza'] or '')[:60] }}{% if s['tespit_edilen_ariza'] and s['tespit_edilen_ariza']|length > 60 %}…{% endif %}</td>
-                <td>{% if s['yerine_sayac_takildi'] %}Takıldı ({{ s['takilan_sayac_serisi'] or '-' }}){% else %}Takılmadı{% endif %}</td>
+                <td>{% if s['yerine_sayac_takildi'] is sameas true %}Takıldı ({{ s['takilan_sayac_serisi'] or '-' }}){% elif s['yerine_sayac_takildi'] is sameas false %}Takılmadı{% endif %}</td>
                 <td>{{ s['abone_karti'] }}</td>
                 <td><span style="color:{{ durum_renk(s['durum']) }}; font-weight:600;">{{ durum_etiketleri.get(s['durum'], s['durum']) }}</span></td>
                 <td>{{ s['gonderim_tarihi'] }}</td>
