@@ -53,6 +53,14 @@
         </div>
         {{ ozel_alanlari_bas('sayac_no') }}
         <div>
+            <label>Abone Kartı Teslim Edildi mi?</label>
+            <select name="abone_karti_teslim">
+                <option value="" {{ 'selected' if kayit and kayit['abone_karti_teslim'] is none else '' }}>Seçiniz</option>
+                <option value="teslim_edilmedi" {{ 'selected' if kayit and kayit['abone_karti_teslim'] == 'teslim_edilmedi' else '' }}>Teslim Edilmedi</option>
+                <option value="teslim_edildi" {{ 'selected' if (not kayit) or kayit['abone_karti_teslim'] == 'teslim_edildi' else '' }}>Teslim Edildi</option>
+            </select>
+        </div>
+        <div>
             <label>Baba Adı</label>
             <input type="text" name="baba_adi" value="{{ kayit['baba_adi'] if kayit and kayit['baba_adi'] is not none else '' }}">
         </div>
