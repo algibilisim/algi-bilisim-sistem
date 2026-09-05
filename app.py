@@ -5952,6 +5952,28 @@ def _stok_fotograflarini_kaydet(db, urun_id, dosyalar):
     _medya_kaydet(db, "stok_fotograf", "urun_id", urun_id, dosyalar)
 
 
+def _stok_urun_hareket_uygula(db, urun_adi, miktar, aciklama, hareket_turu="cikis"):
+    """Ürün adına göre stoktan otomatik giriş/çıkış işler (ör. yeni abone
+    kaydında sayaç/abone kartı düşürülmesi). Ürün bulunamazsa sessizce
+    hiçbir şey yapmaz — abone kaydı buna bağlı kalmamalı."""
+    cur = db.cursor()
+    cur.execute("SELECT id FROM stok_urun WHERE UPPER(urun_adi) = UPPER(%s) AND aktif = TRUE LIMIT 1", (urun_adi,))
+    urun = cur.fetchone()
+    if urun is None:
+        cur.close()
+        return
+    urun_id = urun["id"]
+    cur.execute(
+        "INSERT INTO stok_hareket (urun_id, hareket_turu, miktar, tarih, aciklama, olusturan_kullanici) "
+        "VALUES (%s, %s, %s, %s, %s, %s)",
+        (urun_id, hareket_turu, miktar, datetime.now().strftime("%Y-%m-%d"), aciklama, session.get("kullanici_adi", "")),
+    )
+    degisim = miktar if hareket_turu == "giris" else -miktar
+    cur.execute("UPDATE stok_urun SET stok_miktari = stok_miktari + %s WHERE id = %s", (degisim, urun_id))
+    db.commit()
+    cur.close()
+
+
 def _sonraki_senet_no(db):
     cur = db.cursor()
     cur.execute("SELECT senet_no FROM abone WHERE senet_no IS NOT NULL AND senet_no != ''")
@@ -6081,16 +6103,18 @@ def _abone_kaydet(abone_id):
     cur = db.cursor()
 
     yeni_kayit_mi = abone_id is None
+    onceki_abone_karti_teslim = None
 
     if yeni_kayit_mi:
         girilen_alinan_toplam = _sayilastir(f.get("alinan_tutar"))
         malzeme_alinan = min(girilen_alinan_toplam, malzeme_tutari) if malzeme_tutari > 0 else 0.0
         alinan_tutar = girilen_alinan_toplam - malzeme_alinan
     else:
-        cur.execute("SELECT alinan_tutar, malzeme_alinan FROM abone WHERE id = %s", (abone_id,))
+        cur.execute("SELECT alinan_tutar, malzeme_alinan, abone_karti_teslim FROM abone WHERE id = %s", (abone_id,))
         mevcut = cur.fetchone()
         alinan_tutar = (mevcut["alinan_tutar"] or 0) if mevcut else 0.0
         malzeme_alinan = (mevcut["malzeme_alinan"] or 0) if mevcut else 0.0
+        onceki_abone_karti_teslim = mevcut["abone_karti_teslim"] if mevcut else None
 
     senet_tutari_hesap = sayac_tutari + malzeme_tutari - alinan_tutar - malzeme_alinan
 
@@ -6105,11 +6129,16 @@ def _abone_kaydet(abone_id):
                 mevcut_senet_no = satir["senet_no"]
         senet_no_final = mevcut_senet_no if mevcut_senet_no else _sonraki_senet_no(db)
 
+    abone_karti_teslim_ham = f.get("abone_karti_teslim", "teslim_edildi").strip()
+    if abone_karti_teslim_ham not in ("teslim_edildi", "teslim_edilmedi"):
+        abone_karti_teslim_ham = None
+
     alanlar = dict(
         koy_adi=f.get("koy_adi", "").strip(),
         adi=f.get("adi", "").strip(),
         soyadi=f.get("soyadi", "").strip(),
         sayac_no=f.get("sayac_no", "").strip(),
+        abone_karti_teslim=abone_karti_teslim_ham,
         senet_tutari=senet_tutari_hesap,
         sayac_tutari=sayac_tutari,
         alinan_tutar=alinan_tutar,
@@ -6180,6 +6209,21 @@ def _abone_kaydet(abone_id):
     db.commit()
     cur.close()
     _abone_sira_numaralarini_yenile(db)
+
+    if yeni_kayit_mi:
+        # Yeni abone kaydında bir sayaç kuruluyor demektir — Stok'taki
+        # sayaç ürününden otomatik 1 adet düşülür.
+        _stok_urun_hareket_uygula(db, "ÖN ÖDEMELİ SU SAYACI", 1, "Yeni abone kaydı - sayaç montajı")
+        if abone_karti_teslim_ham == "teslim_edildi":
+            _stok_urun_hareket_uygula(db, "ABONE KARTI", 1, "Yeni abone kaydı - abone kartı teslimi")
+    else:
+        # Düzenlemede sadece "Teslim Edildi"ye YENİ geçildiyse düşülür;
+        # zaten teslim edilmişse veya hâlâ teslim edilmemişse tekrar düşülmez.
+        if abone_karti_teslim_ham == "teslim_edildi" and onceki_abone_karti_teslim != "teslim_edildi":
+            _stok_urun_hareket_uygula(db, "ABONE KARTI", 1, "Abone kartı teslimi (sonradan işaretlendi)")
+        elif onceki_abone_karti_teslim == "teslim_edildi" and abone_karti_teslim_ham != "teslim_edildi":
+            _stok_urun_hareket_uygula(db, "ABONE KARTI", 1, "Abone kartı teslimi geri alındı", hareket_turu="giris")
+
     return abone_id
 
 

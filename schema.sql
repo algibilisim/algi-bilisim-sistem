@@ -483,3 +483,9 @@ CREATE TABLE IF NOT EXISTS stok_fotograf (
     created_at TIMESTAMP DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_stok_fotograf_urun ON stok_fotograf(urun_id);
+
+-- Abone Kartı Teslim Edildi mi? — Sayaç Seri No'nun altında, açılır menü
+-- (boş / Teslim Edilmedi / Teslim Edildi). "Teslim Edildi" seçiliyken
+-- kaydedilince Stok'taki "ABONE KARTI" ürününden 1 adet düşülür
+-- (bkz. app.py'deki _abone_kaydet / _stok_urun_hareket_uygula).
+ALTER TABLE abone ADD COLUMN IF NOT EXISTS abone_karti_teslim TEXT;
