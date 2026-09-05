@@ -452,3 +452,34 @@ CREATE INDEX IF NOT EXISTS idx_fabrika_tamir_silindi_mi ON fabrika_tamir(silindi
 -- oluşturuluş sırasına göre 1'den başlayarak boşluksuz tutulur.
 ALTER TABLE fabrika_tamir ADD COLUMN IF NOT EXISTS sira_no INTEGER;
 CREATE INDEX IF NOT EXISTS idx_fabrika_tamir_sira_no ON fabrika_tamir(sira_no);
+
+-- "Tamir Sonucu" — Fabrika/Tamir formuna eklenen, tamirin sonucunu/yapılan
+-- işlemi açıklayan serbest metin alanı.
+ALTER TABLE fabrika_tamir ADD COLUMN IF NOT EXISTS tamir_sonucu TEXT;
+
+-- Abone Kartı ve Yerine Sayaç Takıldı mı? artık formda varsayılan olarak
+-- BOŞ (seçilmemiş) geliyor — daha önce sırasıyla 'alinmadi'/FALSE otomatik
+-- seçili geldiği için kullanıcı elle işaretlemeden yanlış bilgiyle
+-- kaydedilebiliyordu. Sütunlar artık NULL (boş) değeri kabul ediyor.
+ALTER TABLE fabrika_tamir ALTER COLUMN abone_karti DROP NOT NULL;
+ALTER TABLE fabrika_tamir ALTER COLUMN abone_karti DROP DEFAULT;
+ALTER TABLE fabrika_tamir ALTER COLUMN yerine_sayac_takildi DROP NOT NULL;
+ALTER TABLE fabrika_tamir ALTER COLUMN yerine_sayac_takildi DROP DEFAULT;
+
+-- Stok listesine de diğer listelerdeki (Abone/Arıza/Fabrika-Tamir) gibi
+-- otomatik, boşluksuz "Sıra No" eklendi — bkz. app.py'deki
+-- _stok_sira_numaralarini_yenile.
+ALTER TABLE stok_urun ADD COLUMN IF NOT EXISTS sira_no INTEGER;
+CREATE INDEX IF NOT EXISTS idx_stok_urun_sira_no ON stok_urun(sira_no);
+
+-- Ürünün fotoğrafı — Stok listesinde ürün adının yanında küçük bir simge
+-- (thumbnail) olarak gösterilir.
+CREATE TABLE IF NOT EXISTS stok_fotograf (
+    id SERIAL PRIMARY KEY,
+    urun_id INTEGER NOT NULL REFERENCES stok_urun(id) ON DELETE CASCADE,
+    dosya_adi TEXT,
+    content_type TEXT,
+    icerik BYTEA NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_stok_fotograf_urun ON stok_fotograf(urun_id);

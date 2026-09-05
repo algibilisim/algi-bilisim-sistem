@@ -469,8 +469,8 @@ FABRIKA_KOLON_BILGI = {
     "telefon": ("telefon", "metin"),
     "uretim_yili": ("uretim_yili", "metin"),
     "tespit_edilen_ariza": ("tespit_edilen_ariza", "metin"),
-    "yerine_sayac_takildi": ("CASE WHEN yerine_sayac_takildi THEN 'Takıldı' ELSE 'Takılmadı' END", "metin"),
-    "abone_karti": ("CASE WHEN abone_karti = 'alindi' THEN 'ALINDI' ELSE 'ALINMADI' END", "metin"),
+    "yerine_sayac_takildi": ("CASE WHEN yerine_sayac_takildi IS TRUE THEN 'Takıldı' WHEN yerine_sayac_takildi IS FALSE THEN 'Takılmadı' ELSE '' END", "metin"),
+    "abone_karti": ("CASE WHEN abone_karti = 'alindi' THEN 'ALINDI' WHEN abone_karti = 'alinmadi' THEN 'ALINMADI' ELSE '' END", "metin"),
     "durum": ("durum", "metin"),
     "gonderim_tarihi": ("gonderim_tarihi", "tarih"),
     "donus_tarihi": ("donus_tarihi", "tarih"),
@@ -568,7 +568,7 @@ def _fabrika_satir_sozlugu(k):
         "tespit_edilen_ariza": k["tespit_edilen_ariza"] or "",
         "yerine_sayac_takildi": k["yerine_sayac_takildi"],
         "takilan_sayac_serisi": k["takilan_sayac_serisi"] or "",
-        "abone_karti": "ALINDI" if k["abone_karti"] == "alindi" else "ALINMADI",
+        "abone_karti": ("ALINDI" if k["abone_karti"] == "alindi" else ("ALINMADI" if k["abone_karti"] == "alinmadi" else "")),
         "durum": k["durum"],
         "gonderim_tarihi": _gg_aa_yyyy(str(k["gonderim_tarihi"])) if k["gonderim_tarihi"] else "",
         "donus_tarihi": _gg_aa_yyyy(str(k["donus_tarihi"])) if k["donus_tarihi"] else "",
@@ -1731,6 +1731,22 @@ def ensure_db():
             WHERE silindi_mi IS NOT TRUE
         ) t
         WHERE ft.id = t.id AND (ft.sira_no IS DISTINCT FROM t.yeni_sira)
+        """
+    )
+    conn.commit()
+
+    # Stok listesindeki "Sıra No" için de aynı şekilde ilk kurulum/deploy'da
+    # bir kereliğine dolduruluyor (bkz. _stok_sira_numaralarini_yenile).
+    cur.execute(
+        """
+        UPDATE stok_urun su
+        SET sira_no = t.yeni_sira
+        FROM (
+            SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC NULLS LAST, id ASC) AS yeni_sira
+            FROM stok_urun
+            WHERE aktif = TRUE
+        ) t
+        WHERE su.id = t.id AND (su.sira_no IS DISTINCT FROM t.yeni_sira)
         """
     )
     conn.commit()
@@ -3069,17 +3085,200 @@ def fatura_pdf_goster(fatura_id):
     return Response(bytes(fatura["pdf_icerik"]), mimetype="application/pdf")
 
 
+STOK_DISPLAY_KOLONLARI = [
+    ("sira_no", "Sıra No"),
+    ("urun_adi", "Ürün Adı"),
+    ("birim", "Birim"),
+    ("birim_fiyat", "Birim Fiyat"),
+    ("kdv_orani", "KDV Oranı"),
+    ("stok_miktari", "Stok Miktarı"),
+    ("min_stok_seviyesi", "Min. Stok Seviyesi"),
+    ("toplam_tutar", "Toplam Tutar"),
+    ("kdv_dahil_toplam", "KDV Dahil Toplam"),
+    ("aciklama", "Açıklama"),
+]
+
+STOK_KOLON_BILGI = {
+    "sira_no": ("sira_no", "sayi"),
+    "urun_adi": ("urun_adi", "metin"),
+    "birim": ("birim", "metin"),
+    "birim_fiyat": ("birim_fiyat", "sayi"),
+    "kdv_orani": ("kdv_orani", "sayi"),
+    "stok_miktari": ("stok_miktari", "sayi"),
+    "min_stok_seviyesi": ("min_stok_seviyesi", "sayi"),
+    "toplam_tutar": ("(birim_fiyat * stok_miktari)", "sayi"),
+    "kdv_dahil_toplam": ("(birim_fiyat * stok_miktari * (1 + kdv_orani / 100.0))", "sayi"),
+    "aciklama": ("aciklama", "metin"),
+}
+
+STOK_SAYISAL_KOLONLAR = {k for k, (_, tur) in STOK_KOLON_BILGI.items() if tur == "sayi"}
+
+_STOK_ALAN_TANIMLARI = [
+    ("urun_adi", "Ürün Adı", "urun_adi", False),
+    ("birim", "Birim", "birim", False),
+    ("aciklama", "Açıklama", "aciklama", False),
+    ("birim_fiyat", "Birim Fiyat", "birim_fiyat", True),
+    ("stok_miktari", "Stok Miktarı", "stok_miktari", True),
+]
+_STOK_ALAN_HARITASI = {k: (kolon, sayisal) for k, _, kolon, sayisal in _STOK_ALAN_TANIMLARI}
+
+
+def _stok_kolon_takimi(db=None):
+    return STOK_DISPLAY_KOLONLARI, STOK_KOLON_BILGI, STOK_SAYISAL_KOLONLAR, []
+
+
+def _stok_filtre_kosulu_olustur(disari_anahtar, kolon_bilgi):
+    kosul = "aktif IS TRUE"
+    params = []
+    q = request.args.get("q", "").strip()
+    alanlar_secili = request.args.getlist("alan")
+    if q:
+        secili = alanlar_secili if alanlar_secili else [k for k, *_ in _STOK_ALAN_TANIMLARI]
+        q_sayi = None
+        q_temiz = q.replace(",", ".").strip()
+        try:
+            q_sayi = float(q_temiz)
+        except ValueError:
+            q_sayi = None
+        kosul_listesi = []
+        kosul_params = []
+        for s in secili:
+            if s in _STOK_ALAN_HARITASI:
+                kolon, sayisal = _STOK_ALAN_HARITASI[s]
+                if sayisal and q_sayi is not None:
+                    kosul_listesi.append(f"ROUND(CAST({kolon} AS NUMERIC), 2) = %s")
+                    kosul_params.append(round(q_sayi, 2))
+                elif sayisal:
+                    kosul_listesi.append(f"{_turkce_esle_kosul(f'CAST({kolon} AS TEXT)')} LIKE %s")
+                    kosul_params.append(_turkce_normallestir(f"%{q}%"))
+                else:
+                    kosul_listesi.append(f"{_turkce_esle_kosul(kolon)} LIKE %s")
+                    kosul_params.append(_turkce_normallestir(f"%{q}%"))
+        if kosul_listesi:
+            kosul += " AND (" + " OR ".join(kosul_listesi) + ")"
+            params += kosul_params
+    for anahtar in kolon_bilgi.keys():
+        if anahtar == disari_anahtar:
+            continue
+        alt_kosul, param_listesi = _kolon_secim_kosulu(anahtar, kolon_bilgi)
+        if alt_kosul:
+            kosul += f" AND {alt_kosul}"
+            params += param_listesi
+    return kosul, params
+
+
+def _stok_satir_sozlugu(u, foto_id):
+    birim_fiyat = float(u["birim_fiyat"] or 0)
+    stok_miktari = float(u["stok_miktari"] or 0)
+    kdv_orani = float(u["kdv_orani"] or 0)
+    toplam = birim_fiyat * stok_miktari
+    return {
+        "id": u["id"],
+        "sira_no": u["sira_no"],
+        "urun_adi": u["urun_adi"],
+        "birim": u["birim"],
+        "birim_fiyat": tl_format(u["birim_fiyat"]),
+        "kdv_orani": u["kdv_orani"],
+        "stok_miktari": tl_format(u["stok_miktari"]),
+        "min_stok_seviyesi": tl_format(u["min_stok_seviyesi"]),
+        "toplam_tutar": tl_format(toplam),
+        "kdv_dahil_toplam": tl_format(toplam * (1 + kdv_orani / 100.0)),
+        "aciklama": u["aciklama"] or "",
+        "dusuk": stok_miktari <= float(u["min_stok_seviyesi"] or 0),
+        "foto_id": foto_id,
+    }
+
+
 @app.route("/stok")
 @login_required
 def stok_listesi():
-    """Ürün/malzeme kataloğunu, güncel stok miktarlarını ve düşük stok uyarılarını gösterir."""
+    """Ürün/malzeme kataloğunu, güncel stok miktarlarını, düşük stok
+    uyarılarını ve Abone Listesi'ndekiyle aynı arama/sütun filtreleme
+    sistemini gösterir."""
+    yonlendirme = _filtre_durumu_uygula("stok_listesi")
+    if yonlendirme:
+        return yonlendirme
+
     db = get_db()
+    q = request.args.get("q", "").strip()
+    alanlar_secili = request.args.getlist("alan")
+    alan_listesi = [(k, etiket) for k, etiket, _, _ in _STOK_ALAN_TANIMLARI]
+
+    sql = "SELECT * FROM stok_urun WHERE aktif = TRUE"
+    params = []
+    if q:
+        secili = alanlar_secili if alanlar_secili else [k for k, *_ in _STOK_ALAN_TANIMLARI]
+        q_sayi = None
+        q_temiz = q.replace(",", ".").strip()
+        try:
+            q_sayi = float(q_temiz)
+        except ValueError:
+            q_sayi = None
+        kosul_listesi = []
+        kosul_params = []
+        for s in secili:
+            if s in _STOK_ALAN_HARITASI:
+                kolon, sayisal = _STOK_ALAN_HARITASI[s]
+                if sayisal and q_sayi is not None:
+                    kosul_listesi.append(f"ROUND(CAST({kolon} AS NUMERIC), 2) = %s")
+                    kosul_params.append(round(q_sayi, 2))
+                elif sayisal:
+                    kosul_listesi.append(f"{_turkce_esle_kosul(f'CAST({kolon} AS TEXT)')} LIKE %s")
+                    kosul_params.append(_turkce_normallestir(f"%{q}%"))
+                else:
+                    kosul_listesi.append(f"{_turkce_esle_kosul(kolon)} LIKE %s")
+                    kosul_params.append(_turkce_normallestir(f"%{q}%"))
+        if kosul_listesi:
+            sql += " AND (" + " OR ".join(kosul_listesi) + ")"
+            params += kosul_params
+
+    kolon_listesi, kolon_bilgi, sayisal_kolonlar, _ozel = _stok_kolon_takimi()
+    deger_secili = {}
+    haric_secili = {}
+    for anahtar, _e in kolon_listesi:
+        deger_secili[anahtar] = request.args.getlist(f"deger_{anahtar}")
+        haric_secili[anahtar] = request.args.getlist(f"haric_{anahtar}")
+        kosul, param_listesi = _kolon_secim_kosulu(anahtar, kolon_bilgi)
+        if kosul:
+            sql += f" AND {kosul}"
+            params += param_listesi
+
+    sql += f" ORDER BY sira_no {'DESC' if _sira_yonu_al() == 'desc' else 'ASC'}"
+
     cur = db.cursor()
-    cur.execute("SELECT * FROM stok_urun WHERE aktif = TRUE ORDER BY urun_adi")
-    urunler = cur.fetchall()
+    cur.execute(sql, params)
+    urunler_ham = cur.fetchall()
+
+    # Her ürünün ilk fotoğrafını (varsa) bul — ürün sayısı az olacağından
+    # tek tek küçük sorgular kabul edilebilir.
+    foto_haritasi = {}
+    for u in urunler_ham:
+        cur.execute("SELECT id FROM stok_fotograf WHERE urun_id = %s ORDER BY id LIMIT 1", (u["id"],))
+        f = cur.fetchone()
+        foto_haritasi[u["id"]] = f["id"] if f else None
+
+    cur.execute("SELECT COUNT(*) AS c FROM stok_urun WHERE aktif = TRUE")
+    toplam_kayit = cur.fetchone()["c"]
     cur.close()
-    dusuk_stok_sayisi = sum(1 for u in urunler if float(u["stok_miktari"] or 0) <= float(u["min_stok_seviyesi"] or 0))
-    return render_template("stok_listesi.html", urunler=urunler, dusuk_stok_sayisi=dusuk_stok_sayisi)
+
+    satirlar = [_stok_satir_sozlugu(u, foto_haritasi[u["id"]]) for u in urunler_ham]
+    dusuk_stok_sayisi = sum(1 for s in satirlar if s["dusuk"])
+    toplam_stok_tutari = sum(float(u["birim_fiyat"] or 0) * float(u["stok_miktari"] or 0) for u in urunler_ham)
+
+    satirlar, filtreli_kayit, sayfa, toplam_sayfa = _sayfala(satirlar)
+
+    return render_template(
+        "stok_listesi.html", satirlar=satirlar, dusuk_stok_sayisi=dusuk_stok_sayisi,
+        toplam_stok_tutari=tl_format(toplam_stok_tutari),
+        q=q, secili_alanlar=alanlar_secili, alan_listesi=alan_listesi,
+        kolon_listesi=kolon_listesi, deger_secili=deger_secili, haric_secili=haric_secili,
+        sayisal_kolonlar=sayisal_kolonlar,
+        arama_satir=_izgara_satir(len(alan_listesi)),
+        arama_satir_2=_izgara_satir(len(alan_listesi), 2),
+        filtreli_kayit=filtreli_kayit, toplam_kayit=toplam_kayit,
+        sira=_sira_yonu_al(), sira_toggle_qs=_sira_toggle_qs(),
+        sayfa=sayfa, toplam_sayfa=toplam_sayfa, sayfalama_qs=_sayfalama_qs,
+    )
 
 
 @app.route("/stok/yeni", methods=["GET", "POST"])
@@ -3095,7 +3294,7 @@ def stok_yeni():
         cur = db.cursor()
         cur.execute(
             "INSERT INTO stok_urun (urun_adi, birim, birim_fiyat, kdv_orani, stok_miktari, min_stok_seviyesi, aciklama) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
             (
                 urun_adi,
                 request.form.get("birim", "ADET").strip() or "ADET",
@@ -3106,11 +3305,14 @@ def stok_yeni():
                 request.form.get("aciklama", "").strip(),
             ),
         )
+        yeni_id = cur.fetchone()["id"]
         db.commit()
         cur.close()
+        _stok_sira_numaralarini_yenile(db)
+        _stok_fotograflarini_kaydet(db, yeni_id, request.files.getlist("fotograflar"))
         flash("Ürün eklendi.")
         return redirect(url_for("stok_listesi"))
-    return render_template("stok_form.html", kayit=None)
+    return render_template("stok_form.html", kayit=None, fotograflar=[])
 
 
 @app.route("/stok/<int:urun_id>/duzenle", methods=["GET", "POST"])
@@ -3140,29 +3342,67 @@ def stok_duzenle(urun_id):
         )
         db.commit()
         cur.close()
+        _stok_fotograflarini_kaydet(db, urun_id, request.files.getlist("fotograflar"))
         flash("Ürün güncellendi.")
         return redirect(url_for("stok_listesi"))
     cur = db.cursor()
     cur.execute("SELECT * FROM stok_urun WHERE id = %s", (urun_id,))
     kayit = cur.fetchone()
-    cur.close()
     if kayit is None:
+        cur.close()
         flash("Ürün bulunamadı.")
         return redirect(url_for("stok_listesi"))
-    return render_template("stok_form.html", kayit=kayit)
+    cur.execute("SELECT id FROM stok_fotograf WHERE urun_id = %s ORDER BY id", (urun_id,))
+    fotograflar = cur.fetchall()
+    cur.close()
+    return render_template("stok_form.html", kayit=kayit, fotograflar=fotograflar)
 
 
 @app.route("/stok/<int:urun_id>/sil", methods=["POST"])
 @login_required
 def stok_sil(urun_id):
-    """Bir ürünü (ve tüm hareket geçmişini) siler."""
+    """Bir ürünü (ve tüm hareket/fotoğraf geçmişini) siler."""
     db = get_db()
     cur = db.cursor()
     cur.execute("DELETE FROM stok_urun WHERE id = %s", (urun_id,))
     db.commit()
     cur.close()
+    _stok_sira_numaralarini_yenile(db)
     flash("Ürün silindi.")
     return redirect(url_for("stok_listesi"))
+
+
+@app.route("/stok-fotograf/<int:foto_id>")
+@login_required
+def stok_fotograf_goster(foto_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT content_type, icerik FROM stok_fotograf WHERE id = %s", (foto_id,))
+    foto = cur.fetchone()
+    cur.close()
+    if foto is None:
+        return "Fotoğraf bulunamadı.", 404
+    yanit = Response(bytes(foto["icerik"]), mimetype=foto["content_type"] or "application/octet-stream")
+    yanit.headers["X-Content-Type-Options"] = "nosniff"
+    return yanit
+
+
+@app.route("/stok-fotograf/<int:foto_id>/sil", methods=["POST"])
+@login_required
+def stok_fotograf_sil(foto_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT urun_id FROM stok_fotograf WHERE id = %s", (foto_id,))
+    foto = cur.fetchone()
+    if foto is None:
+        cur.close()
+        flash("Fotoğraf bulunamadı.")
+        return redirect(url_for("stok_listesi"))
+    cur.execute("DELETE FROM stok_fotograf WHERE id = %s", (foto_id,))
+    db.commit()
+    cur.close()
+    flash("Fotoğraf silindi.")
+    return redirect(url_for("stok_duzenle", urun_id=foto["urun_id"]))
 
 
 @app.route("/stok/<int:urun_id>/hareket", methods=["GET", "POST"])
@@ -3619,18 +3859,19 @@ def fabrika_yeni():
         if not seri_no:
             flash("Seri No zorunludur.")
             return redirect(url_for("fabrika_yeni"))
-        yerine_takildi = request.form.get("yerine_sayac_takildi") == "takildi"
+        yerine_sayac_ham = request.form.get("yerine_sayac_takildi", "").strip()
+        yerine_takildi = True if yerine_sayac_ham == "takildi" else (False if yerine_sayac_ham == "takilmadi" else None)
         db = get_db()
         cur = db.cursor()
         abone_karti = request.form.get("abone_karti", "").strip()
         if abone_karti not in ("alindi", "alinmadi"):
-            abone_karti = "alinmadi"
+            abone_karti = None
         cur.execute(
             "INSERT INTO fabrika_tamir "
             "(seri_no, abone_adi, koy_adi, telefon, ilk_montaj_tarihi, uretim_yili, "
             "tespit_edilen_ariza, yerine_sayac_takildi, takilan_sayac_serisi, "
-            "tamir_ucreti, parca_maliyeti, odeyen, abone_karti, olusturan_kullanici) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            "tamir_ucreti, parca_maliyeti, odeyen, abone_karti, tamir_sonucu, olusturan_kullanici) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
             (
                 seri_no,
                 request.form.get("abone_adi", "").strip(),
@@ -3645,6 +3886,7 @@ def fabrika_yeni():
                 _sayi_veya(request.form.get("parca_maliyeti"), 0),
                 request.form.get("odeyen", "").strip(),
                 abone_karti,
+                request.form.get("tamir_sonucu", "").strip(),
                 session.get("kullanici_adi", ""),
             ),
         )
@@ -3680,10 +3922,11 @@ def fabrika_duzenle(kayit_id):
         if not seri_no:
             flash("Seri No zorunludur.")
             return redirect(url_for("fabrika_duzenle", kayit_id=kayit_id))
-        yerine_takildi = request.form.get("yerine_sayac_takildi") == "takildi"
+        yerine_sayac_ham = request.form.get("yerine_sayac_takildi", "").strip()
+        yerine_takildi = True if yerine_sayac_ham == "takildi" else (False if yerine_sayac_ham == "takilmadi" else None)
         abone_karti = request.form.get("abone_karti", "").strip()
         if abone_karti not in ("alindi", "alinmadi"):
-            abone_karti = "alinmadi"
+            abone_karti = None
 
         yeni_durum = kayit["durum"]
         if kayit["koli_id"] is not None:
@@ -3696,7 +3939,7 @@ def fabrika_duzenle(kayit_id):
             "UPDATE fabrika_tamir SET seri_no=%s, abone_adi=%s, koy_adi=%s, telefon=%s, "
             "ilk_montaj_tarihi=%s, uretim_yili=%s, tespit_edilen_ariza=%s, "
             "yerine_sayac_takildi=%s, takilan_sayac_serisi=%s, durum=%s, donus_tarihi=%s, "
-            "tamir_ucreti=%s, parca_maliyeti=%s, odeyen=%s, abone_karti=%s, updated_at=NOW() WHERE id=%s",
+            "tamir_ucreti=%s, parca_maliyeti=%s, odeyen=%s, abone_karti=%s, tamir_sonucu=%s, updated_at=NOW() WHERE id=%s",
             (
                 seri_no,
                 request.form.get("abone_adi", "").strip(),
@@ -3713,6 +3956,7 @@ def fabrika_duzenle(kayit_id):
                 _sayi_veya(request.form.get("parca_maliyeti"), 0),
                 request.form.get("odeyen", "").strip(),
                 abone_karti,
+                request.form.get("tamir_sonucu", "").strip(),
                 kayit_id,
             ),
         )
@@ -4065,10 +4309,11 @@ def fabrika_koli_kayit_ekle(koli_id):
         if not seri_no:
             flash("Seri No zorunludur.")
             return redirect(url_for("fabrika_koli_kayit_ekle", koli_id=koli_id))
-        yerine_takildi = request.form.get("yerine_sayac_takildi") == "takildi"
+        yerine_sayac_ham = request.form.get("yerine_sayac_takildi", "").strip()
+        yerine_takildi = True if yerine_sayac_ham == "takildi" else (False if yerine_sayac_ham == "takilmadi" else None)
         abone_karti = request.form.get("abone_karti", "").strip()
         if abone_karti not in ("alindi", "alinmadi"):
-            abone_karti = "alinmadi"
+            abone_karti = None
         durum = request.form.get("durum", "").strip()
         if durum not in ("gonderildi", "tamirde", "tamir_edildi", "iade_edildi"):
             durum = "gonderildi"
@@ -4688,20 +4933,24 @@ def sesli_sorgu_api():
         return jsonify({"tur": "bulunamadi", "mesaj": f'Anlaşılamadı: "{sorgu_ham}"'})
 
     if genel_mod:
-        # Genel modda tek bir sorguda üç alanı birden çekip TEK bir kart
-        # üretiyoruz (ayrı ayrı 3 kart yerine, daha kullanışlı).
+        # Genel modda (belirli bir bilgi türü anlaşılamadığında) hem Abone
+        # hem Arıza tablosunda arıyoruz — kişi sadece Arıza Takip'te
+        # kayıtlıysa bile bulunabilsin diye.
         ad_ifadesi = "(COALESCE(adi, '') || ' ' || COALESCE(soyadi, ''))"
         kosul_parcalari = []
         params = []
         for k in isim_kelimeler:
             kosul_parcalari.append(_turkce_esle_kosul(ad_ifadesi) + " LIKE %s")
             params.append(_turkce_normallestir(f"%{k}%"))
-        sql = (
-            "SELECT id, adi, soyadi, koy_adi, telefon, (sayac_tutari - alinan_tutar) AS kalan "
-            "FROM abone WHERE " + " AND ".join(kosul_parcalari) + " LIMIT 20"
-        )
-        cur.execute(sql, params)
+        kosul_sql = " AND ".join(kosul_parcalari)
+
         sonuc_listesi = []
+
+        cur.execute(
+            "SELECT id, adi, soyadi, koy_adi, telefon, (sayac_tutari - alinan_tutar) AS kalan "
+            "FROM abone WHERE " + kosul_sql + " LIMIT 20",
+            params,
+        )
         for satir in cur.fetchall():
             parcalar = []
             if satir["koy_adi"]:
@@ -4711,12 +4960,34 @@ def sesli_sorgu_api():
             parcalar.append("Kalan: " + tl_format(satir["kalan"]))
             sonuc = {
                 "baslik": f"{satir['adi']} {satir['soyadi']}",
-                "alt": " — ".join(parcalar),
+                "alt": "Abone — " + " — ".join(parcalar),
                 "url": url_for("abone_duzenle", abone_id=satir["id"]),
             }
             if satir["telefon"]:
                 sonuc["tel"] = "".join(ch for ch in str(satir["telefon"]) if ch.isdigit())
             sonuc_listesi.append(sonuc)
+
+        cur.execute(
+            "SELECT id, adi, soyadi, koy_adi, telefon, (ariza_ucret - alinan_ucret) AS kalan "
+            "FROM ariza WHERE " + kosul_sql + " LIMIT 20",
+            params,
+        )
+        for satir in cur.fetchall():
+            parcalar = []
+            if satir["koy_adi"]:
+                parcalar.append(satir["koy_adi"])
+            if satir["telefon"]:
+                parcalar.append("Tel: " + str(satir["telefon"]))
+            parcalar.append("Kalan: " + tl_format(satir["kalan"]))
+            sonuc = {
+                "baslik": f"{satir['adi']} {satir['soyadi']}",
+                "alt": "Arıza — " + " — ".join(parcalar),
+                "url": url_for("ariza_duzenle", ariza_id=satir["id"]),
+            }
+            if satir["telefon"]:
+                sonuc["tel"] = "".join(ch for ch in str(satir["telefon"]) if ch.isdigit())
+            sonuc_listesi.append(sonuc)
+
         cur.close()
         if not sonuc_listesi:
             return jsonify({"tur": "bulunamadi", "mesaj": f'"{isim_kismi_ham}" için kayıt bulunamadı'})
@@ -4768,7 +5039,7 @@ def kolon_secenekleri_api():
     filtre kutusunu AÇTIĞINDA seçenekler bu uç nokta üzerinden istenir."""
     tablo = request.args.get("tablo", "").strip()
     anahtar = request.args.get("anahtar", "").strip()
-    if tablo not in ("abone", "ariza", "fabrika_tamir", "fatura"):
+    if tablo not in ("abone", "ariza", "fabrika_tamir", "fatura", "stok_urun"):
         return jsonify({"hata": "geçersiz tablo"}), 400
     db = get_db()
     if tablo == "abone":
@@ -4777,6 +5048,8 @@ def kolon_secenekleri_api():
         _kolon_listesi, bilgi_sozlugu, _sayisal, _ozel = _ariza_kolon_takimi(db)
     elif tablo == "fabrika_tamir":
         _kolon_listesi, bilgi_sozlugu, _sayisal, _ozel = _fabrika_kolon_takimi(db)
+    elif tablo == "stok_urun":
+        _kolon_listesi, bilgi_sozlugu, _sayisal, _ozel = _stok_kolon_takimi(db)
     else:
         _kolon_listesi, bilgi_sozlugu, _sayisal, _ozel = _fatura_kolon_takimi(db)
     if anahtar not in bilgi_sozlugu:
@@ -4787,6 +5060,8 @@ def kolon_secenekleri_api():
         ekstra_kosul, ekstra_params = _ariza_filtre_kosulu_olustur(anahtar, bilgi_sozlugu)
     elif tablo == "fabrika_tamir":
         ekstra_kosul, ekstra_params = _fabrika_filtre_kosulu_olustur(anahtar, bilgi_sozlugu)
+    elif tablo == "stok_urun":
+        ekstra_kosul, ekstra_params = _stok_filtre_kosulu_olustur(anahtar, bilgi_sozlugu)
     else:
         ekstra_kosul, ekstra_params = _fatura_filtre_kosulu_olustur(anahtar, bilgi_sozlugu)
     gercek_tablo = _FATURA_ALT_SORGU if tablo == "fatura" else tablo
@@ -5650,6 +5925,31 @@ def _fabrika_tamir_sira_numaralarini_yenile(db):
     )
     db.commit()
     cur.close()
+
+
+def _stok_sira_numaralarini_yenile(db):
+    """Sıra No, Stok listesindeki aktif ürünlerde oluşturuluş sırasına göre
+    (eskiden yeniye) sıralı tutuluyor ve bu sıraya göre 1'den başlayarak
+    boşluksuz yeniden numaralandırılıyor."""
+    cur = db.cursor()
+    cur.execute(
+        """
+        UPDATE stok_urun su
+        SET sira_no = t.yeni_sira
+        FROM (
+            SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC NULLS LAST, id ASC) AS yeni_sira
+            FROM stok_urun
+            WHERE aktif = TRUE
+        ) t
+        WHERE su.id = t.id AND su.sira_no IS DISTINCT FROM t.yeni_sira
+        """
+    )
+    db.commit()
+    cur.close()
+
+
+def _stok_fotograflarini_kaydet(db, urun_id, dosyalar):
+    _medya_kaydet(db, "stok_fotograf", "urun_id", urun_id, dosyalar)
 
 
 def _sonraki_senet_no(db):
