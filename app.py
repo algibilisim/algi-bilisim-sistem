@@ -224,6 +224,18 @@ def _turkce_esle_kosul(kolon_ifadesi):
     )
 
 
+def _tr_buyuk(deger):
+    """Türkçe karakterlere uygun büyük harf çevirisi (i→İ, ı→I gibi).
+    Sunucu tarafında, JS'in çalışmadığı ya da atlandığı durumlarda bile
+    hiçbir kaydın küçük harfle kalmaması için bir güvenlik katmanı olarak
+    kullanılır."""
+    if deger is None:
+        return deger
+    s = str(deger)
+    s = s.replace("i", "İ").replace("ı", "I")
+    return s.upper()
+
+
 def _telefon_formatla(deger):
     rakamlar = "".join(ch for ch in str(deger or "") if ch.isdigit())
     if not rakamlar:
@@ -6053,10 +6065,18 @@ def abone_sil(abone_id):
     geri = request.args.get("geri", "")
     db = get_db()
     cur = db.cursor()
+    cur.execute("SELECT abone_karti_teslim FROM abone WHERE id = %s", (abone_id,))
+    silinen = cur.fetchone()
     cur.execute("DELETE FROM abone WHERE id = %s", (abone_id,))
     db.commit()
     cur.close()
     _abone_sira_numaralarini_yenile(db)
+    if silinen is not None:
+        # Bu abone kaydı oluşturulurken düşülen stok kalemleri (sayaç ve,
+        # teslim edildiyse, abone kartı) siliniren geri stoğa eklenir.
+        _stok_urun_hareket_uygula(db, "ÖN ÖDEMELİ SU SAYACI", 1, "Abone kaydı silindi - sayaç iadesi", hareket_turu="giris")
+        if silinen["abone_karti_teslim"] == "teslim_edildi":
+            _stok_urun_hareket_uygula(db, "ABONE KARTI", 1, "Abone kaydı silindi - abone kartı iadesi", hareket_turu="giris")
     hedef = url_for("abone_listesi")
     if geri:
         hedef += "?" + geri
@@ -6173,6 +6193,14 @@ def _abone_kaydet(abone_id):
             alanlar[oa["kolon_adi"]] = _sayilastir(f.get(oa["kolon_adi"]))
         else:
             alanlar[oa["kolon_adi"]] = f.get(oa["kolon_adi"], "").strip()
+
+    # Sunucu tarafı güvenlik katmanı: JS büyük harf çevirisini atlasa/çalışmasa
+    # bile kayıt küçük harfle kalmasın. E-posta ve iç kullanım için olan
+    # abone_karti_teslim (enum değeri) bu dönüşümden hariç tutulur.
+    _BUYUK_HARF_MUAF = {"eposta", "abone_karti_teslim"}
+    for k in list(alanlar.keys()):
+        if k not in _BUYUK_HARF_MUAF and isinstance(alanlar[k], str):
+            alanlar[k] = _tr_buyuk(alanlar[k])
 
     if yeni_kayit_mi:
         kolonlar = ", ".join(alanlar.keys())
