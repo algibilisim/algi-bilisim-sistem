@@ -531,7 +531,9 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
             .replace(/ı/g, 'i').replace(/i̇/g, 'i')
             .replace(/ş/g, 's').replace(/ğ/g, 'g')
             .replace(/ü/g, 'u').replace(/ö/g, 'o').replace(/ç/g, 'c')
-            .replace(/[*:'’‘]/g, '')
+            // "T.C" gibi noktalı kısaltmaları etiketteki noktasız haliyle
+            // (örn. "TC") aynı hizaya getirmek için nokta da siliniyor.
+            .replace(/[*:'’‘.]/g, '')
             .replace(/\s+/g, ' ')
             .trim();
     }
@@ -701,6 +703,19 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
             if (_HARIC_TURLER.indexOf(tur) !== -1) { return; }
             gorulenler.push(alan);
             harita.push({ etiket: etiketHam, normalize: _sesNormallestir(etiketHam), eleman: alan, tur: tur });
+            // "TC Kimlik No / Vergi No" gibi " / " ile birleştirilmiş
+            // etiketlerde, kullanıcı sadece bir tarafını söylerse de (örn.
+            // sadece "TC Kimlik No" ya da sadece "Vergi No") alan
+            // bulunabilsin diye her parça ayrı bir takma ad olarak da
+            // ekleniyor (hepsi aynı alanı gösterir).
+            if (etiketHam.indexOf('/') !== -1) {
+                etiketHam.split('/').forEach(function (parca) {
+                    var parcaTemiz = parca.trim();
+                    if (parcaTemiz && parcaTemiz !== etiketHam) {
+                        harita.push({ etiket: parcaTemiz, normalize: _sesNormallestir(parcaTemiz), eleman: alan, tur: tur });
+                    }
+                });
+            }
         });
         return harita;
     }
@@ -929,10 +944,22 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
         var dinleniyor = false;
         var tanima = null;
 
+        // Sürekli (continuous) ses tanıma bazen TEK bir söylemi ("Köy Adı
+        // Dereköy" gibi) birden fazla ayrı FINAL sonuca bölebiliyor (örn.
+        // önce sadece "Köy Adı", sonra ayrıca "Dereköy"). Böyle durumlarda
+        // ilk parça bir alanı etiketiyle bulur ama değer duyulmamış olur;
+        // bu değişkenler o alanı birkaç saniye "bekleyen alan" olarak
+        // hatırlar, böylece hemen ardından gelen ve tek başına hiçbir alan/
+        // komutla eşleşmeyen parça, o alanın DEĞERİ olarak kabul edilir.
+        var _sesBekleyenAlan = null;
+        var _sesBekleyenZaman = 0;
+        var _SES_BEKLEME_SURESI_MS = 8000;
+
         function _genelDurdur() {
             dinleniyor = false;
             genelButon.classList.remove('ses-dinliyor');
             durumEtiketi.textContent = '';
+            _sesBekleyenAlan = null;
             if (tanima) { try { tanima.stop(); } catch (e) {} }
         }
 
@@ -955,7 +982,17 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
                 var komut = siraliKomutHaritasi[k];
                 if (normParca === komut.normalize) { return komut; }
                 var kucukKelimeler = komut.normalize.split(' ');
-                if (_sesKelimeDizisiIcinde(buyukKelimeler, kucukKelimeler)) {
+                // Kısmi eşleşme sadece söylenen metin EN AZ 2 kelimeden
+                // oluşuyorsa denenir. Tek kelimelik söylemler (örn. sadece
+                // "Köy") bu yoldan asla bir düğmeyi tetiklemez — aksi halde
+                // "Köy Adı Dereköy" gibi bir alan-doldurma cümlesi, ses
+                // tanımanın "Köy" kelimesini ayrı bir sonuç olarak
+                // algılaması durumunda "Köy Satış / Tahsilat Raporu" gibi
+                // çok kelimeli, o kelimeyi İÇİNDE barındıran bir menü
+                // düğmesine yanlışlıkla tıklanmasına yol açıyordu. Tek
+                // kelimelik düğmeler (örn. "Stok") zaten yukarıdaki TAM
+                // eşleşme koşuluyla çalışmaya devam eder.
+                if (buyukKelimeler.length >= 2 && _sesKelimeDizisiIcinde(buyukKelimeler, kucukKelimeler)) {
                     if (!enIyi || komut.normalize.length > enIyi.normalize.length) { enIyi = komut; }
                 }
             }
@@ -996,13 +1033,19 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
                     // 1) Önce bir KOMUT (düğme/onay kutusu) adıyla eşleşiyor mu bak.
                     var komutBulundu = _komutEslesmesiBul(normParca);
                     if (komutBulundu) {
+                        _sesBekleyenAlan = null;
                         komutBulundu.eleman.click();
                         durumEtiketi.textContent = '▶ ' + komutBulundu.etiket;
                         sorguKutusu.style.display = 'none';
                         continue;
                     }
 
-                    // 2) Yoksa "alan adı ... değer" olarak dene.
+                    // 2) Yoksa "alan adı ... değer" olarak dene. Değer,
+                    //    KARAKTER uzunluğu değil KELİME sayısı üzerinden
+                    //    ayrılıyor — çünkü normalleştirme sırasında (örn.
+                    //    "T.C" -> "tc") karakter sayısı değişebiliyor ve
+                    //    eski karakter-bazlı kesme bu gibi durumlarda değeri
+                    //    yanlış yerden kesiyordu.
                     var bulunanKayit = null;
                     var bulunanDeger = '';
                     for (var j = 0; j < siraliAlanHaritasi.length; j++) {
@@ -1010,12 +1053,15 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
                         if (normParca === e.normalize) { bulunanKayit = e; bulunanDeger = ''; break; }
                         if (normParca.indexOf(e.normalize + ' ') === 0) {
                             bulunanKayit = e;
-                            bulunanDeger = parca.slice(e.etiket.length).replace(/^[\s:,-]+/, '');
+                            var etiketKelimeSayisi = e.normalize.split(' ').length;
+                            var parcaKelimeleri = parca.trim().split(/\s+/);
+                            bulunanDeger = parcaKelimeleri.slice(etiketKelimeSayisi).join(' ').replace(/^[\s:,-]+/, '');
                             break;
                         }
                     }
                     if (bulunanKayit && bulunanDeger) {
                         if (_sesDegerAta(bulunanKayit.eleman, bulunanKayit.tur, bulunanDeger)) {
+                            _sesBekleyenAlan = null;
                             _sesAlaniYanip(bulunanKayit.eleman);
                             durumEtiketi.textContent = bulunanKayit.etiket + ': ' + bulunanKayit.eleman.value;
                         } else {
@@ -1025,8 +1071,30 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
                         continue;
                     }
                     if (bulunanKayit) {
-                        durumEtiketi.textContent = bulunanKayit.etiket + ' — değer duyulamadı, tekrar deneyin';
+                        // Etiket söylendi ama değeri aynı cümlede duyulmadı —
+                        // muhtemelen tanıma bunu ayrı bir sonuç olarak
+                        // bölecek (bir sonraki söylemi bu alanın değeri
+                        // olarak bekle).
+                        _sesBekleyenAlan = bulunanKayit;
+                        _sesBekleyenZaman = Date.now();
+                        durumEtiketi.textContent = bulunanKayit.etiket + ' — şimdi değerini söyleyin';
                         continue;
+                    }
+
+                    // 2b) Hiçbir alan/komutla eşleşmedi ama az önce bir alan
+                    //     adı söylenip değeri duyulmamıştı (bekleyen alan) —
+                    //     bu parçayı o alanın değeri say (ses tanımanın
+                    //     "etiket" ve "değer"i iki ayrı FINAL sonuca
+                    //     bölmesi durumunu telafi eder).
+                    if (_sesBekleyenAlan && (Date.now() - _sesBekleyenZaman) < _SES_BEKLEME_SURESI_MS) {
+                        var bekleyen = _sesBekleyenAlan;
+                        _sesBekleyenAlan = null;
+                        if (_sesDegerAta(bekleyen.eleman, bekleyen.tur, parca.trim())) {
+                            _sesAlaniYanip(bekleyen.eleman);
+                            durumEtiketi.textContent = bekleyen.etiket + ': ' + bekleyen.eleman.value;
+                            sorguKutusu.style.display = 'none';
+                            continue;
+                        }
                     }
 
                     // 3) Hiçbiri değilse: bir SORU olabilir, sunucuya sor.
