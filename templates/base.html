@@ -38,13 +38,28 @@
     border: 1px solid #d8dcd9; background: #fff; font-size: 13.5px;
 }
 .ses-sorgu-sonuc .ses-sorgu-baslik { font-weight: 700; margin-bottom: 6px; }
-.ses-sorgu-sonuc a.ses-sorgu-satir {
-    display: block; padding: 7px 8px; border-radius: 6px; text-decoration: none;
-    color: inherit; border-top: 1px solid #eee;
+.ses-sorgu-sonuc .ses-sorgu-satir {
+    display: flex; align-items: center; gap: 8px; border-top: 1px solid #eee;
 }
-.ses-sorgu-sonuc a.ses-sorgu-satir:first-of-type { border-top: none; }
-.ses-sorgu-sonuc a.ses-sorgu-satir:active { background: #f1f4f2; }
+.ses-sorgu-sonuc .ses-sorgu-satir:first-of-type { border-top: none; }
+/* İsim: kayıt bilgileri ekranını açar. */
+.ses-sorgu-sonuc a.ses-sorgu-kayit {
+    display: block; flex: 1 1 auto; min-width: 0; padding: 7px 8px;
+    border-radius: 6px; text-decoration: none; color: inherit;
+}
+.ses-sorgu-sonuc a.ses-sorgu-kayit:active { background: #f1f4f2; }
+/* Telefon: SADECE buna basınca arama başlar. */
+.ses-sorgu-sonuc a.ses-sorgu-tel {
+    flex: 0 0 auto; padding: 6px 10px; border-radius: 16px; white-space: nowrap;
+    border: 1px solid #cfe0d4; background: #f2f8f4; color: #1c6b38;
+    text-decoration: none; font-size: 12.5px; font-weight: 600;
+}
+.ses-sorgu-sonuc a.ses-sorgu-tel:active { background: #dcefe2; }
 .ses-sorgu-sonuc .ses-sorgu-satir .ses-sorgu-alt { color: #666; font-size: 12px; }
+.ses-sorgu-sonuc .ses-sorgu-temizle {
+    float: right; margin: -2px 0 0 8px; padding: 3px 9px; border-radius: 14px;
+    border: 1px solid #d8dcd9; background: #fff; color: #666; font-size: 12px; cursor: pointer;
+}
 .ses-sorgu-sonuc .ses-sorgu-bolum {
     margin: 12px 0 4px; padding: 7px 8px; border-radius: 6px;
     background: #fdecdc; color: #8a3b00; font-weight: 700; font-size: 13px;
@@ -820,7 +835,13 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
     // Son gösterilen sesli sorgu sonuçları — "ara" komutu için hatırlanır
     // (telefon içeren TEK bir sonuç varsa, "ara" dendiğinde onu arar).
     var _sonSesSorguSonuclari = [];
-    var _SES_ARA_KOMUTLARI = ['ara', 'onu ara', 'ara onu', 'numarayi ara', 'numarasini ara', 'telefon et'];
+    var _SES_ARA_KOMUTLARI = ['ara', 'onu ara', 'ara onu', 'numarayi ara', 'numarasini ara', 'telefon et',
+        'arama yap', 'telefonunu ac', 'cagir'];
+    // "<isim> ara" kalıbındaki sondaki komut kelimeleri (isimden ayrılır).
+    var _SES_ARA_SONEKLERI = ['ara', 'arayalim', 'arar misin', 'ariyalim', 'telefon et', 'cagir', 'numarasini ara',
+        'numarayi ara', 'arama yap'];
+    // İsmin sonundaki iyelik/belirtme ekleri ("Bilal Akdoğan'ı ara" -> "i").
+    var _SES_ARA_ISIM_EKLERI = ['i', 'yi', 'u', 'yu', 'in', 'nin', 'un', 'nun', 'a', 'ya', 'e', 'ye'];
     // Hangi menüde söylenirse söylensin, sayfadaki düğme/alanlarla
     // eşleştirilmeden DOĞRUDAN sunucuya sorulan sabit komutlar.
     var _SES_SABIT_SORGULAR = ['genel alacak bakiyesi', 'genel alacak bakiye'];
@@ -838,10 +859,60 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
         return veri.sonuclar.filter(function (s) { return !s.bolum; }).length;
     }
 
-    function _sesSorguSonucGoster(kutu, veri) {
+    // --- Sesli sorgu sonuçlarının sayfalar arası hatırlanması ----------------
+    // Bir sonuca tıklayıp kayda girdikten sonra GERİ dönüldüğünde aynı liste
+    // yerinde dursun diye, son sonuç o menünün adresiyle birlikte saklanıyor.
+    // (Oturum süresince, sekme kapanınca silinir.)
+    var _SES_SAKLAMA_ONEKI = 'algi_ses_sonuc:';
+
+    function _sesMenuAnahtari() {
+        var yol = window.location.pathname || '/';
+        var onekler = ['/koy-abone-listesi', '/ariza', '/fatura', '/mesaj', '/stok', '/fabrika'];
+        for (var i = 0; i < onekler.length; i++) {
+            if (yol.indexOf(onekler[i]) === 0) { return onekler[i]; }
+        }
+        return '/abone';
+    }
+
+    function _sesSonucSakla(veri) {
+        try {
+            window.sessionStorage.setItem(_SES_SAKLAMA_ONEKI + _sesMenuAnahtari(), JSON.stringify(veri));
+        } catch (e) { /* depolama kapalıysa sessizce geç */ }
+    }
+
+    function _sesSonucOku() {
+        try {
+            var ham = window.sessionStorage.getItem(_SES_SAKLAMA_ONEKI + _sesMenuAnahtari());
+            return ham ? JSON.parse(ham) : null;
+        } catch (e) { return null; }
+    }
+
+    function _sesSonucSil() {
+        try {
+            window.sessionStorage.removeItem(_SES_SAKLAMA_ONEKI + _sesMenuAnahtari());
+        } catch (e) { /* yok say */ }
+    }
+
+    function _sesSorguSonucGoster(kutu, veri, sakla) {
         kutu.innerHTML = '';
         _sonSesSorguSonuclari = (veri.tur === 'liste' && veri.sonuclar)
             ? veri.sonuclar.filter(function (s) { return !s.bolum; }) : [];
+        if (sakla !== false) { _sesSonucSakla(veri); }
+
+        // Sonuçları temizleme düğmesi (sonuçlar artık sayfa değiştirince
+        // kendiliğinden kaybolmadığı için).
+        var temizle = document.createElement('button');
+        temizle.type = 'button';
+        temizle.className = 'ses-sorgu-temizle no-print';
+        temizle.textContent = '✕ Temizle';
+        temizle.addEventListener('click', function () {
+            _sesSonucSil();
+            _sonSesSorguSonuclari = [];
+            kutu.innerHTML = '';
+            kutu.style.display = 'none';
+        });
+        kutu.appendChild(temizle);
+
         if (veri.tur === 'liste' && veri.sonuclar && veri.sonuclar.length) {
             var baslik = document.createElement('div');
             baslik.className = 'ses-sorgu-baslik';
@@ -860,17 +931,24 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
                     parca.appendChild(b);
                     return;
                 }
+                var satir = document.createElement('div');
+                satir.className = 'ses-sorgu-satir';
+                // İSİM: kayıt bilgileri ekranına gider.
                 var a = document.createElement('a');
-                a.className = 'ses-sorgu-satir';
+                a.className = 'ses-sorgu-kayit';
+                a.href = s.url;
+                a.innerHTML = '<strong>' + _sesHtmlKacis(s.baslik) + '</strong>'
+                    + (s.alt ? '<div class="ses-sorgu-alt">' + _sesHtmlKacis(s.alt) + '</div>' : '');
+                satir.appendChild(a);
+                // TELEFON: ayrı, dokunulabilir — sadece buna basınca arar.
                 if (s.tel) {
-                    // Telefon numarası sorulmuşsa: tıklayınca kayda gitmek
-                    // yerine doğrudan aramayı başlat.
-                    a.href = 'tel:' + s.tel;
-                } else {
-                    a.href = s.url;
+                    var tel = document.createElement('a');
+                    tel.className = 'ses-sorgu-tel';
+                    tel.href = 'tel:' + s.tel;
+                    tel.innerHTML = '📞 ' + _sesHtmlKacis(s.tel_metin || s.tel);
+                    satir.appendChild(tel);
                 }
-                a.innerHTML = '<strong>' + _sesHtmlKacis(s.baslik) + '</strong><div class="ses-sorgu-alt">' + _sesHtmlKacis(s.alt) + '</div>';
-                parca.appendChild(a);
+                parca.appendChild(satir);
             });
             kutu.appendChild(parca);
         } else {
@@ -879,6 +957,88 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
             kutu.appendChild(mesaj);
         }
         kutu.style.display = 'block';
+    }
+
+    // Söylenen metin "<bir şey> ara" kalıbında mı? Öyleyse baştaki isim
+    // kısmını döndürür (yoksa null).
+    function _sesAraKalibiIsmi(normParca) {
+        for (var i = 0; i < _SES_ARA_SONEKLERI.length; i++) {
+            var sonek = ' ' + _SES_ARA_SONEKLERI[i];
+            if (normParca.length > sonek.length && normParca.slice(-sonek.length) === sonek) {
+                var isim = normParca.slice(0, -sonek.length).trim();
+                // Sondaki ek kelime tek başına kalmışsa ("bilal akdogan i")
+                // onu da at.
+                var kelimeler = isim.split(' ');
+                if (kelimeler.length > 1 && _SES_ARA_ISIM_EKLERI.indexOf(kelimeler[kelimeler.length - 1]) !== -1) {
+                    kelimeler.pop();
+                    isim = kelimeler.join(' ');
+                }
+                return isim || null;
+            }
+        }
+        return null;
+    }
+
+    // Ekrandaki son sonuç listesinde bu isme uyan (telefonu olan) kayıtlar.
+    function _sesListedeIsimBul(isimNorm) {
+        var kelimeler = isimNorm.split(' ').filter(function (k) { return k; });
+        if (!kelimeler.length) { return []; }
+        return _sonSesSorguSonuclari.filter(function (s) {
+            if (!s.tel) { return false; }
+            var metin = _sesNormallestir((s.baslik || '') + ' ' + (s.koy || '')).replace(/\s+/g, '');
+            return kelimeler.every(function (k) { return metin.indexOf(k.replace(/\s+/g, '')) !== -1; });
+        });
+    }
+
+    function _sesAramaBaslat(durumEtiketi, ad, tel) {
+        durumEtiketi.textContent = '📞 ' + ad + ' aranıyor...';
+        window.location.href = 'tel:' + tel;
+    }
+
+    // "<isim> ara": önce ekrandaki listede aranır, bulunamazsa sunucuya
+    // (bulunulan menünün kayıtlarına) sorulur.
+    function _sesIsimleAra(kutu, isimNorm, isimHam, durumEtiketi) {
+        var adaylar = _sesListedeIsimBul(isimNorm);
+        if (adaylar.length === 1) {
+            _sesAramaBaslat(durumEtiketi, adaylar[0].baslik, adaylar[0].tel);
+            return;
+        }
+        if (adaylar.length > 1) {
+            var koyler = {};
+            adaylar.forEach(function (a) { if (a.koy) { koyler[a.koy] = 1; } });
+            var koyListesi = Object.keys(koyler);
+            var mesaj = koyListesi.length > 1
+                ? 'Birden fazla "' + adaylar[0].baslik + '" var — köy adını da söyleyin (örn. "'
+                    + koyListesi.sort()[0] + ' ' + adaylar[0].baslik + ' ara")'
+                : 'Birden fazla "' + adaylar[0].baslik + '" var — aramak istediğiniz numaraya dokunun';
+            durumEtiketi.textContent = mesaj;
+            _sesSorguSonucGoster(kutu, { tur: 'liste', baslik: mesaj, sonuclar: adaylar });
+            return;
+        }
+        var csrfGirdisi = document.querySelector('input[name="csrf_token"]');
+        durumEtiketi.textContent = '📞 Aranıyor: "' + isimHam + '"...';
+        fetch('/api/sesli-ara', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfGirdisi ? csrfGirdisi.value : ''
+            },
+            body: JSON.stringify({ isim: isimHam, sayfa: window.location.pathname })
+        }).then(function (r) { return r.json(); }).then(function (veri) {
+            if (veri.tur === 'ara') {
+                _sesAramaBaslat(durumEtiketi, veri.baslik, veri.tel);
+                return;
+            }
+            if (veri.tur === 'secim') {
+                durumEtiketi.textContent = veri.mesaj;
+                _sesSorguSonucGoster(kutu, { tur: 'liste', baslik: veri.mesaj, sonuclar: veri.sonuclar });
+                return;
+            }
+            durumEtiketi.textContent = veri.mesaj || 'Aranacak numara bulunamadı.';
+            _sesSorguSonucGoster(kutu, veri);
+        }).catch(function () {
+            durumEtiketi.textContent = 'Arama sırasında bir hata oluştu.';
+        });
     }
 
     function _sesSorguGonder(kutu, metin, durumEtiketi) {
@@ -1087,11 +1247,26 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
                     if (_SES_ARA_KOMUTLARI.indexOf(normParca) !== -1) {
                         var aranacakSonuc = _sonSesSorguSonuclari.find(function (s) { return s.tel; });
                         if (aranacakSonuc) {
-                            durumEtiketi.textContent = '📞 ' + aranacakSonuc.baslik + ' aranıyor...';
-                            window.location.href = 'tel:' + aranacakSonuc.tel;
+                            _sesAramaBaslat(durumEtiketi, aranacakSonuc.baslik, aranacakSonuc.tel);
                         } else {
                             durumEtiketi.textContent = 'Aranacak bir telefon numarası bulunamadı.';
                         }
+                        continue;
+                    }
+
+                    // 0a) "<isim> ara" — ekrandaki listedeki (ya da bu
+                    //     menüdeki) kişiyi doğrudan arar.
+                    var araIsmi = _sesAraKalibiIsmi(normParca);
+                    if (araIsmi) {
+                        _sesBekleyenAlan = null;
+                        _sesDevamEdenAlan = null;
+                        var hamKelimeler = parca.trim().split(/\s+/);
+                        var isimKelimeSayisi = araIsmi.split(' ').length;
+                        // Sunucuya gönderilen isimden kesme işaretli ekleri
+                        // ("Salih Polat'ı ara" -> "Salih Polat") ayıkla.
+                        var araIsmiHam = hamKelimeler.slice(0, isimKelimeSayisi).join(' ')
+                            .replace(/['’‘][^\s]*$/, '').trim();
+                        _sesIsimleAra(sorguKutusu, araIsmi, araIsmiHam || araIsmi, durumEtiketi);
                         continue;
                     }
 
@@ -1218,6 +1393,16 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
                 }
             };
             try { tanima.start(); } catch (hata) { _genelDurdur(); }
+        }
+
+        // Bir sonuca tıklayıp geri dönüldüğünde, o menünün son sesli arama
+        // sonucu yerinde dursun.
+        var saklanan = _sesSonucOku();
+        if (saklanan) {
+            _sesSorguSonucGoster(sorguKutusu, saklanan, false);
+            durumEtiketi.textContent = saklanan.tur === 'liste'
+                ? (_sesSonucSayisi(saklanan) + ' sonuç bulundu')
+                : (saklanan.mesaj || '');
         }
 
         genelButon.addEventListener('click', function (e) {
