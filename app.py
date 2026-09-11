@@ -2830,6 +2830,53 @@ _MESAJ_ALAN_TANIMLARI = [
     ("icerik", "Mesaj İçeriği"),
 ]
 
+_MESAJ_DISPLAY_KOLONLARI = [
+    ("created_at", "Tarih"), ("alici_adi", "Alıcı"), ("kanal", "Kanal"), ("durum", "Durum"),
+]
+_MESAJ_KOLON_BILGI = {
+    "created_at": ("created_at", "tarih"),
+    "alici_adi": ("alici_adi", "metin"),
+    "kanal": ("kanal", "metin"),
+    "durum": ("durum", "metin"),
+}
+_MESAJ_SAYISAL_KOLONLAR = set()
+
+
+def _mesaj_kolon_takimi(db):
+    return _MESAJ_DISPLAY_KOLONLARI, _MESAJ_KOLON_BILGI, _MESAJ_SAYISAL_KOLONLAR, []
+
+
+def _mesaj_filtre_kosulu_olustur(disari_anahtar, kolon_bilgi):
+    """mesaj_listesi() sayfasında o an uygulanmış TÜM filtreleri (q / alan /
+    kanal / durum / deger_*) tek bir SQL koşuluna çevirir."""
+    kosul = "1=1"
+    params = []
+    q = request.args.get("q", "").strip()
+    alanlar_secili = request.args.getlist("alan")
+    kanal = request.args.get("kanal", "").strip()
+    durum = request.args.get("durum", "").strip()
+    if q:
+        secili = alanlar_secili if alanlar_secili else [k for k, _ in _MESAJ_ALAN_TANIMLARI]
+        _kk = _turkce_esle_kosul
+        kosul_listesi = [f"{_kk(k)} LIKE %s" for k, _ in _MESAJ_ALAN_TANIMLARI if k in secili]
+        if kosul_listesi:
+            kosul += " AND (" + " OR ".join(kosul_listesi) + ")"
+            params += [_turkce_normallestir(f"%{q}%")] * len(kosul_listesi)
+    if kanal and "kanal" != disari_anahtar:
+        kosul += " AND kanal = %s"
+        params.append(kanal)
+    if durum and "durum" != disari_anahtar:
+        kosul += " AND durum = %s"
+        params.append(durum)
+    for anahtar, _ in _MESAJ_DISPLAY_KOLONLARI:
+        if anahtar == disari_anahtar:
+            continue
+        alt_kosul, alt_params = _kolon_secim_kosulu(anahtar, kolon_bilgi)
+        if alt_kosul:
+            kosul += f" AND {alt_kosul}"
+            params += alt_params
+    return kosul, params
+
 
 @app.route("/mesajlar")
 @login_required
@@ -2847,22 +2894,15 @@ def mesaj_listesi():
     db = get_db()
     cur = db.cursor()
 
-    sql = "SELECT * FROM mesaj WHERE 1=1"
-    params = []
-    if q:
-        secili = alanlar_secili if alanlar_secili else [k for k, _ in _MESAJ_ALAN_TANIMLARI]
-        _kk = _turkce_esle_kosul
-        kosul_listesi = [f"{_kk(k)} LIKE %s" for k, _ in _MESAJ_ALAN_TANIMLARI if k in secili]
-        if kosul_listesi:
-            sql += " AND (" + " OR ".join(kosul_listesi) + ")"
-            params += [_turkce_normallestir(f"%{q}%")] * len(kosul_listesi)
-    if kanal:
-        sql += " AND kanal = %s"
-        params.append(kanal)
-    if durum:
-        sql += " AND durum = %s"
-        params.append(durum)
-    sql += " ORDER BY created_at DESC LIMIT 500"
+    kolon_listesi, kolon_bilgi, sayisal_kolonlar, _ozel = _mesaj_kolon_takimi(db)
+    kosul, params = _mesaj_filtre_kosulu_olustur(None, kolon_bilgi)
+    sql = f"SELECT * FROM mesaj WHERE {kosul} ORDER BY created_at DESC LIMIT 500"
+
+    deger_secili = {}
+    haric_secili = {}
+    for anahtar, _ in kolon_listesi:
+        deger_secili[anahtar] = request.args.getlist(f"deger_{anahtar}")
+        haric_secili[anahtar] = request.args.getlist(f"haric_{anahtar}")
 
     cur.execute(sql, params)
     mesajlar = cur.fetchall()
@@ -2871,6 +2911,8 @@ def mesaj_listesi():
         "mesaj_listesi.html", mesajlar=mesajlar, q=q,
         secili_alanlar=alanlar_secili, alan_listesi=_MESAJ_ALAN_TANIMLARI,
         secili_kanal=kanal, secili_durum=durum,
+        kolon_listesi=kolon_listesi, deger_secili=deger_secili, haric_secili=haric_secili,
+        sayisal_kolonlar=sayisal_kolonlar,
         arama_satir=_izgara_satir(len(_MESAJ_ALAN_TANIMLARI)),
     )
 
@@ -5207,7 +5249,7 @@ def kolon_secenekleri_api():
     filtre kutusunu AÇTIĞINDA seçenekler bu uç nokta üzerinden istenir."""
     tablo = request.args.get("tablo", "").strip()
     anahtar = request.args.get("anahtar", "").strip()
-    if tablo not in ("abone", "ariza", "fabrika_tamir", "fatura", "stok_urun", "koy_abone"):
+    if tablo not in ("abone", "ariza", "fabrika_tamir", "fatura", "stok_urun", "koy_abone", "mesaj"):
         return jsonify({"hata": "geçersiz tablo"}), 400
     db = get_db()
     if tablo == "abone":
@@ -5220,6 +5262,8 @@ def kolon_secenekleri_api():
         _kolon_listesi, bilgi_sozlugu, _sayisal, _ozel = _stok_kolon_takimi(db)
     elif tablo == "koy_abone":
         _kolon_listesi, bilgi_sozlugu, _sayisal, _ozel = _koy_abone_kolon_takimi(db)
+    elif tablo == "mesaj":
+        _kolon_listesi, bilgi_sozlugu, _sayisal, _ozel = _mesaj_kolon_takimi(db)
     else:
         _kolon_listesi, bilgi_sozlugu, _sayisal, _ozel = _fatura_kolon_takimi(db)
     if anahtar not in bilgi_sozlugu:
@@ -5234,6 +5278,8 @@ def kolon_secenekleri_api():
         ekstra_kosul, ekstra_params = _stok_filtre_kosulu_olustur(anahtar, bilgi_sozlugu)
     elif tablo == "koy_abone":
         ekstra_kosul, ekstra_params = _koy_abone_filtre_kosulu_olustur(anahtar, bilgi_sozlugu)
+    elif tablo == "mesaj":
+        ekstra_kosul, ekstra_params = _mesaj_filtre_kosulu_olustur(anahtar, bilgi_sozlugu)
     else:
         ekstra_kosul, ekstra_params = _fatura_filtre_kosulu_olustur(anahtar, bilgi_sozlugu)
     gercek_tablo = _FATURA_ALT_SORGU if tablo == "fatura" else tablo
