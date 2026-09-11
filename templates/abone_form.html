@@ -1,6 +1,15 @@
 {% extends "base.html" %}
 {% block title %}{{ 'Abone Düzenle' if kayit else 'Yeni Abone' }} - ALGI BİLİŞİM{% endblock %}
 {% block content %}
+<style>
+/* İmza alanı: kilitliyken üzerinde soluk bir yönlendirme yazısı durur. */
+.imza-kutu { position: relative; max-width: 400px; }
+.imza-kutu .imza-kilit-yazi {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    text-align: center; padding: 0 10px; color: #9aa3a8; font-size: 12.5px;
+    pointer-events: none; /* dokunuş alttaki alana geçsin ki sayfa kayabilsin */
+}
+</style>
 
 {% macro ozel_alan_kutu(oa) %}
 <div>
@@ -29,7 +38,7 @@
         </div>
         <div>
             <label>Senet Tutarı (otomatik hesaplanır)</label>
-            <input type="text" value="{{ kayit['senet_tutari'] if kayit and kayit['senet_tutari'] is not none else '0' }}" readonly tabindex="-1">
+            <input type="text" value="{{ kayit['senet_tutari'] if kayit and kayit['senet_tutari'] is not none else '' }}" readonly tabindex="-1">
         </div>
 
         <div>
@@ -150,7 +159,7 @@
         {% if kayit %}
         <div>
             <label>{{ sabit_etiket.get('malzeme_alinan', 'Malzeme Alınan') }}</label>
-            <input type="text" name="malzeme_alinan" value="{{ kayit['malzeme_alinan'] if kayit['malzeme_alinan'] is not none else '0' }}">
+            <input type="text" name="malzeme_alinan" value="{{ kayit['malzeme_alinan'] if kayit and kayit['malzeme_alinan'] is not none else '' }}">
         </div>
         {% endif %}
         {{ ozel_alanlari_bas('malzeme_alinan') }}
@@ -244,8 +253,17 @@
                 </div>
                 {% endif %}
                 <div id="imza-montaj-canvas-alani" style="{{ 'display:none;' if imzalar['montaj'] else '' }}">
-                    <canvas id="imza-montaj-canvas" style="width:100%; max-width:400px; height:150px; border:1px solid #ccc; background:#fff; touch-action:none; display:block;"></canvas>
-                    <div style="margin-top:6px;">
+                    <!-- İmza alanı KİLİTLİ başlar: parmakla sayfayı kaydırırken
+                         yanlışlıkla karalanmasın diye. "İmzayı Başlat"a
+                         basılınca açılır (touch-action:none), "Bitir"e
+                         basılınca yeniden kilitlenir (touch-action:pan-y —
+                         yani alanın üstünde bile sayfa normal kayar). -->
+                    <div class="imza-kutu" id="imza-montaj-kutu">
+                        <canvas id="imza-montaj-canvas" class="imza-canvas" style="width:100%; max-width:400px; height:150px; border:1px solid #ccc; background:#fff; touch-action:pan-y; display:block;"></canvas>
+                        <div class="imza-kilit-yazi" id="imza-montaj-kilit-yazi">İmzalamak için “✍️ İmzayı Başlat”a dokunun</div>
+                    </div>
+                    <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
+                        <button type="button" class="btn" id="imza-montaj-baslat" onclick="imzaKilidiDegistir('montaj')">✍️ İmzayı Başlat</button>
                         <button type="button" class="btn" onclick="imzaTemizle('montaj')">Temizle</button>
                     </div>
                 </div>
@@ -262,16 +280,27 @@
                 </div>
                 {% endif %}
                 <div id="imza-abone-canvas-alani" style="{{ 'display:none;' if imzalar['abone'] else '' }}">
-                    <canvas id="imza-abone-canvas" style="width:100%; max-width:400px; height:150px; border:1px solid #ccc; background:#fff; touch-action:none; display:block;"></canvas>
-                    <div style="margin-top:6px;">
+                    <!-- İmza alanı KİLİTLİ başlar: parmakla sayfayı kaydırırken
+                         yanlışlıkla karalanmasın diye. "İmzayı Başlat"a
+                         basılınca açılır (touch-action:none), "Bitir"e
+                         basılınca yeniden kilitlenir (touch-action:pan-y —
+                         yani alanın üstünde bile sayfa normal kayar). -->
+                    <div class="imza-kutu" id="imza-abone-kutu">
+                        <canvas id="imza-abone-canvas" class="imza-canvas" style="width:100%; max-width:400px; height:150px; border:1px solid #ccc; background:#fff; touch-action:pan-y; display:block;"></canvas>
+                        <div class="imza-kilit-yazi" id="imza-abone-kilit-yazi">İmzalamak için “✍️ İmzayı Başlat”a dokunun</div>
+                    </div>
+                    <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
+                        <button type="button" class="btn" id="imza-abone-baslat" onclick="imzaKilidiDegistir('abone')">✍️ İmzayı Başlat</button>
                         <button type="button" class="btn" onclick="imzaTemizle('abone')">Temizle</button>
                     </div>
                 </div>
                 <input type="hidden" name="imza_abone_veri" id="imza-abone-veri">
             </div>
             <p class="tam-genislik" style="margin:2px 0 0; font-size:12px; color:#888;">
-                Parmağınızla veya kalemle (telefon/tablet) ya da fareyle (bilgisayar) imza
-                alanına dokunup/tıklayıp imzalayın. Kaydet'e bastığınızda imza(lar) bu kayda eklenir.
+                Önce “✍️ İmzayı Başlat”a dokunun, sonra parmağınızla/kalemle (telefon,
+                tablet) ya da fareyle (bilgisayar) imzalayın; bitince “✔ Bitir”e dokunun.
+                Kilitliyken imza alanının üstünde de sayfayı rahatça kaydırabilirsiniz.
+                Kaydet'e bastığınızda imza(lar) bu kayda eklenir.
             </p>
         </div>
 
@@ -484,6 +513,7 @@ function _imzaPadKur(tur) {
     if (!canvas || !hidden) { return; }
     var ctx = canvas.getContext('2d');
     var ciziliyor = false;
+    var cizildiMi = false;   // bu alana hiç çizim yapıldı mı?
 
     function temizleVeHazirla() {
         var oran = window.devicePixelRatio || 1;
@@ -509,18 +539,31 @@ function _imzaPadKur(tur) {
     function ciziBitir() {
         if (!ciziliyor) { return; }
         ciziliyor = false;
+        cizildiMi = true;
         hidden.value = canvas.toDataURL('image/png');
     }
+
+    // Kaydet'e basıldığında çağrılır: çizim yapılmışsa imzanın gizli alana
+    // yazıldığından emin olur (kullanıcı "Bitir"e basmamış olsa bile).
+    function imzayiGuvenceyeAl() {
+        ciziBitir();
+        if (cizildiMi && (!hidden.value || hidden.value === 'TEMIZLE')) {
+            hidden.value = canvas.toDataURL('image/png');
+        }
+    }
     canvas.addEventListener('pointerdown', function(e) {
+        // Alan kilitliyken hiçbir çizim yapılmaz — parmak sayfayı kaydırır.
+        if (!_imzaAcik[tur]) { return; }
         ciziliyor = true;
         var p = konumAl(e);
         ctx.beginPath();
         ctx.moveTo(p.x, p.y);
+        cizildiMi = true;
         canvas.setPointerCapture(e.pointerId);
         e.preventDefault();
     });
     canvas.addEventListener('pointermove', function(e) {
-        if (!ciziliyor) { return; }
+        if (!ciziliyor || !_imzaAcik[tur]) { return; }
         var p = konumAl(e);
         ctx.lineTo(p.x, p.y);
         ctx.stroke();
@@ -530,13 +573,46 @@ function _imzaPadKur(tur) {
     canvas.addEventListener('pointercancel', ciziBitir);
     canvas.addEventListener('pointerleave', ciziBitir);
 
-    _imzaPadlar[tur] = { temizle: temizleVeHazirla };
+    _imzaPadlar[tur] = {
+        temizle: function () { cizildiMi = false; temizleVeHazirla(); },
+        bitir: ciziBitir,
+        guvenceyeAl: imzayiGuvenceyeAl
+    };
+}
+
+// İmza alanı açık mı (çizime hazır mı)? Kilitliyken parmak hareketi sayfayı
+// kaydırır, çizim yapmaz — böylece sayfayı kaydırırken imza karalanmaz.
+var _imzaAcik = {};
+
+function _imzaKilitDurumuUygula(tur) {
+    var canvas = document.getElementById('imza-' + tur + '-canvas');
+    var kilitYazi = document.getElementById('imza-' + tur + '-kilit-yazi');
+    var dugme = document.getElementById('imza-' + tur + '-baslat');
+    if (!canvas) { return; }
+    var acik = !!_imzaAcik[tur];
+    // Açıkken çizim (none), kilitliyken dikey kaydırma serbest (pan-y).
+    canvas.style.touchAction = acik ? 'none' : 'pan-y';
+    canvas.style.borderColor = acik ? '#e07b39' : '#ccc';
+    canvas.style.boxShadow = acik ? '0 0 0 2px rgba(224,123,57,.25)' : 'none';
+    if (kilitYazi) { kilitYazi.style.display = acik ? 'none' : ''; }
+    if (dugme) { dugme.textContent = acik ? '✔ Bitir' : '✍️ İmzayı Başlat'; }
+}
+
+function imzaKilidiDegistir(tur) {
+    _imzaPadKur(tur);
+    _imzaAcik[tur] = !_imzaAcik[tur];
+    if (!_imzaAcik[tur] && _imzaPadlar[tur] && _imzaPadlar[tur].guvenceyeAl) {
+        // "Bitir"e basıldığında, çizim yarım kalmışsa bile imza kaydedilsin.
+        _imzaPadlar[tur].guvenceyeAl();
+    }
+    _imzaKilitDurumuUygula(tur);
 }
 
 function imzaTemizle(tur) {
     _imzaPadKur(tur);
     _imzaPadlar[tur].temizle();
     document.getElementById('imza-' + tur + '-veri').value = 'TEMIZLE';
+    _imzaKilitDurumuUygula(tur);
 }
 
 function imzaYenidenAl(tur) {
@@ -545,6 +621,9 @@ function imzaYenidenAl(tur) {
     if (mevcut) { mevcut.style.display = 'none'; }
     canvasAlani.style.display = '';
     _imzaPadKur(tur);
+    // "Yeniden İmzala"ya basan zaten imzalamak istiyor — alanı doğrudan aç.
+    _imzaAcik[tur] = true;
+    _imzaKilitDurumuUygula(tur);
     // Kullanıcı "Yeniden İmzala"ya bastıktan sonra hiç çizmeden Kaydet'e
     // basarsa, ekranda gördüğü (boş canvas) ile kaydedilen (eski imza kalır)
     // birbirini tutmazdı — bu yüzden burada baştan TEMİZLE gönderiliyor;
@@ -556,8 +635,25 @@ function imzaYenidenAl(tur) {
     var canvasAlani = document.getElementById('imza-' + tur + '-canvas-alani');
     if (canvasAlani && canvasAlani.style.display !== 'none') {
         _imzaPadKur(tur);
+        _imzaKilitDurumuUygula(tur);
     }
 });
+
+// Form gönderilirken imza alanı hâlâ açıksa (kullanıcı "Bitir"e basmadıysa)
+// çizilen imzanın kaydedilmesini garantiye al.
+(function () {
+    // İmza alanlarının bağlı olduğu ASIL form (sayfadaki ilk form değil).
+    var veriAlani = document.getElementById('imza-abone-veri') || document.getElementById('imza-montaj-veri');
+    var form = veriAlani ? veriAlani.form : null;
+    if (!form) { return; }
+    form.addEventListener('submit', function () {
+        ['montaj', 'abone'].forEach(function (tur) {
+            if (_imzaPadlar[tur] && _imzaPadlar[tur].guvenceyeAl) {
+                _imzaPadlar[tur].guvenceyeAl();
+            }
+        });
+    });
+})();
 </script>
 
 {% if not kayit %}

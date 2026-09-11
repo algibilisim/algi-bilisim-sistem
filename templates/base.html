@@ -887,6 +887,18 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
         } catch (e) { return null; }
     }
 
+    // Bulunulan sayfa bir kayıt formu mu (yeni kayıt / düzenleme)?
+    // Adres yolunun sonuna bakılır: /abone/yeni, /ariza/12/duzenle,
+    // /fabrika/yeni, /stok/3/duzenle, /koy-abone-listesi/yeni ...
+    function _sesFormEkrani() {
+        var yol = window.location.pathname || '';
+        // ("/tahsilat" tek başına Köy Satış / Tahsilat RAPORU sayfasıdır,
+        // form değil — bu yüzden tahsilat/hareket yalnızca bir kaydın
+        // altındayken, yani önünde bir kayıt numarası varken form sayılır.)
+        return /\/(yeni|duzenle|ekle|kayit-ekle|tasarim|yukle|mesaj-gonder|toplu-mesaj|fatura-kes)(\/|$)/.test(yol)
+            || /\/\d+\/(tahsilat|hareket|fatura-kes)(\/|$)/.test(yol);
+    }
+
     function _sesSonucSil() {
         try {
             window.sessionStorage.removeItem(_SES_SAKLAMA_ONEKI + _sesMenuAnahtari());
@@ -1396,8 +1408,11 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
         }
 
         // Bir sonuca tıklayıp geri dönüldüğünde, o menünün son sesli arama
-        // sonucu yerinde dursun.
-        var saklanan = _sesSonucOku();
+        // sonucu yerinde dursun — ama SADECE liste ekranlarında. Yeni kayıt /
+        // düzenleme formlarında (Yeni Abone, Yeni Arıza, Abone Düzenle...)
+        // sonuç listesi gösterilmez; saklanan sonuç silinmez, listeye
+        // dönüldüğünde yine yerinde olur.
+        var saklanan = _sesFormEkrani() ? null : _sesSonucOku();
         if (saklanan) {
             _sesSorguSonucGoster(sorguKutusu, saklanan, false);
             durumEtiketi.textContent = saklanan.tur === 'liste'
