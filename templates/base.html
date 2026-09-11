@@ -45,6 +45,10 @@
 .ses-sorgu-sonuc a.ses-sorgu-satir:first-of-type { border-top: none; }
 .ses-sorgu-sonuc a.ses-sorgu-satir:active { background: #f1f4f2; }
 .ses-sorgu-sonuc .ses-sorgu-satir .ses-sorgu-alt { color: #666; font-size: 12px; }
+.ses-sorgu-sonuc .ses-sorgu-bolum {
+    margin: 12px 0 4px; padding: 7px 8px; border-radius: 6px;
+    background: #fdecdc; color: #8a3b00; font-weight: 700; font-size: 13px;
+}
 </style>
 </head>
 <body>
@@ -817,16 +821,45 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
     // (telefon içeren TEK bir sonuç varsa, "ara" dendiğinde onu arar).
     var _sonSesSorguSonuclari = [];
     var _SES_ARA_KOMUTLARI = ['ara', 'onu ara', 'ara onu', 'numarayi ara', 'numarasini ara', 'telefon et'];
+    // Hangi menüde söylenirse söylensin, sayfadaki düğme/alanlarla
+    // eşleştirilmeden DOĞRUDAN sunucuya sorulan sabit komutlar.
+    var _SES_SABIT_SORGULAR = ['genel alacak bakiyesi', 'genel alacak bakiye'];
+
+    function _sesHtmlKacis(metin) {
+        return String(metin == null ? '' : metin)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    // Sonuç listesindeki gerçek kayıt sayısı ("bolum" = ara başlık satırları
+    // sayılmaz).
+    function _sesSonucSayisi(veri) {
+        if (veri.tur !== 'liste' || !veri.sonuclar) { return 0; }
+        return veri.sonuclar.filter(function (s) { return !s.bolum; }).length;
+    }
 
     function _sesSorguSonucGoster(kutu, veri) {
         kutu.innerHTML = '';
-        _sonSesSorguSonuclari = (veri.tur === 'liste' && veri.sonuclar) ? veri.sonuclar : [];
+        _sonSesSorguSonuclari = (veri.tur === 'liste' && veri.sonuclar)
+            ? veri.sonuclar.filter(function (s) { return !s.bolum; }) : [];
         if (veri.tur === 'liste' && veri.sonuclar && veri.sonuclar.length) {
             var baslik = document.createElement('div');
             baslik.className = 'ses-sorgu-baslik';
             baslik.textContent = veri.baslik || 'Sonuçlar';
             kutu.appendChild(baslik);
+            // Liste SINIRSIZ gelebildiği için (binlerce satır) tek seferde,
+            // bir DocumentFragment üzerinden ekleniyor.
+            var parca = document.createDocumentFragment();
             veri.sonuclar.forEach(function (s) {
+                if (s.bolum) {
+                    // "GENEL ALACAK BAKİYESİ" gibi çok bölümlü raporlarda
+                    // her menünün ara başlığı / ara toplamı.
+                    var b = document.createElement('div');
+                    b.className = 'ses-sorgu-bolum';
+                    b.textContent = s.bolum;
+                    parca.appendChild(b);
+                    return;
+                }
                 var a = document.createElement('a');
                 a.className = 'ses-sorgu-satir';
                 if (s.tel) {
@@ -836,9 +869,10 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
                 } else {
                     a.href = s.url;
                 }
-                a.innerHTML = '<strong>' + s.baslik + '</strong><div class="ses-sorgu-alt">' + s.alt + '</div>';
-                kutu.appendChild(a);
+                a.innerHTML = '<strong>' + _sesHtmlKacis(s.baslik) + '</strong><div class="ses-sorgu-alt">' + _sesHtmlKacis(s.alt) + '</div>';
+                parca.appendChild(a);
             });
+            kutu.appendChild(parca);
         } else {
             var mesaj = document.createElement('div');
             mesaj.textContent = veri.mesaj || 'Sonuç bulunamadı.';
@@ -856,10 +890,13 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
                 'Content-Type': 'application/json',
                 'X-CSRFToken': csrfGirdisi ? csrfGirdisi.value : ''
             },
-            body: JSON.stringify({ sorgu: metin })
+            // Hangi menüde sorulduğu da gönderiliyor — sunucu, o menünün KENDİ
+            // kayıtlarında (Fabrika / Tamir'de tamir kayıtları, Stok'ta ürünler
+            // vb.) arama yapar.
+            body: JSON.stringify({ sorgu: metin, sayfa: window.location.pathname })
         }).then(function (r) { return r.json(); }).then(function (veri) {
             _sesSorguSonucGoster(kutu, veri);
-            durumEtiketi.textContent = veri.tur === 'liste' ? (veri.sonuclar.length + ' sonuç bulundu') : (veri.mesaj || 'Sonuç yok');
+            durumEtiketi.textContent = veri.tur === 'liste' ? (_sesSonucSayisi(veri) + ' sonuç bulundu') : (veri.mesaj || 'Sonuç yok');
         }).catch(function () {
             durumEtiketi.textContent = 'Sorgu sırasında bir hata oluştu.';
         });
@@ -921,7 +958,18 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
         sayfaKomutHaritasi = sayfaKomutHaritasi.concat(_sesKomutlariniBul(document));
 
         if (sayfaAlanHaritasi.length === 0 && sayfaKomutHaritasi.length === 0) { return; }
-        if (formlar.length === 0) { return; }
+        // Mikrofon normalde sayfadaki ilk formun hemen önüne konur. Hiç formu
+        // olmayan liste sayfalarında da (sesli sorgu TÜM listelerde çalışsın
+        // diye) sayfa başlığının hemen altına konur.
+        var mikrofonYeri = null;
+        var mikrofonKonumu = 'beforebegin';
+        if (formlar.length > 0) {
+            mikrofonYeri = formlar[0];
+        } else {
+            mikrofonYeri = document.querySelector('main.container h1, main.container h2');
+            mikrofonKonumu = 'afterend';
+        }
+        if (!mikrofonYeri) { return; }
 
         // --- TEK genel mikrofon: "alan adı ... değer", tek başına bir
         //     düğme/onay kutusu adı (örn. "Konum Al", "Baba Adı", "Sayaç
@@ -934,7 +982,7 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
         var durumEtiketi = document.createElement('span');
         durumEtiketi.className = 'ses-genel-durum';
         genelButon.appendChild(durumEtiketi);
-        formlar[0].insertAdjacentElement('beforebegin', genelButon);
+        mikrofonYeri.insertAdjacentElement(mikrofonKonumu, genelButon);
         var sorguKutusu = _sesSorguKutusuGetirOlustur(genelButon);
 
         var siraliAlanHaritasi = sayfaAlanHaritasi.slice().sort(function (a, b) {
@@ -1044,6 +1092,14 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
                         } else {
                             durumEtiketi.textContent = 'Aranacak bir telefon numarası bulunamadı.';
                         }
+                        continue;
+                    }
+
+                    // 0b) Sabit sorgu komutu mu? ("GENEL ALACAK BAKİYESİ")
+                    if (_SES_SABIT_SORGULAR.indexOf(normParca) !== -1) {
+                        _sesBekleyenAlan = null;
+                        _sesDevamEdenAlan = null;
+                        _sesSorguGonder(sorguKutusu, parca, durumEtiketi);
                         continue;
                     }
 
