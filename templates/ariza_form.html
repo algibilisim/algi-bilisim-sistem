@@ -13,6 +13,13 @@
 
 <div class="sayfa-basligi no-print">
     <h2>{{ 'Arıza Düzenle' if kayit else 'Yeni Arıza' }}</h2>
+
+    {% if sabit_sira %}
+    <style>
+    {% for anahtar, sira in sabit_sira.items() %}[data-alan-key="{{ anahtar }}"] { order: {{ sira }}; }
+    {% endfor %}
+    </style>
+    {% endif %}
     <a class="btn" href="{{ url_for('secenek_yonetimi') }}">Onay Kutusu Ayarları</a>
 </div>
 
@@ -25,43 +32,43 @@
             <label>S.No (otomatik)</label>
             <input type="number" value="{{ kayit['s_no'] if kayit else sonraki_s_no }}" readonly tabindex="-1">
         </div>
-        <div>
-            <label>Özel S.No</label>
+        <div data-alan-key="ozel_s_no">
+            <label>{{ sabit_etiket.get('ozel_s_no', 'Özel S.No') }}</label>
             <input type="text" name="ozel_s_no" value="{{ kayit['ozel_s_no'] if kayit and kayit['ozel_s_no'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('ozel_s_no') }}
-        <div>
-            <label>Seri No</label>
+        <div data-alan-key="seri_no">
+            <label>{{ sabit_etiket.get('seri_no', 'Seri No') }}</label>
             <input type="text" id="seri_no_girisi" name="seri_no" value="{{ kayit['seri_no'] if kayit and kayit['seri_no'] is not none else '' }}" {% if not kayit %}autofocus{% endif %}>
         </div>
         {{ ozel_alanlari_bas('seri_no') }}
-        <div>
-            <label>Köy Adı</label>
+        <div data-alan-key="koy_adi">
+            <label>{{ sabit_etiket.get('koy_adi', 'Köy Adı') }}</label>
             <input type="text" id="ariza_koy_adi" name="koy_adi" value="{{ kayit['koy_adi'] if kayit and kayit['koy_adi'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('koy_adi') }}
-        <div>
-            <label>Yeni Seri No</label>
+        <div data-alan-key="yeni_seri_no">
+            <label>{{ sabit_etiket.get('yeni_seri_no', 'Yeni Seri No') }}</label>
             <input type="text" name="yeni_seri_no" value="{{ kayit['yeni_seri_no'] if kayit and kayit['yeni_seri_no'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('yeni_seri_no') }}
-        <div>
-            <label>Adı</label>
+        <div data-alan-key="adi">
+            <label>{{ sabit_etiket.get('adi', 'Adı') }}</label>
             <input type="text" id="ariza_adi" name="adi" value="{{ kayit['adi'] if kayit and kayit['adi'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('adi') }}
-        <div>
-            <label>Soyadı</label>
+        <div data-alan-key="soyadi">
+            <label>{{ sabit_etiket.get('soyadi', 'Soyadı') }}</label>
             <input type="text" id="ariza_soyadi" name="soyadi" value="{{ kayit['soyadi'] if kayit and kayit['soyadi'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('soyadi') }}
-        <div>
-            <label>Telefon</label>
+        <div data-alan-key="telefon">
+            <label>{{ sabit_etiket.get('telefon', 'Telefon') }}</label>
             <input type="text" id="ariza_telefon" name="telefon" value="{{ kayit['telefon'] if kayit and kayit['telefon'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('telefon') }}
-        <div>
-            <label>Telefon 2</label>
+        <div data-alan-key="telefon2">
+            <label>{{ sabit_etiket.get('telefon2', 'Telefon 2') }}</label>
             <input type="text" id="ariza_telefon2" name="telefon2" value="{{ kayit['telefon2'] if kayit and kayit['telefon2'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('telefon2') }}
@@ -119,36 +126,36 @@
 
         <div class="ayirici">Ücret Bilgileri</div>
 
-        <div>
-            <label>Arıza Ücret</label>
+        <div data-alan-key="ariza_ucret">
+            <label>{{ sabit_etiket.get('ariza_ucret', 'Arıza Ücret') }}</label>
             <input type="text" name="ariza_ucret" value="{{ kayit['ariza_ucret'] if kayit and kayit['ariza_ucret'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('ariza_ucret') }}
-        <div>
-            <label>Alınan Ücret</label>
+        <div data-alan-key="alinan_ucret">
+            <label>{{ sabit_etiket.get('alinan_ucret', 'Alınan Ücret') }}</label>
             <input type="text" name="alinan_ucret" value="{{ kayit['alinan_ucret'] if kayit and kayit['alinan_ucret'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('alinan_ucret') }}
 
         <div class="ayirici">Tarih / Kredi</div>
 
-        <div>
-            <label>Geliş Tarihi</label>
+        <div data-alan-key="gelis_tarihi">
+            <label>{{ sabit_etiket.get('gelis_tarihi', 'Geliş Tarihi') }}</label>
             <input type="date" name="gelis_tarihi" value="{{ kayit['gelis_tarihi'] if kayit and kayit['gelis_tarihi'] is not none else bugun }}">
         </div>
         {{ ozel_alanlari_bas('gelis_tarihi') }}
-        <div>
-            <label>Takılan Tarih</label>
+        <div data-alan-key="takilan_tarih">
+            <label>{{ sabit_etiket.get('takilan_tarih', 'Takılan Tarih') }}</label>
             <input type="date" name="takilan_tarih" value="{{ kayit['takilan_tarih'] if kayit and kayit['takilan_tarih'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('takilan_tarih') }}
-        <div>
-            <label>Teslim Edilen Tarih</label>
+        <div data-alan-key="teslim_tarihi">
+            <label>{{ sabit_etiket.get('teslim_tarihi', 'Teslim Edilen Tarih') }}</label>
             <input type="date" name="teslim_tarihi" value="{{ kayit['teslim_tarihi'] if kayit and kayit['teslim_tarihi'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('teslim_tarihi') }}
-        <div>
-            <label>Sayaç Kredisi</label>
+        <div data-alan-key="sayac_kredisi">
+            <label>{{ sabit_etiket.get('sayac_kredisi', 'Sayaç Kredisi') }}</label>
             <input type="text" name="sayac_kredisi" value="{{ kayit['sayac_kredisi'] if kayit and kayit['sayac_kredisi'] is not none else '' }}">
         </div>
         {{ ozel_alanlari_bas('sayac_kredisi') }}
@@ -233,8 +240,8 @@
             </label>
             {% endfor %}
         </div>
-        <div class="tam-genislik" style="margin-top:10px;">
-            <label>Açıklama</label>
+        <div class="tam-genislik" style="margin-top:10px;" data-alan-key="tespit_aciklama">
+            <label>{{ sabit_etiket.get('tespit_aciklama', 'Açıklama') }}</label>
             <textarea name="tespit_aciklama" rows="2">{{ kayit['tespit_aciklama'] if kayit and kayit['tespit_aciklama'] is not none else '' }}</textarea>
         </div>
         {{ ozel_alanlari_bas('tespit_aciklama') }}
@@ -248,8 +255,8 @@
             </label>
             {% endfor %}
         </div>
-        <div class="tam-genislik" style="margin-top:10px;">
-            <label>Açıklama</label>
+        <div class="tam-genislik" style="margin-top:10px;" data-alan-key="islem_aciklama">
+            <label>{{ sabit_etiket.get('islem_aciklama', 'Açıklama') }}</label>
             <textarea name="islem_aciklama" rows="2">{{ kayit['islem_aciklama'] if kayit and kayit['islem_aciklama'] is not none else '' }}</textarea>
         </div>
         {{ ozel_alanlari_bas('islem_aciklama') }}
@@ -434,7 +441,11 @@ function _kaynakSecildi(secilen) {
     document.getElementById('ariza_telefon').value = secilen.telefon || '';
     document.getElementById('ariza_telefon2').value = secilen.telefon2 || '';
     document.getElementById('ariza_koy_adi').value = secilen.koy_adi || '';
-    document.getElementById('ilk_montaj_tarihi').value = secilen.montaj_tarihi || '';
+    // NOT: İlk Montaj Tarihi burada bilerek DEĞİŞTİRİLMİYOR. Hangi kaynağın
+    // adı/soyadı/köyü seçilirse seçilsin, montaj tarihi her zaman Abone
+    // Listesi'ndeki değerden gelir (Köy Abone Listeleri'ndeki tarihler
+    // hatalı olabildiği için) — bu değer zaten seri no girildiğinde en
+    // güvenilir kaynaktan (Abone Listesi öncelikli) otomatik dolduruldu.
     var kutu = document.getElementById('kaynak-cakisma-kutu');
     if (kutu) { kutu.style.display = 'none'; }
 }

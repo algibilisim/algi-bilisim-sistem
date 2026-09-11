@@ -12,6 +12,37 @@
     çalışılıp hata alan) son 500 mesaj, en yeniden eskiye sıralı.
 </p>
 
+<form class="filtre-form no-print" method="get" style="flex-direction: column; align-items: stretch;">
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <input type="text" name="q" value="{{ q }}" placeholder="Alıcı, telefon, e-posta veya mesaj içeriğinde ara..." style="flex:2; min-width:220px;">
+        <select name="kanal" style="flex:1; min-width:130px;">
+            <option value="">Tüm Kanallar</option>
+            <option value="whatsapp" {% if secili_kanal=='whatsapp' %}selected{% endif %}>WhatsApp</option>
+            <option value="sms" {% if secili_kanal=='sms' %}selected{% endif %}>SMS</option>
+            <option value="eposta" {% if secili_kanal=='eposta' %}selected{% endif %}>E-posta</option>
+        </select>
+        <select name="durum" style="flex:1; min-width:130px;">
+            <option value="">Tüm Durumlar</option>
+            <option value="basarili" {% if secili_durum=='basarili' %}selected{% endif %}>Başarılı</option>
+            <option value="hata" {% if secili_durum=='hata' %}selected{% endif %}>Hata</option>
+            <option value="beklemede" {% if secili_durum=='beklemede' %}selected{% endif %}>Beklemede</option>
+        </select>
+        <button type="submit" class="btn">Filtrele</button>
+    </div>
+    <div class="arama-alanlari onay-kutu-grid" style="--satir-sayisi: {{ arama_satir }};">
+        {% for anahtar, etiket in alan_listesi %}
+        <label>
+            <input type="checkbox" name="alan" value="{{ anahtar }}" {% if anahtar in secili_alanlar %}checked{% endif %}> {{ etiket }}
+        </label>
+        {% endfor %}
+    </div>
+</form>
+
+<div class="filtre-butonlari no-print">
+    <button type="button" class="btn" onclick="filtreTemizle('arama')">Arama Filtrelerini Temizle</button>
+    <button type="button" class="btn" onclick="filtreTemizle('tumu')">Tüm Filtreleri Temizle</button>
+</div>
+
 <div class="tablo-kaydirici">
 <table>
     <thead>

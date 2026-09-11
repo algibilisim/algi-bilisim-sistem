@@ -23,16 +23,31 @@
     Ana Abone Listesi'ndeki (faturalama/tahsilat) kayıtlarla karışmaz, ayrı tutulur.
 </p>
 
-<form class="filtre-form no-print" method="get" style="gap:8px; flex-wrap:wrap;">
-    <input type="text" name="q" value="{{ q }}" placeholder="Adı, soyadı, cihaz no, abone no veya adres ara..." style="flex:2; min-width:220px;">
-    <select name="koy" style="flex:1; min-width:150px;">
-        <option value="">Tüm Köyler</option>
-        {% for k in koyler %}
-        <option value="{{ k['koy_adi'] }}" {% if k['koy_adi']==secili_koy %}selected{% endif %}>{{ k['koy_adi'] }}</option>
+<form class="filtre-form no-print" method="get" style="flex-direction: column; align-items: stretch;">
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <input type="text" name="q" value="{{ q }}" placeholder="Adı, soyadı, cihaz no, abone no veya adres ara..." style="flex:2; min-width:220px;">
+        <select name="koy" style="flex:1; min-width:150px;">
+            <option value="">Tüm Köyler</option>
+            {% for k in koyler %}
+            <option value="{{ k['koy_adi'] }}" {% if k['koy_adi']==secili_koy %}selected{% endif %}>{{ k['koy_adi'] }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn">Filtrele</button>
+    </div>
+    <div class="arama-alanlari onay-kutu-grid" style="--satir-sayisi: {{ arama_satir }};">
+        {% for anahtar, etiket in alan_listesi %}
+        <label>
+            <input type="checkbox" name="alan" value="{{ anahtar }}" {% if anahtar in secili_alanlar %}checked{% endif %}> {{ etiket }}
+        </label>
         {% endfor %}
-    </select>
-    <button type="submit" class="btn">Filtrele</button>
+    </div>
 </form>
+
+<div class="filtre-butonlari no-print">
+    <button type="button" class="btn" onclick="filtreTemizle('arama')">Arama Filtrelerini Temizle</button>
+    <button type="button" class="btn" onclick="filtreTemizle('sutun')">Sütun Filtrelerini Temizle</button>
+    <button type="button" class="btn" onclick="filtreTemizle('tumu')">Tüm Filtreleri Temizle</button>
+</div>
 
 {% if secili_koy %}
 <form method="post" action="{{ url_for('koy_abone_koy_sil') }}" class="no-print" style="margin:8px 0;"
@@ -49,18 +64,43 @@
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <input type="hidden" name="q" value="{{ q }}">
 <input type="hidden" name="koy" value="{{ secili_koy }}">
+{% for anahtar in secili_alanlar %}<input type="hidden" name="alan" value="{{ anahtar }}">{% endfor %}
 <div class="tablo-kaydirici">
 <table>
     <thead>
         <tr>
-            <th>Köy</th>
-            <th>Sıra No</th>
-            <th>Abonelik Tarihi</th>
-            <th>Abone No</th>
-            <th>Cihaz No</th>
-            <th>Adı</th>
-            <th>Soyadı</th>
-            <th>Adres</th>
+            {% for anahtar, etiket in kolon_listesi %}
+            <th>{{ etiket }}</th>
+            {% endfor %}
+            <th class="sabit-sutun"></th>
+        </tr>
+        <tr class="no-print">
+            {% for anahtar, etiket in kolon_listesi %}
+            <th class="kolon-filtre-th">
+                <button type="button" class="btn filtre-ac-buton" data-hedef="kafiltre-{{ anahtar }}"
+                        data-tablo="koy_abone" data-anahtar="{{ anahtar }}">
+                    {% if deger_secili[anahtar] %}{{ deger_secili[anahtar]|length }} seçili ▾{% elif haric_secili[anahtar] %}Tümü, {{ haric_secili[anahtar]|length }} hariç ▾{% else %}Tümü ▾{% endif %}
+                </button>
+                <div id="kafiltre-{{ anahtar }}" class="filtre-kutu">
+                    <div class="filtre-arama-kutusu">
+                        <input type="text" class="filtre-arama-input" placeholder="Ara..." autocomplete="off">
+                    </div>
+                    <div class="filtre-liste">
+                        <label class="tumu-satir"><input type="checkbox" class="tumu-tik"> Tümü</label>
+                        <p class="filtre-yukleniyor">Yükleniyor...</p>
+                        {% for v in deger_secili[anahtar] %}
+                        <input type="hidden" name="deger_{{ anahtar }}" value="{{ v }}" class="filtre-mevcut-gizli">
+                        {% endfor %}
+                        {% for v in haric_secili[anahtar] %}
+                        <input type="hidden" name="haric_{{ anahtar }}" value="{{ v }}" class="filtre-haric-gizli">
+                        {% endfor %}
+                    </div>
+                    <div class="filtre-kutu-alt">
+                        <button type="submit" class="btn btn-yesil">Filtrele</button>
+                    </div>
+                </div>
+            </th>
+            {% endfor %}
             <th class="sabit-sutun"></th>
         </tr>
     </thead>

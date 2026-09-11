@@ -14,9 +14,11 @@
         eklediğiniz özel alanlardır — bunları mouse ile tutup, istediğiniz iki
         alanın arasına bırakabilirsiniz; bıraktığınız anda o konum kaydedilir ve
         form da hemen o sırayla gösterilir. Gri, 🔒 simgeli satırlar sabit
-        (koddan gelen) alanlardır, taşınamazlar — ama aralarına özel alan
-        bırakabilirsiniz. Bir alanı "Kaldır" ile sildiğinizde, o alana daha önce
-        girilmiş veriler KAYBOLMAZ, sadece form/listeden gizlenir.
+        (koddan gelen) alanlardır — silinemezler, ama artık onlar da
+        sürükleyerek taşınabilir ve "Adını Değiştir" ile başlıkları
+        değiştirilebilir (başlığı değiştirdiğinizde form ve sesli doldurma da
+        otomatik güncellenir). Bir alanı "Kaldır" ile sildiğinizde, o alana
+        daha önce girilmiş veriler KAYBOLMAZ, sadece form/listeden gizlenir.
     </p>
 </div>
 
@@ -29,7 +31,7 @@
         {% if oge.tip == 'ozel' %}
         <div class="alan-satiri ozel-alan-satiri" data-alan-key="{{ oge.anahtar }}">
             <span class="surukle-tutamac" title="Sürükleyerek taşı">⠿</span>
-            <span class="alan-etiket-metni">{{ oge.etiket }}</span>
+            <span class="alan-etiket-metni">{{ oge.etiket|tbuyuk }}</span>
             <span class="alan-tur-etiket">{{ tur_etiketleri.get(oge.tur, oge.tur) }}</span>
             <form method="post" action="{{ url_for('ozel_alan_ayarlari_sil', ozel_alan_id=oge.id) }}" class="alan-sil-form"
                   onsubmit="return confirm('Bu alanı kaldırmak istediğinize emin misiniz? (Daha önce girilmiş veriler kaybolmaz.)');">
@@ -39,8 +41,17 @@
         </div>
         {% else %}
         <div class="alan-satiri sabit-alan-satiri" data-alan-key="{{ oge.anahtar }}">
-            <span class="kilit-simge" title="Sabit alan, taşınamaz">🔒</span>
-            <span class="alan-etiket-metni">{{ oge.etiket }}</span>
+            <span class="surukle-tutamac" title="Sürükleyerek taşı">⠿</span>
+            <span class="kilit-simge" title="Sabit alan — silinemez, ama taşınabilir ve adı değiştirilebilir">🔒</span>
+            <span class="alan-etiket-metni sabit-etiket-goster">{{ oge.etiket|tbuyuk }}</span>
+            <form method="post" action="{{ url_for('ozel_alan_ayarlari_sabit_yeniden_adlandir') }}" class="sabit-etiket-form" style="display:none;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="tablo" value="{{ tablo }}">
+                <input type="hidden" name="anahtar" value="{{ oge.anahtar }}">
+                <input type="text" name="etiket" value="{{ oge.etiket }}" style="padding:4px; border:1px solid #ccc; border-radius:4px;">
+                <button type="submit" class="btn btn-yesil">Kaydet</button>
+            </form>
+            <button type="button" class="btn sabit-etiket-duzenle-buton">Adını Değiştir</button>
         </div>
         {% endif %}
         {% endfor %}
@@ -134,6 +145,24 @@
     }
 
     document.querySelectorAll('.alan-onizleme-liste').forEach(siralanabilirListeKur);
+
+    document.querySelectorAll('.sabit-etiket-duzenle-buton').forEach(function(buton) {
+        buton.addEventListener('click', function() {
+            var satir = buton.closest('.sabit-alan-satiri');
+            var gosterim = satir.querySelector('.sabit-etiket-goster');
+            var form = satir.querySelector('.sabit-etiket-form');
+            var acikMi = form.style.display !== 'none';
+            if (acikMi) {
+                form.style.display = 'none';
+                gosterim.style.display = '';
+                buton.textContent = 'Adını Değiştir';
+            } else {
+                form.style.display = 'inline-flex';
+                gosterim.style.display = 'none';
+                buton.textContent = 'Vazgeç';
+            }
+        });
+    });
 })();
 </script>
 
