@@ -165,6 +165,12 @@ def tl_format(deger):
     return s
 
 
+@app.template_filter('tbuyuk')
+def _tbuyuk_filtre(deger):
+    """Şablonlarda Türkçe-doğru büyük harfe çevirme (İ/I ayrımı dahil)."""
+    return _tr_buyuk(deger or "")
+
+
 @app.template_filter('trsaat')
 def tr_saat(deger):
     """Veritabanında NOW() ile (sunucu/DB saati UTC olduğu için UTC olarak)
@@ -680,6 +686,30 @@ def _ozel_alan_harita(ozel_alanlar):
     return harita
 
 
+def _sabit_alan_ozellestirmelerini_getir(db, tablo):
+    """Bir formun sabit (kilitli) alanları için kaydedilmiş özel sıra ve/veya
+    özel başlıkları döndürür. İkisi de kullanıcı hiç değiştirmediyse boş
+    sözlük döner (o zaman koddaki varsayılanlar aynen kullanılır)."""
+    cur = db.cursor()
+    cur.execute("SELECT anahtar, sira FROM sabit_alan_sira WHERE tablo = %s", (tablo,))
+    sira_override = {r["anahtar"]: r["sira"] for r in cur.fetchall()}
+    cur.execute("SELECT anahtar, etiket FROM sabit_alan_etiket WHERE tablo = %s", (tablo,))
+    etiket_override = {r["anahtar"]: r["etiket"] for r in cur.fetchall()}
+    cur.close()
+    return sira_override, etiket_override
+
+
+def _sabit_alan_sirasi_uygula(varsayilan_liste, sira_override, etiket_override):
+    """Koddaki varsayılan (anahtar, etiket) listesini, veritabanında
+    kayıtlı özel sıra/başlık varsa onlarla günceller."""
+    with_index = list(enumerate(varsayilan_liste))
+    with_index.sort(key=lambda pair: sira_override.get(pair[1][0], pair[0]))
+    sonuc = []
+    for _, (anahtar, etiket) in with_index:
+        sonuc.append((anahtar, etiket_override.get(anahtar, etiket)))
+    return sonuc
+
+
 def _form_onizleme_sirasi(sabit_alan_sirasi, ozel_alanlar):
     """Özel Alan Ayarları sayfasındaki sürükle-bırak önizlemesi için, sabit
     (koddan gelen) alanlarla özel alanları TEK bir listede, formda göründükleri
@@ -829,6 +859,68 @@ _ABONE_ALAN_TANIMLARI = [
     ("toplam_kalan", "Toplam Kalan", "(sayac_tutari + malzeme_tutari - alinan_tutar - malzeme_alinan)", True),
 ]
 _ABONE_ALAN_HARITASI = {k: (kolon, sayisal) for k, _, kolon, sayisal in _ABONE_ALAN_TANIMLARI}
+
+# --- Köy Abone Listeleri: arama (q) alan seçimi + sütun bazlı değer filtreleri ---
+_KOY_ABONE_ALAN_TANIMLARI = [
+    ("koy_adi", "Köy", "koy_adi", False),
+    ("sira_no", "Sıra No", "sira_no", False),
+    ("abonelik_tarihi", "Abonelik Tarihi", "abonelik_tarihi", False),
+    ("abone_no", "Abone No", "abone_no", False),
+    ("cihaz_no", "Cihaz No", "cihaz_no", False),
+    ("adi", "Adı", "adi", False),
+    ("soyadi", "Soyadı", "soyadi", False),
+    ("adres", "Adres", "adres", False),
+]
+_KOY_ABONE_ALAN_HARITASI = {k: (kolon, sayisal) for k, _, kolon, sayisal in _KOY_ABONE_ALAN_TANIMLARI}
+
+KOY_ABONE_DISPLAY_KOLONLARI = [(k, etiket) for k, etiket, _, _ in _KOY_ABONE_ALAN_TANIMLARI]
+KOY_ABONE_KOLON_BILGI = {
+    "koy_adi": ("koy_adi", "metin"), "sira_no": ("sira_no", "metin"),
+    "abonelik_tarihi": ("abonelik_tarihi", "tarih"), "abone_no": ("abone_no", "metin"),
+    "cihaz_no": ("cihaz_no", "metin"), "adi": ("adi", "metin"), "soyadi": ("soyadi", "metin"),
+    "adres": ("adres", "metin"),
+}
+KOY_ABONE_SAYISAL_KOLONLAR = set()
+
+
+def _koy_abone_kolon_takimi(db):
+    """Köy Abone Listeleri için (kolon_listesi, kolon_bilgi, sayisal_kolonlar,
+    ozel_alanlar) döndürür — abone/arıza'daki özel alan sistemi burada yok,
+    ozel_alanlar her zaman boş liste."""
+    return KOY_ABONE_DISPLAY_KOLONLARI, KOY_ABONE_KOLON_BILGI, KOY_ABONE_SAYISAL_KOLONLAR, []
+
+
+def _koy_abone_filtre_kosulu_olustur(disari_anahtar, kolon_bilgi):
+    """koy_abone_listesi() sayfasında o an uygulanmış olan TÜM filtreleri
+    (q / koy / alan / deger_*) tek bir SQL koşuluna çevirir."""
+    kosul = "1=1"
+    params = []
+    q = request.args.get("q", "").strip()
+    koy = request.args.get("koy", "").strip()
+    alanlar_secili = request.args.getlist("alan")
+    if q:
+        secili = alanlar_secili if alanlar_secili else [k for k, *_ in _KOY_ABONE_ALAN_TANIMLARI]
+        kosul_listesi = []
+        kosul_params = []
+        for s in secili:
+            if s in _KOY_ABONE_ALAN_HARITASI:
+                kolon, _sayisal = _KOY_ABONE_ALAN_HARITASI[s]
+                kosul_listesi.append(f"{_turkce_esle_kosul(kolon)} LIKE %s")
+                kosul_params.append(_turkce_normallestir(f"%{q}%"))
+        if kosul_listesi:
+            kosul += " AND (" + " OR ".join(kosul_listesi) + ")"
+            params += kosul_params
+    if koy:
+        kosul += " AND koy_adi = %s"
+        params.append(koy)
+    for anahtar, _ in KOY_ABONE_DISPLAY_KOLONLARI:
+        if anahtar == disari_anahtar:
+            continue
+        alt_kosul, alt_params = _kolon_secim_kosulu(anahtar, kolon_bilgi)
+        if alt_kosul:
+            kosul += f" AND {alt_kosul}"
+            params += alt_params
+    return kosul, params
 
 
 def _abone_filtreli_kayitlari_getir(db):
@@ -1710,6 +1802,19 @@ def ensure_db():
                     (grup, deger, sira),
                 )
             conn.commit()
+
+    # Tek seferlik düzeltme: "Tespit Edilen Arıza" / "Yapılan İşlemler" gibi
+    # onay kutusu seçenekleri artık her zaman BÜYÜK HARFLE saklanıyor (bkz.
+    # secenek_yonetimi_ekle/duzenle) — daha önce küçük harfle girilmiş eski
+    # kayıtları da burada bir kereliğine büyük harfe çeviriyoruz. Sırası
+    # (kullanıcının elle taşımış olabileceği düzen) DEĞİŞTİRİLMEZ, sadece
+    # metin büyütülür.
+    cur.execute("SELECT id, deger FROM form_secenegi")
+    for secenek_id, deger in cur.fetchall():
+        buyuk = _tr_buyuk(deger)
+        if buyuk != deger:
+            cur.execute("UPDATE form_secenegi SET deger = %s WHERE id = %s", (buyuk, secenek_id))
+    conn.commit()
 
     # Gönderimler listesinin sırası artık id yerine gönderim tarihine göre
     # hesaplanıyor (bkz. _fabrika_gonderim_sira_numaralarini_yenile) — burada
@@ -2718,16 +2823,56 @@ def _mesaj_gonder(db, kaynak_tur, kaynak_id, alici_adi, alici_telefon, kanal, ic
     return mesaj_id
 
 
+_MESAJ_ALAN_TANIMLARI = [
+    ("alici_adi", "Alıcı"),
+    ("alici_telefon", "Telefon"),
+    ("alici_eposta", "E-posta"),
+    ("icerik", "Mesaj İçeriği"),
+]
+
+
 @app.route("/mesajlar")
 @login_required
 def mesaj_listesi():
     """'Mesajlarım' sayfası."""
+    yonlendirme = _filtre_durumu_uygula("mesaj_listesi")
+    if yonlendirme:
+        return yonlendirme
+
+    q = request.args.get("q", "").strip()
+    alanlar_secili = request.args.getlist("alan")
+    kanal = request.args.get("kanal", "").strip()
+    durum = request.args.get("durum", "").strip()
+
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT * FROM mesaj ORDER BY created_at DESC LIMIT 500")
+
+    sql = "SELECT * FROM mesaj WHERE 1=1"
+    params = []
+    if q:
+        secili = alanlar_secili if alanlar_secili else [k for k, _ in _MESAJ_ALAN_TANIMLARI]
+        _kk = _turkce_esle_kosul
+        kosul_listesi = [f"{_kk(k)} LIKE %s" for k, _ in _MESAJ_ALAN_TANIMLARI if k in secili]
+        if kosul_listesi:
+            sql += " AND (" + " OR ".join(kosul_listesi) + ")"
+            params += [_turkce_normallestir(f"%{q}%")] * len(kosul_listesi)
+    if kanal:
+        sql += " AND kanal = %s"
+        params.append(kanal)
+    if durum:
+        sql += " AND durum = %s"
+        params.append(durum)
+    sql += " ORDER BY created_at DESC LIMIT 500"
+
+    cur.execute(sql, params)
     mesajlar = cur.fetchall()
     cur.close()
-    return render_template("mesaj_listesi.html", mesajlar=mesajlar)
+    return render_template(
+        "mesaj_listesi.html", mesajlar=mesajlar, q=q,
+        secili_alanlar=alanlar_secili, alan_listesi=_MESAJ_ALAN_TANIMLARI,
+        secili_kanal=kanal, secili_durum=durum,
+        arama_satir=_izgara_satir(len(_MESAJ_ALAN_TANIMLARI)),
+    )
 
 
 @app.route("/abone/<int:abone_id>/mesaj-gonder", methods=["GET", "POST"])
@@ -4578,6 +4723,17 @@ def abone_ara():
     adaylar = _tum_adaylari_olustur(abone_satirlari, koy_satirlari)
 
     sonuc = dict(birincil)
+    # İlk Montaj Tarihi her zaman ÖNCELİKLE Abone Listesi'nden gelir (Köy
+    # Abone Listeleri'ndeki tarihler hatalı olabildiği için) — hangi kaynağın
+    # adı/soyadı/köyü kullanılacağından (birincil) BAĞIMSIZ olarak. Abone
+    # Listesi'nde kayıt yoksa ya da kayıt var ama montaj tarihi boşsa, Köy
+    # Abone Listeleri'ndeki tarihe geri dönülür.
+    if abone_paket and abone_paket["montaj_tarihi"]:
+        sonuc["montaj_tarihi"] = abone_paket["montaj_tarihi"]
+    elif koy_paket and koy_paket["montaj_tarihi"]:
+        sonuc["montaj_tarihi"] = koy_paket["montaj_tarihi"]
+    else:
+        sonuc["montaj_tarihi"] = ""
     sonuc["secenekler"] = adaylar if len(adaylar) > 1 else []
     return jsonify(sonuc)
 
@@ -5051,7 +5207,7 @@ def kolon_secenekleri_api():
     filtre kutusunu AÇTIĞINDA seçenekler bu uç nokta üzerinden istenir."""
     tablo = request.args.get("tablo", "").strip()
     anahtar = request.args.get("anahtar", "").strip()
-    if tablo not in ("abone", "ariza", "fabrika_tamir", "fatura", "stok_urun"):
+    if tablo not in ("abone", "ariza", "fabrika_tamir", "fatura", "stok_urun", "koy_abone"):
         return jsonify({"hata": "geçersiz tablo"}), 400
     db = get_db()
     if tablo == "abone":
@@ -5062,6 +5218,8 @@ def kolon_secenekleri_api():
         _kolon_listesi, bilgi_sozlugu, _sayisal, _ozel = _fabrika_kolon_takimi(db)
     elif tablo == "stok_urun":
         _kolon_listesi, bilgi_sozlugu, _sayisal, _ozel = _stok_kolon_takimi(db)
+    elif tablo == "koy_abone":
+        _kolon_listesi, bilgi_sozlugu, _sayisal, _ozel = _koy_abone_kolon_takimi(db)
     else:
         _kolon_listesi, bilgi_sozlugu, _sayisal, _ozel = _fatura_kolon_takimi(db)
     if anahtar not in bilgi_sozlugu:
@@ -5074,6 +5232,8 @@ def kolon_secenekleri_api():
         ekstra_kosul, ekstra_params = _fabrika_filtre_kosulu_olustur(anahtar, bilgi_sozlugu)
     elif tablo == "stok_urun":
         ekstra_kosul, ekstra_params = _stok_filtre_kosulu_olustur(anahtar, bilgi_sozlugu)
+    elif tablo == "koy_abone":
+        ekstra_kosul, ekstra_params = _koy_abone_filtre_kosulu_olustur(anahtar, bilgi_sozlugu)
     else:
         ekstra_kosul, ekstra_params = _fatura_filtre_kosulu_olustur(anahtar, bilgi_sozlugu)
     gercek_tablo = _FATURA_ALT_SORGU if tablo == "fatura" else tablo
@@ -5670,21 +5830,27 @@ def _koy_excel_ayikla(dosya):
 @app.route("/koy-abone-listesi")
 @login_required
 def koy_abone_listesi():
+    yonlendirme = _filtre_durumu_uygula("koy_abone_listesi")
+    if yonlendirme:
+        return yonlendirme
+
     q = request.args.get("q", "").strip()
     koy = request.args.get("koy", "").strip()
+    alanlar_secili = request.args.getlist("alan")
     db = get_db()
     cur = db.cursor()
 
-    sql = "SELECT * FROM koy_abone WHERE 1=1"
-    params = []
-    if koy:
-        sql += " AND koy_adi = %s"
-        params.append(koy)
-    if q:
-        _kk = _turkce_esle_kosul
-        sql += (f" AND ({_kk('adi')} LIKE %s OR {_kk('soyadi')} LIKE %s OR {_kk('cihaz_no')} LIKE %s "
-                f"OR {_kk('abone_no')} LIKE %s OR {_kk('adres')} LIKE %s)")
-        params += [_turkce_normallestir(f"%{q}%")] * 5
+    alan_listesi = [(k, etiket) for k, etiket, _, _ in _KOY_ABONE_ALAN_TANIMLARI]
+    kolon_listesi, kolon_bilgi, sayisal_kolonlar, _ozel = _koy_abone_kolon_takimi(db)
+
+    kosul, params = _koy_abone_filtre_kosulu_olustur(None, kolon_bilgi)
+    sql = f"SELECT * FROM koy_abone WHERE {kosul}"
+
+    deger_secili = {}
+    haric_secili = {}
+    for anahtar, _ in kolon_listesi:
+        deger_secili[anahtar] = request.args.getlist(f"deger_{anahtar}")
+        haric_secili[anahtar] = request.args.getlist(f"haric_{anahtar}")
 
     cur.execute(sql, params)
     kayitlar_ham = cur.fetchall()
@@ -5717,6 +5883,10 @@ def koy_abone_listesi():
     return render_template(
         "koy_abone_listesi.html", satirlar=satirlar, koyler=koyler,
         q=q, secili_koy=koy,
+        secili_alanlar=alanlar_secili, alan_listesi=alan_listesi,
+        kolon_listesi=kolon_listesi, deger_secili=deger_secili, haric_secili=haric_secili,
+        sayisal_kolonlar=sayisal_kolonlar,
+        arama_satir=_izgara_satir(len(alan_listesi)),
         filtreli_kayit=filtreli_kayit, toplam_kayit=toplam_kayit,
         secili_koy_toplam=secili_koy_toplam,
         sira=sira, sira_toggle_qs=_sira_toggle_qs(),
@@ -6002,6 +6172,17 @@ def _sonraki_senet_no(db):
     return str(en_buyuk + 1)
 
 
+def _sabit_alan_baglami(db, tablo):
+    """Formda hem CSS sırası (order) hem de olası özel başlıkları uygulamak
+    için gereken bağlamı hazırlar."""
+    varsayilan = ABONE_FORM_ALAN_SIRASI if tablo == "abone" else ARIZA_FORM_ALAN_SIRASI
+    sira_ov, etiket_ov = _sabit_alan_ozellestirmelerini_getir(db, tablo)
+    sonuc_liste = _sabit_alan_sirasi_uygula(varsayilan, sira_ov, etiket_ov)
+    sabit_sira = {anahtar: i for i, (anahtar, _) in enumerate(sonuc_liste)}
+    sabit_etiket = {anahtar: etiket for anahtar, etiket in sonuc_liste}
+    return {"sabit_sira": sabit_sira, "sabit_etiket": sabit_etiket}
+
+
 @app.route("/abone/yeni", methods=["GET", "POST"])
 @login_required
 def abone_yeni():
@@ -6019,6 +6200,7 @@ def abone_yeni():
         fotograflar=[], imzalar={"montaj": False, "abone": False},
         ozel_alan_harita=_ozel_alan_harita(_ozel_alanlari_getir(db, "abone")),
         bugun=datetime.now().strftime("%Y-%m-%d"),
+        **_sabit_alan_baglami(db, "abone"),
     )
 
 
@@ -6056,6 +6238,7 @@ def abone_duzenle(abone_id):
         "abone_form.html", kayit=kayit, geri=geri, hedef=sonraki_hedef, fotograflar=fotograflar,
         imzalar=_abone_imzalari_getir(db, abone_id),
         ozel_alan_harita=_ozel_alan_harita(_ozel_alanlari_getir(db, "abone")),
+        **_sabit_alan_baglami(db, "abone"),
     )
 
 
@@ -6964,6 +7147,9 @@ def secenek_yonetimi_ekle():
     if not deger:
         flash("Boş seçenek eklenemez.")
         return redirect(url_for("secenek_yonetimi"))
+    # Onay kutusu seçenekleri her zaman BÜYÜK HARFLE saklanır (formda ve
+    # sesli doldurmada diğer tüm alanlarla tutarlı olsun diye).
+    deger = _tr_buyuk(deger)
 
     db = get_db()
     cur = db.cursor()
@@ -6976,11 +7162,26 @@ def secenek_yonetimi_ekle():
         cur.close()
         return redirect(url_for("secenek_yonetimi"))
 
-    cur.execute("SELECT COALESCE(MAX(sira), -1) AS m FROM form_secenegi WHERE grup = %s", (grup,))
-    sonraki_sira = cur.fetchone()["m"] + 1
+    # Yeni seçenek, listenin SONUNA değil, ALFABETİK olarak doğru konuma
+    # otomatik yerleştirilir (kullanıcı isterse sonradan sürükleyip elle
+    # taşıyabilir — bu, sadece başlangıç konumunu belirler).
+    cur.execute(
+        "SELECT id, deger, sira FROM form_secenegi WHERE grup = %s ORDER BY sira, id",
+        (grup,),
+    )
+    mevcutlar = cur.fetchall()
+    yeni_sira = len(mevcutlar)
+    for i, m in enumerate(mevcutlar):
+        if _tr_buyuk(m["deger"]) > deger:
+            yeni_sira = i
+            break
+    cur.execute(
+        "UPDATE form_secenegi SET sira = sira + 1 WHERE grup = %s AND sira >= %s",
+        (grup, yeni_sira),
+    )
     cur.execute(
         "INSERT INTO form_secenegi (grup, deger, sira) VALUES (%s, %s, %s)",
-        (grup, deger, sonraki_sira),
+        (grup, deger, yeni_sira),
     )
     db.commit()
     cur.close()
@@ -6995,6 +7196,7 @@ def secenek_yonetimi_duzenle(secenek_id):
     if not yeni_deger:
         flash("Boş değer kaydedilemez.")
         return redirect(url_for("secenek_yonetimi"))
+    yeni_deger = _tr_buyuk(yeni_deger)
     db = get_db()
     cur = db.cursor()
     cur.execute("UPDATE form_secenegi SET deger = %s WHERE id = %s", (yeni_deger, secenek_id))
@@ -7134,12 +7336,44 @@ def ozel_alan_ayarlari():
     db = get_db()
     abone_alanlari = _ozel_alanlari_getir(db, "abone")
     ariza_alanlari = _ozel_alanlari_getir(db, "ariza")
+    abone_sira_ov, abone_etiket_ov = _sabit_alan_ozellestirmelerini_getir(db, "abone")
+    ariza_sira_ov, ariza_etiket_ov = _sabit_alan_ozellestirmelerini_getir(db, "ariza")
+    abone_sabit = _sabit_alan_sirasi_uygula(ABONE_FORM_ALAN_SIRASI, abone_sira_ov, abone_etiket_ov)
+    ariza_sabit = _sabit_alan_sirasi_uygula(ARIZA_FORM_ALAN_SIRASI, ariza_sira_ov, ariza_etiket_ov)
     return render_template(
         "ozel_alan_ayarlari.html",
-        abone_sirasi=_form_onizleme_sirasi(ABONE_FORM_ALAN_SIRASI, abone_alanlari),
-        ariza_sirasi=_form_onizleme_sirasi(ARIZA_FORM_ALAN_SIRASI, ariza_alanlari),
+        abone_sirasi=_form_onizleme_sirasi(abone_sabit, abone_alanlari),
+        ariza_sirasi=_form_onizleme_sirasi(ariza_sabit, ariza_alanlari),
         tur_etiketleri=_OZEL_ALAN_TUR_ETIKETLERI,
     )
+
+
+@app.route("/admin/ozel-alan-ayarlari/sabit-yeniden-adlandir", methods=["POST"])
+@login_required
+def ozel_alan_ayarlari_sabit_yeniden_adlandir():
+    """Kilitli (sabit) bir alanın Özel Alan Ayarları'nda gösterilen VE
+    gerçek formda/sesli doldurmada kullanılan başlığını değiştirir. Tek bir
+    yerden değiştirildiği için formla ve sesli doldurmayla senkron kalır."""
+    tablo = request.form.get("tablo", "")
+    anahtar = request.form.get("anahtar", "").strip()
+    yeni_etiket = request.form.get("etiket", "").strip()
+    if tablo not in ("abone", "ariza") or not anahtar:
+        flash("Geçersiz istek.")
+        return redirect(url_for("ozel_alan_ayarlari"))
+    if not yeni_etiket:
+        flash("Boş başlık kaydedilemez.")
+        return redirect(url_for("ozel_alan_ayarlari"))
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "INSERT INTO sabit_alan_etiket (tablo, anahtar, etiket) VALUES (%s, %s, %s) "
+        "ON CONFLICT (tablo, anahtar) DO UPDATE SET etiket = EXCLUDED.etiket",
+        (tablo, anahtar, yeni_etiket),
+    )
+    db.commit()
+    cur.close()
+    flash(f'Başlık "{yeni_etiket}" olarak güncellendi.')
+    return redirect(url_for("ozel_alan_ayarlari"))
 
 
 @app.route("/admin/ozel-alan-ayarlari/ekle", methods=["POST"])
@@ -7182,8 +7416,26 @@ def ozel_alan_ayarlari_sirala():
     sira_listesi = veri.get("sira", [])
     if tablo not in ("abone", "ariza") or not isinstance(sira_listesi, list):
         return jsonify({"hata": "geçersiz istek"}), 400
+    sira_listesi = [str(a) for a in sira_listesi]
     db = get_db()
-    _ozel_alan_sirala(db, tablo, [str(a) for a in sira_listesi])
+    _ozel_alan_sirala(db, tablo, sira_listesi)
+
+    # Sıralanan listedeki SABİT (kilitli) alanların yeni göreli sırasını da
+    # kalıcı olarak kaydet — böylece kilitli alanlar da sürüklenip
+    # taşınabilir, sadece özel alanlar değil.
+    sabit_anahtarlar = {k for k, _ in (ABONE_FORM_ALAN_SIRASI if tablo == "abone" else ARIZA_FORM_ALAN_SIRASI)}
+    cur = db.cursor()
+    yeni_sira = 0
+    for anahtar in sira_listesi:
+        if anahtar in sabit_anahtarlar:
+            cur.execute(
+                "INSERT INTO sabit_alan_sira (tablo, anahtar, sira) VALUES (%s, %s, %s) "
+                "ON CONFLICT (tablo, anahtar) DO UPDATE SET sira = EXCLUDED.sira",
+                (tablo, anahtar, yeni_sira),
+            )
+            yeni_sira += 1
+    db.commit()
+    cur.close()
     return jsonify({"tamam": True})
 
 
@@ -7205,6 +7457,7 @@ def ariza_yeni():
         bugun=datetime.now().strftime("%Y-%m-%d"),
         fotograflar=[],
         ozel_alan_harita=_ozel_alan_harita(_ozel_alanlari_getir(db, "ariza")),
+        **_sabit_alan_baglami(db, "ariza"),
     )
 
 
@@ -7219,7 +7472,7 @@ def ariza_duzenle(ariza_id):
         if sonraki_hedef:
             return redirect(sonraki_hedef)
         flash("Kayıt kaydedildi.")
-        return redirect(url_for("ariza_duzenle", ariza_id=ariza_id))
+        return redirect(url_for("ariza_listesi"))
     cur = db.cursor()
     cur.execute("SELECT * FROM ariza WHERE id = %s", (ariza_id,))
     kayit = cur.fetchone()
@@ -7232,15 +7485,27 @@ def ariza_duzenle(ariza_id):
 
     ilk_montaj_tarihi = ""
     if kayit["seri_no"]:
+        # Öncelik Abone Listesi'nde: kayıt var ve montaj tarihi doluysa o
+        # kullanılır. Yoksa (kayıt yok ya da tarih boş) Köy Abone
+        # Listeleri'ndeki tarihe geri dönülür — çünkü köy listesindeki
+        # tarihler bazen hatalı olabiliyor.
         cur = db.cursor()
         cur.execute(
             "SELECT montaj_tarihi FROM abone WHERE sayac_no = %s ORDER BY id LIMIT 1",
             (kayit["seri_no"],),
         )
         abone_satir = cur.fetchone()
-        cur.close()
-        if abone_satir:
+        if abone_satir and abone_satir["montaj_tarihi"]:
             ilk_montaj_tarihi = _tarih_iso_hale_getir(abone_satir["montaj_tarihi"])
+        else:
+            cur.execute(
+                "SELECT abonelik_tarihi FROM koy_abone WHERE cihaz_no = %s ORDER BY id LIMIT 1",
+                (kayit["seri_no"],),
+            )
+            koy_satir = cur.fetchone()
+            if koy_satir and koy_satir["abonelik_tarihi"]:
+                ilk_montaj_tarihi = _tarih_iso_hale_getir(koy_satir["abonelik_tarihi"])
+        cur.close()
 
     cur = db.cursor()
     cur.execute(
@@ -7258,6 +7523,7 @@ def ariza_duzenle(ariza_id):
         bugun=datetime.now().strftime("%Y-%m-%d"),
         fotograflar=fotograflar,
         ozel_alan_harita=_ozel_alan_harita(_ozel_alanlari_getir(db, "ariza")),
+        **_sabit_alan_baglami(db, "ariza"),
     )
 
 

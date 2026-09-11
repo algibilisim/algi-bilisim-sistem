@@ -489,3 +489,24 @@ CREATE INDEX IF NOT EXISTS idx_stok_fotograf_urun ON stok_fotograf(urun_id);
 -- kaydedilince Stok'taki "ABONE KARTI" ürününden 1 adet düşülür
 -- (bkz. app.py'deki _abone_kaydet / _stok_urun_hareket_uygula).
 ALTER TABLE abone ADD COLUMN IF NOT EXISTS abone_karti_teslim TEXT;
+
+-- Özel Alan Ayarları sayfasında artık SABİT (koddan gelen, kilitli) alanlar
+-- da sürükleyip sıralanabiliyor. Varsayılan (Python listesindeki) sıra
+-- yeterliyse burada hiç satır olmaz; kullanıcı bir sabit alanı taşıdığında
+-- o form için TÜM sabit alanların yeni sırası buraya yazılır.
+CREATE TABLE IF NOT EXISTS sabit_alan_sira (
+    tablo TEXT NOT NULL,
+    anahtar TEXT NOT NULL,
+    sira INTEGER NOT NULL,
+    PRIMARY KEY (tablo, anahtar)
+);
+
+-- Kilitli (sabit) alanların Özel Alan Ayarları'nda gösterilen başlığı da
+-- artık değiştirilebiliyor. Burada bir satır varsa, formda ve sesli
+-- doldurmada gösterilen etiket koddaki varsayılan yerine BU metin olur.
+CREATE TABLE IF NOT EXISTS sabit_alan_etiket (
+    tablo TEXT NOT NULL,
+    anahtar TEXT NOT NULL,
+    etiket TEXT NOT NULL,
+    PRIMARY KEY (tablo, anahtar)
+);
