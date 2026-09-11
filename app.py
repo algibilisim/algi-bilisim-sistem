@@ -4812,6 +4812,16 @@ _SES_NITELIK_ARTIK_KELIMELER = {
     "tane", "adet",
 }
 
+# "... olmayan(lar)", "... yok", "... boş" gibi OLUMSUZ sorgu kalıpları —
+# bir bilgiye sahip OLMAYAN kayıtları listelemek için ("telefon numarası
+# olmayanlar", "kalan bakiyesi olmayanlar").
+_SES_OLUMSUZ_KELIMELER = {
+    "olmayan", "olmayanlar", "olmayanlari", "olmayanin", "yok", "yoklar",
+    "bos", "bosolan", "bosolanlar", "girilmemis", "yazilmamis", "eksik",
+    "bilinmeyen", "kayitsiz", "olmadigi",
+}
+_SES_OLUMSUZ_KALIP = re.compile(r"\b(" + "|".join(sorted(_SES_OLUMSUZ_KELIMELER, key=len, reverse=True)) + r")\b")
+
 # "GENEL ALACAK BAKİYESİ" sabit komutunun (normalize edilmiş) karşılıkları —
 # konuşma tanıma bazen sondaki eki düşürebildiği için "bakiye" hâli de kabul.
 _SES_SABIT_GENEL_ALACAK = {"genel alacak bakiyesi", "genel alacak bakiye"}
@@ -5248,9 +5258,8 @@ def _ses_satirlari_getir(cur, menu, kosul, params, siralama, hedef=None):
     ] + list(menu["url_kolonlari"])
     if hedef:
         secim.append(f"{hedef[0]} AS _deger")
-    else:
-        for i, (ifade, _e, _b) in enumerate(menu["ozet"]):
-            secim.append(f"{ifade} AS _o{i}")
+    for i, (ifade, _e, _b) in enumerate(menu["ozet"]):
+        secim.append(f"{ifade} AS _o{i}")
     cur.execute(
         f"SELECT {', '.join(secim)} FROM {menu['kaynak']} WHERE {kosul} {siralama}",
         list(params),
@@ -5258,41 +5267,55 @@ def _ses_satirlari_getir(cur, menu, kosul, params, siralama, hedef=None):
     return cur.fetchall()
 
 
-def _ses_sonuc(menu, satir, hedef=None, tel_ekle=False):
-    """Bir satırı sonuç listesindeki bir girdiye çevirir."""
+def _ses_sonuc(menu, satir, hedef=None):
+    """Bir satırı sonuç listesindeki bir girdiye çevirir.
+
+    Telefon, satırın metnine gömülmek yerine AYRI bir alan olarak
+    gönderilir: sayfada isim ayrı, numara ayrı dokunulabilir olsun diye
+    (isme basınca kayıt açılır, numaraya basınca arama başlar)."""
     baslik = (satir["_baslik"] or "").strip() or "(isimsiz kayıt)"
     koy = satir["_koy"]
-    tel = None
     if hedef:
         _ifade, etiket, bicim = hedef
-        alt = f"{etiket}: {_ses_deger_metni(satir['_deger'], bicim)}"
-        if koy and _ifade != menu["koy"]:
-            alt += f" ({koy})"
         if bicim == "tel":
-            tel = satir["_deger"]
+            # Telefon zaten ayrı alanda gösterileceği için alt satırda
+            # tekrar edilmiyor.
+            alt = koy or ""
+        else:
+            alt = f"{etiket}: {_ses_deger_metni(satir['_deger'], bicim)}"
+            if koy and _ifade != menu["koy"]:
+                alt += f" ({koy})"
     else:
         parcalar = [koy] if koy else []
         for i, (_ifade, etiket, bicim) in enumerate(menu["ozet"]):
             deger = satir[f"_o{i}"]
+            if bicim == "tel":
+                continue
             if (deger is None or deger == "") and bicim != "tl":
                 continue
             parcalar.append(f"{etiket}: {_ses_deger_metni(deger, bicim)}")
         alt = " — ".join(parcalar)
-        if tel_ekle:
-            tel = satir["_tel"]
     sonuc = {"baslik": baslik, "alt": alt, "url": menu["url"](satir)}
-    if tel:
-        rakamlar = _ses_tel_rakamlari(tel)
+    if koy:
+        sonuc["koy"] = koy
+    ham_tel = satir["_deger"] if (hedef and hedef[2] == "tel") else satir["_tel"]
+    if ham_tel:
+        rakamlar = _ses_tel_rakamlari(ham_tel)
         if rakamlar:
             sonuc["tel"] = rakamlar
+            sonuc["tel_metin"] = str(ham_tel).strip()
     return sonuc
 
 
-def _ses_dolu_kosulu(hedef):
-    """"... olanlar" listelerinde bir bilgiye SAHİP olma koşulu."""
+def _ses_dolu_kosulu(hedef, olumsuz=False):
+    """"... olanlar" / "... olmayanlar" listelerinde bir bilgiye SAHİP olma
+    (ya da olmama) koşulu. Para/sayı bilgilerinde "olmayan" = sıfır ya da
+    eksi; metin bilgilerinde = boş/girilmemiş."""
     ifade, _etiket, bicim = hedef
     if bicim in ("tl", "sayi"):
-        return f"{ifade} > 0"
+        return f"COALESCE({ifade}, 0) <= 0" if olumsuz else f"{ifade} > 0"
+    if olumsuz:
+        return f"COALESCE(CAST({ifade} AS TEXT), '') = ''"
     return f"COALESCE(CAST({ifade} AS TEXT), '') != ''"
 
 
@@ -5302,17 +5325,20 @@ def _ses_hedef_siralamasi(menu, hedef):
     return menu["siralama"]
 
 
-def _ses_nitelik_listesi(cur, menu, hedef, baslik_eki):
+def _ses_nitelik_listesi(cur, menu, hedef, baslik_eki, olumsuz=False):
     """İsim/köy söylenmeden sadece bir bilgi türü istendiğinde (örn.
-    "toplam kalan bakiye", "tamir ücreti olanlar"), menüde o bilgiye SAHİP
-    tüm kayıtları listeler; TL bilgilerinde başlıkta toplam da gösterilir."""
+    "toplam kalan bakiye", "tamir ücreti olanlar", "telefonu olmayanlar"),
+    menüde o bilgiye SAHİP (ya da olumsuzda: sahip OLMAYAN) tüm kayıtları
+    listeler; TL bilgilerinde başlıkta toplam da gösterilir."""
     ifade, etiket, bicim = hedef
-    kosul = f"({menu['taban']}) AND {_ses_dolu_kosulu(hedef)}"
-    satirlar = _ses_satirlari_getir(cur, menu, kosul, [], _ses_hedef_siralamasi(menu, hedef), hedef)
+    kosul = f"({menu['taban']}) AND {_ses_dolu_kosulu(hedef, olumsuz)}"
+    siralama = menu["siralama"] if olumsuz else _ses_hedef_siralamasi(menu, hedef)
+    satirlar = _ses_satirlari_getir(cur, menu, kosul, [], siralama, hedef)
     if not satirlar:
-        return jsonify({"tur": "bulunamadi", "mesaj": f'{menu["ad"]}: "{etiket}" bilgisine sahip kayıt bulunamadı'})
-    baslik = f"{etiket} {baslik_eki}"
-    if bicim == "tl" and ifade not in menu.get("toplamsiz", ()):
+        yok = "bilgisi boş olan" if olumsuz else "bilgisine sahip"
+        return jsonify({"tur": "bulunamadi", "mesaj": f'{menu["ad"]}: "{etiket}" {yok} kayıt bulunamadı'})
+    baslik = f"{etiket} {baslik_eki} — {len(satirlar)} kayıt"
+    if bicim == "tl" and not olumsuz and ifade not in menu.get("toplamsiz", ()):
         baslik += " — " + _ses_toplam_metni(cur, menu["kaynak"], ifade, menu["taban"])
     return jsonify({"tur": "liste", "baslik": baslik,
                     "sonuclar": [_ses_sonuc(menu, s, hedef) for s in satirlar]})
@@ -5322,7 +5348,11 @@ def _ses_koy_yaniti(cur, menu, koy_adi_ham, kalan_metin_norm):
     """Bir köy adı + (varsa) bilgi türü için, menünün kendi kayıtlarından
     sonuç üretir. Bilinmeyen bir bilgi türü istenmişse None döner. Köy adı
     boşluk farkı gözetmeden aranır ("Gökçe yol" = "GÖKÇEYOL")."""
-    kalan_kelimeler = [k for k in kalan_metin_norm.split() if k not in _SES_DOLGU_KELIMELER]
+    olumsuz = bool(_SES_OLUMSUZ_KALIP.search(kalan_metin_norm))
+    kalan_kelimeler = [
+        k for k in kalan_metin_norm.split()
+        if k not in _SES_DOLGU_KELIMELER and k not in _SES_OLUMSUZ_KELIMELER
+    ]
     filtrele = False
     hedef = None
     if kalan_kelimeler:
@@ -5331,6 +5361,8 @@ def _ses_koy_yaniti(cur, menu, koy_adi_ham, kalan_metin_norm):
             return None
         hedef = bulunan[1]
         filtrele = True
+    elif olumsuz:
+        return None
     elif menu["koy_varsayilan"]:
         # Sadece köy adı söylenmiş — köydeki HERKES, menünün varsayılan
         # bilgisiyle (örn. kalan bakiye) listelenir.
@@ -5343,9 +5375,10 @@ def _ses_koy_yaniti(cur, menu, koy_adi_ham, kalan_metin_norm):
     koy_params = [f"%{koy_arama}%"]
     liste_kosul = koy_kosul
     if filtrele:
-        liste_kosul += " AND " + _ses_dolu_kosulu(hedef)
+        liste_kosul += " AND " + _ses_dolu_kosulu(hedef, olumsuz)
 
-    satirlar = _ses_satirlari_getir(cur, menu, liste_kosul, koy_params, _ses_hedef_siralamasi(menu, hedef), hedef)
+    siralama = menu["siralama"] if olumsuz else _ses_hedef_siralamasi(menu, hedef)
+    satirlar = _ses_satirlari_getir(cur, menu, liste_kosul, koy_params, siralama, hedef)
     if not satirlar:
         cur.execute(
             f"SELECT DISTINCT {menu['koy']} AS k FROM {menu['kaynak']} WHERE {koy_kosul} ORDER BY 1 LIMIT 3",
@@ -5354,18 +5387,19 @@ def _ses_koy_yaniti(cur, menu, koy_adi_ham, kalan_metin_norm):
         bulunan_koyler = [r["k"] for r in cur.fetchall() if r["k"]]
         if not bulunan_koyler:
             return jsonify({"tur": "bulunamadi", "mesaj": f'{menu["ad"]}: "{koy_adi_ham}" için kayıt bulunamadı'})
+        durum = "olmayan" if olumsuz else "olan"
         return jsonify({"tur": "bulunamadi",
-                        "mesaj": f'{menu["ad"]}: {", ".join(bulunan_koyler)} köyünde {hedef[1]} olan kayıt yok'})
+                        "mesaj": f'{menu["ad"]}: {", ".join(bulunan_koyler)} köyünde {hedef[1]} {durum} kayıt yok'})
 
     # Başlıkta konuşma tanımanın yazdığı hâl ("Gökçe yol") yerine
     # kayıtlardaki gerçek köy adı ("GÖKÇEYOL") gösterilir.
     koy_adlari = sorted({s["_koy"] for s in satirlar if s["_koy"]})
     koy_gorunen = ", ".join(koy_adlari) if 0 < len(koy_adlari) <= 3 else koy_adi_ham
     if filtrele:
-        baslik = f"{koy_gorunen} — {hedef[1]} Olanlar"
+        baslik = f"{koy_gorunen} — {hedef[1]} {'Olmayanlar' if olumsuz else 'Olanlar'} — {len(satirlar)} kayıt"
     else:
-        baslik = f"{koy_gorunen} Köyü"
-    if hedef and hedef[2] == "tl" and hedef[0] not in menu.get("toplamsiz", ()):
+        baslik = f"{koy_gorunen} Köyü — {len(satirlar)} kayıt"
+    if hedef and hedef[2] == "tl" and not olumsuz and hedef[0] not in menu.get("toplamsiz", ()):
         if filtrele:
             baslik += " — " + _ses_toplam_metni(cur, menu["kaynak"], hedef[0], koy_kosul, koy_params)
         else:
@@ -5401,14 +5435,18 @@ def _ses_menu_sorgusu(cur, menu, sorgu_ham, sorgu_norm):
             yanit = _ses_koy_yaniti(cur, menu, koy_adi_ham, sorgu_norm[koy_eslesme.end():].strip())
             return yanit if yanit is not None else anlasilamadi
 
-    # --- "... olan(lar)" modu: belirli bir bilgisi olan TÜM kayıtlar -------
+    # --- "... olan(lar)" / "... olmayan(lar)" modu ---------------------------
+    # Belirli bir bilgisi OLAN (ya da OLMAYAN) tüm kayıtlar.
+    olumsuz_eslesme = _SES_OLUMSUZ_KALIP.search(sorgu_norm)
     olan_eslesme = re.search(r"\bolan(lar|lari)?\b", sorgu_norm)
-    if olan_eslesme:
-        aday = sorgu_norm[:olan_eslesme.start()].strip()
+    if olumsuz_eslesme or olan_eslesme:
+        olumsuz = bool(olumsuz_eslesme)
+        kesme = olumsuz_eslesme.start() if olumsuz else olan_eslesme.start()
+        aday = sorgu_norm[:kesme].strip()
         bulunan = _ses_nitelik_bul(menu, aday) if aday else None
         if not bulunan:
             return anlasilamadi
-        return _ses_nitelik_listesi(cur, menu, bulunan[1], "Olanlar")
+        return _ses_nitelik_listesi(cur, menu, bulunan[1], "Olmayanlar" if olumsuz else "Olanlar", olumsuz)
 
     # --- Kişi / konu modu ----------------------------------------------------
     # Konuşma tanıma özel isim + iyelik ekini genelde kesme işaretiyle ayırır
@@ -5471,7 +5509,7 @@ def _ses_menu_sorgusu(cur, menu, sorgu_ham, sorgu_norm):
         if not satirlar:
             return jsonify({"tur": "bulunamadi", "mesaj": f'{menu["ad"]}: "{isim_kismi_ham}" için kayıt bulunamadı'})
         return jsonify({"tur": "liste", "baslik": isim_kismi_ham,
-                        "sonuclar": [_ses_sonuc(menu, s, tel_ekle=True) for s in satirlar]})
+                        "sonuclar": [_ses_sonuc(menu, s) for s in satirlar]})
 
     hedef = bulunan[1]
     satirlar = _ses_satirlari_getir(cur, menu, kosul, params, menu["siralama"], hedef)
@@ -5592,6 +5630,80 @@ def _ses_genel_alacak_raporu(cur):
         "baslik": f"GENEL ALACAK BAKİYESİ — Toplam: {tl_format(genel_toplam)} TL",
         "sonuclar": sonuclar,
     })
+
+
+def _ses_arama_hedefi(cur, menu, isim_ham):
+    """"<isim> ara" komutunun sunucu tarafı: menüde o isimdeki, TELEFONU
+    KAYITLI kayıtları bulur. Köy adı da söylenmişse (örn. "Özyurt Bilal
+    Akdoğan ara") aynı isimli kişiler arasından o köydeki seçilir.
+
+    Döner: {"tur": "ara", ...} tek bir numara bulunduysa; {"tur": "secim"}
+    aynı isimde birden fazla varsa; {"tur": "bulunamadi"} hiçbiri yoksa."""
+    if not menu["tel"]:
+        return {"tur": "bulunamadi", "mesaj": f'{menu["ad"]} listesinde telefon numarası tutulmuyor'}
+    kelimeler = [k for k in _turkce_normallestir(isim_ham).split() if k]
+    if not kelimeler:
+        return {"tur": "bulunamadi", "mesaj": "Kimi arayacağım anlaşılamadı"}
+
+    kosul_sql, params = _ses_isim_kosulu(kelimeler, menu["arama"])
+    kosul = f"({menu['taban']}) AND {kosul_sql}"
+    satirlar = _ses_satirlari_getir(cur, menu, kosul, params, menu["siralama"])
+
+    if not satirlar and menu["koy"]:
+        # Söylenenin bir kısmı köy adı olabilir ("Özyurt Bilal Akdoğan") —
+        # her kelimeyi tek tek köy adı olarak deneyip kalanı isim say.
+        for i in range(len(kelimeler)):
+            koy_aday = kelimeler[i]
+            isim_kalan = kelimeler[:i] + kelimeler[i + 1:]
+            if not isim_kalan:
+                continue
+            isim_kosul, isim_params = _ses_isim_kosulu(isim_kalan, menu["arama"])
+            kosul = (f"({menu['taban']}) AND {isim_kosul} AND "
+                     + _ses_bosluksuz(menu["koy"]) + " LIKE %s")
+            deneme = _ses_satirlari_getir(
+                cur, menu, kosul, isim_params + ["%" + koy_aday.replace(" ", "") + "%"], menu["siralama"])
+            if deneme:
+                satirlar = deneme
+                break
+
+    if not satirlar:
+        return {"tur": "bulunamadi", "mesaj": f'{menu["ad"]}: "{isim_ham}" için kayıt bulunamadı'}
+
+    sonuclar = [_ses_sonuc(menu, satir) for satir in satirlar]
+    telefonlular = [x for x in sonuclar if x.get("tel")]
+    if not telefonlular:
+        return {"tur": "bulunamadi",
+                "mesaj": f'{sonuclar[0]["baslik"]} için kayıtlı telefon numarası yok'}
+    if len(telefonlular) == 1:
+        tek = telefonlular[0]
+        return {"tur": "ara", "tel": tek["tel"], "baslik": tek["baslik"],
+                "koy": tek.get("koy", ""), "sonuclar": sonuclar}
+
+    # Aynı isimde, telefonu olan birden fazla kayıt var.
+    koyler = {x.get("koy", "") for x in telefonlular}
+    if len(koyler) > 1:
+        mesaj = (f'Birden fazla "{telefonlular[0]["baslik"]}" var — köy adını da söyleyin '
+                 f'(örn. "{sorted(k for k in koyler if k)[0]} {telefonlular[0]["baslik"]} ara")')
+    else:
+        mesaj = f'Birden fazla "{telefonlular[0]["baslik"]}" var — aramak istediğiniz numaraya dokunun'
+    return {"tur": "secim", "mesaj": mesaj, "sonuclar": telefonlular}
+
+
+@app.route("/api/sesli-ara", methods=["POST"])
+@login_required
+def sesli_ara_api():
+    """"<isim> ara" sesli komutu — bulunulan menüde o kişiyi bulup
+    numarasını döndürür."""
+    veri = request.get_json(silent=True) or {}
+    isim_ham = (veri.get("isim") or "").strip()
+    if not isim_ham:
+        return jsonify({"tur": "bulunamadi", "mesaj": "Kimi arayacağım anlaşılamadı"})
+    cur = get_db().cursor()
+    try:
+        menu = _ses_menu_bul(veri.get("sayfa"))
+        return jsonify(_ses_arama_hedefi(cur, menu, isim_ham))
+    finally:
+        cur.close()
 
 
 @app.route("/api/sesli-sorgu", methods=["POST"])
