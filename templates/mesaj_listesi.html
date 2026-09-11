@@ -44,6 +44,12 @@
 </div>
 
 <div class="tablo-kaydirici">
+<form method="get" id="mesaj-tablo-form">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="q" value="{{ q }}">
+<input type="hidden" name="kanal" value="{{ secili_kanal }}">
+<input type="hidden" name="durum" value="{{ secili_durum }}">
+{% for anahtar in secili_alanlar %}<input type="hidden" name="alan" value="{{ anahtar }}">{% endfor %}
 <table>
     <thead>
         <tr>
@@ -53,6 +59,38 @@
             <th>Kanal</th>
             <th>Mesaj</th>
             <th>Durum</th>
+        </tr>
+        <tr class="no-print">
+            {% for anahtar in ['created_at', 'alici_adi', '', 'kanal', '', 'durum'] %}
+            {% if anahtar %}
+            <th class="kolon-filtre-th">
+                <button type="button" class="btn filtre-ac-buton" data-hedef="mfiltre-{{ anahtar }}"
+                        data-tablo="mesaj" data-anahtar="{{ anahtar }}">
+                    {% if deger_secili[anahtar] %}{{ deger_secili[anahtar]|length }} seçili ▾{% elif haric_secili[anahtar] %}Tümü, {{ haric_secili[anahtar]|length }} hariç ▾{% else %}Tümü ▾{% endif %}
+                </button>
+                <div id="mfiltre-{{ anahtar }}" class="filtre-kutu">
+                    <div class="filtre-arama-kutusu">
+                        <input type="text" class="filtre-arama-input" placeholder="Ara..." autocomplete="off">
+                    </div>
+                    <div class="filtre-liste">
+                        <label class="tumu-satir"><input type="checkbox" class="tumu-tik"> Tümü</label>
+                        <p class="filtre-yukleniyor">Yükleniyor...</p>
+                        {% for v in deger_secili[anahtar] %}
+                        <input type="hidden" name="deger_{{ anahtar }}" value="{{ v }}" class="filtre-mevcut-gizli">
+                        {% endfor %}
+                        {% for v in haric_secili[anahtar] %}
+                        <input type="hidden" name="haric_{{ anahtar }}" value="{{ v }}" class="filtre-haric-gizli">
+                        {% endfor %}
+                    </div>
+                    <div class="filtre-kutu-alt">
+                        <button type="submit" class="btn btn-yesil">Filtrele</button>
+                    </div>
+                </div>
+            </th>
+            {% else %}
+            <th class="no-print"></th>
+            {% endif %}
+            {% endfor %}
         </tr>
     </thead>
     <tbody>
@@ -75,6 +113,7 @@
         {% endfor %}
     </tbody>
 </table>
+</form>
 </div>
 
 {% endblock %}
