@@ -382,11 +382,11 @@ KOLON_BILGI = {
     "senet_tutari": ("senet_tutari", "sayi"),
     "sayac_tutari": ("sayac_tutari", "sayi"),
     "alinan_tutar": ("alinan_tutar", "sayi"),
-    "sayac_kalan": ("(sayac_tutari - alinan_tutar)", "sayi"),
+    "sayac_kalan": ("(COALESCE(sayac_tutari, 0) - COALESCE(alinan_tutar, 0))", "sayi"),
     "malzeme_tutari": ("malzeme_tutari", "sayi"),
     "malzeme_alinan": ("malzeme_alinan", "sayi"),
-    "malzeme_kalan": ("(malzeme_tutari - malzeme_alinan)", "sayi"),
-    "toplam_kalan": ("(sayac_tutari + malzeme_tutari - alinan_tutar - malzeme_alinan)", "sayi"),
+    "malzeme_kalan": ("(COALESCE(malzeme_tutari, 0) - COALESCE(malzeme_alinan, 0))", "sayi"),
+    "toplam_kalan": ("(COALESCE(sayac_tutari, 0) + COALESCE(malzeme_tutari, 0) - COALESCE(alinan_tutar, 0) - COALESCE(malzeme_alinan, 0))", "sayi"),
     "senet_no": ("senet_no", "metin"),
     "senet_sahibi_adi": ("senet_sahibi_adi", "metin"),
     "senet_sahibi_soyadi": ("senet_sahibi_soyadi", "metin"),
@@ -402,7 +402,7 @@ KOLON_BILGI = {
     "aciklama": ("aciklama", "metin"),
     "muhtara_odenecek": ("muhtara_odenecek", "sayi"),
     "muhtara_odenen": ("muhtara_odenen", "sayi"),
-    "muhtara_kalan": ("(muhtara_odenecek - muhtara_odenen)", "sayi"),
+    "muhtara_kalan": ("(COALESCE(muhtara_odenecek, 0) - COALESCE(muhtara_odenen, 0))", "sayi"),
     "fatura_no": ("fatura_no", "metin"),
 }
 
@@ -444,7 +444,7 @@ ARIZA_KOLON_BILGI = {
     "telefon2": ("telefon2", "metin"),
     "ariza_ucret": ("ariza_ucret", "sayi"),
     "alinan_ucret": ("alinan_ucret", "sayi"),
-    "kalan_ucret": ("(ariza_ucret - alinan_ucret)", "sayi"),
+    "kalan_ucret": ("(COALESCE(ariza_ucret, 0) - COALESCE(alinan_ucret, 0))", "sayi"),
     "gelis_tarihi": ("gelis_tarihi", "tarih"),
     "takilan_tarih": ("takilan_tarih", "tarih"),
     "teslim_tarihi": ("teslim_tarihi", "tarih"),
@@ -601,7 +601,7 @@ ARIZA_ALAN_TANIMLARI = [
     ("ariza_ucret", "Arıza Ücret", "ariza_ucret", True),
     ("gelis_tarihi", "Geliş Tarihi", "gelis_tarihi", False),
     ("islem_aciklama", "İşlem Açıklama", "islem_aciklama", False),
-    ("kalan_ucret", "Kalan Ücret", "(ariza_ucret - alinan_ucret)", True),
+    ("kalan_ucret", "Kalan Ücret", "(COALESCE(ariza_ucret, 0) - COALESCE(alinan_ucret, 0))", True),
     ("koy_adi", "Köy Adı", "koy_adi", False),
     ("ozel_s_no", "Özel S.No", "ozel_s_no", False),
     ("s_no", "S.No", "s_no", True),
@@ -834,11 +834,11 @@ _ABONE_ALAN_TANIMLARI = [
     ("fatura_no", "Fatura No", "fatura_no", False),
     ("koy", "Köy", "koy_adi", False),
     ("malzeme_alinan", "Malzeme Alınan", "malzeme_alinan", True),
-    ("malzeme_kalan", "Malzeme Kalan", "(malzeme_tutari - malzeme_alinan)", True),
+    ("malzeme_kalan", "Malzeme Kalan", "(COALESCE(malzeme_tutari, 0) - COALESCE(malzeme_alinan, 0))", True),
     ("malzeme_tutari", "Malzeme Tutarı", "malzeme_tutari", True),
     ("montaj_personeli", "Montaj Personeli", "montaj_personeli", False),
     ("montaj_tarihi", "Montaj Tarihi", "montaj_tarihi", False),
-    ("muhtara_kalan", "Muhtara Kalan", "(muhtara_odenecek - muhtara_odenen)", True),
+    ("muhtara_kalan", "Muhtara Kalan", "(COALESCE(muhtara_odenecek, 0) - COALESCE(muhtara_odenen, 0))", True),
     ("muhtara_odenecek", "Muhtara Ödenecek", "muhtara_odenecek", True),
     ("muhtara_odenen", "Muhtara Ödenen", "muhtara_odenen", True),
     ("odeme_gun_sozu", "Ödeme Gün Sözü", "odeme_gun_sozu", False),
@@ -846,7 +846,7 @@ _ABONE_ALAN_TANIMLARI = [
     ("odeme_tarihi", "Ödeme Tarihi", "odeme_tarihi", False),
     ("odemeyi_gonderen", "Ödemeyi Gönderen", "odemeyi_gonderen", False),
     ("s_no", "S.No", "s_no", True),
-    ("sayac_kalan", "Sayaç Kalan", "(sayac_tutari - alinan_tutar)", True),
+    ("sayac_kalan", "Sayaç Kalan", "(COALESCE(sayac_tutari, 0) - COALESCE(alinan_tutar, 0))", True),
     ("sayac_no", "Sayaç No", "sayac_no", False),
     ("sayac_tutari", "Sayaç Tutarı", "sayac_tutari", True),
     ("senet_no", "Senet No", "senet_no", False),
@@ -856,7 +856,7 @@ _ABONE_ALAN_TANIMLARI = [
     ("soyadi", "Soyadı", "soyadi", False),
     ("telefon", "Telefon", "telefon", False),
     ("telefon2", "Telefon 2", "telefon2", False),
-    ("toplam_kalan", "Toplam Kalan", "(sayac_tutari + malzeme_tutari - alinan_tutar - malzeme_alinan)", True),
+    ("toplam_kalan", "Toplam Kalan", "(COALESCE(sayac_tutari, 0) + COALESCE(malzeme_tutari, 0) - COALESCE(alinan_tutar, 0) - COALESCE(malzeme_alinan, 0))", True),
 ]
 _ABONE_ALAN_HARITASI = {k: (kolon, sayisal) for k, _, kolon, sayisal in _ABONE_ALAN_TANIMLARI}
 
@@ -3305,8 +3305,8 @@ STOK_KOLON_BILGI = {
     "kdv_orani": ("kdv_orani", "sayi"),
     "stok_miktari": ("stok_miktari", "sayi"),
     "min_stok_seviyesi": ("min_stok_seviyesi", "sayi"),
-    "toplam_tutar": ("(birim_fiyat * stok_miktari)", "sayi"),
-    "kdv_dahil_toplam": ("(birim_fiyat * stok_miktari * (1 + kdv_orani / 100.0))", "sayi"),
+    "toplam_tutar": ("(COALESCE(birim_fiyat, 0) * COALESCE(stok_miktari, 0))", "sayi"),
+    "kdv_dahil_toplam": ("(COALESCE(birim_fiyat, 0) * COALESCE(stok_miktari, 0) * (1 + COALESCE(kdv_orani, 0) / 100.0))", "sayi"),
     "aciklama": ("aciklama", "metin"),
 }
 
@@ -3497,8 +3497,8 @@ def stok_yeni():
             (
                 urun_adi,
                 request.form.get("birim", "ADET").strip() or "ADET",
-                _sayi_veya(request.form.get("birim_fiyat"), 0),
-                _sayi_veya(request.form.get("kdv_orani"), 20),
+                _sayi_veya(request.form.get("birim_fiyat"), None),
+                _sayi_veya(request.form.get("kdv_orani"), None),
                 _sayi_veya(request.form.get("stok_miktari"), 0),
                 _sayi_veya(request.form.get("min_stok_seviyesi"), 0),
                 request.form.get("aciklama", "").strip(),
@@ -3531,8 +3531,8 @@ def stok_duzenle(urun_id):
             (
                 urun_adi,
                 request.form.get("birim", "ADET").strip() or "ADET",
-                _sayi_veya(request.form.get("birim_fiyat"), 0),
-                _sayi_veya(request.form.get("kdv_orani"), 20),
+                _sayi_veya(request.form.get("birim_fiyat"), None),
+                _sayi_veya(request.form.get("kdv_orani"), None),
                 _sayi_veya(request.form.get("stok_miktari"), 0),
                 _sayi_veya(request.form.get("min_stok_seviyesi"), 0),
                 request.form.get("aciklama", "").strip(),
@@ -4081,8 +4081,8 @@ def fabrika_yeni():
                 request.form.get("tespit_edilen_ariza", "").strip(),
                 yerine_takildi,
                 request.form.get("takilan_sayac_serisi", "").strip() if yerine_takildi else "",
-                _sayi_veya(request.form.get("tamir_ucreti"), 0),
-                _sayi_veya(request.form.get("parca_maliyeti"), 0),
+                _sayi_veya(request.form.get("tamir_ucreti"), None),
+                _sayi_veya(request.form.get("parca_maliyeti"), None),
                 request.form.get("odeyen", "").strip(),
                 abone_karti,
                 request.form.get("tamir_sonucu", "").strip(),
@@ -4151,8 +4151,8 @@ def fabrika_duzenle(kayit_id):
                 request.form.get("takilan_sayac_serisi", "").strip() if yerine_takildi else "",
                 yeni_durum,
                 request.form.get("donus_tarihi", "").strip() or None,
-                _sayi_veya(request.form.get("tamir_ucreti"), 0),
-                _sayi_veya(request.form.get("parca_maliyeti"), 0),
+                _sayi_veya(request.form.get("tamir_ucreti"), None),
+                _sayi_veya(request.form.get("parca_maliyeti"), None),
                 request.form.get("odeyen", "").strip(),
                 abone_karti,
                 request.form.get("tamir_sonucu", "").strip(),
@@ -4538,8 +4538,8 @@ def fabrika_koli_kayit_ekle(koli_id):
                 durum,
                 request.form.get("donus_tarihi", "").strip() or None,
                 gonderim_tarihi,
-                _sayi_veya(request.form.get("tamir_ucreti"), 0),
-                _sayi_veya(request.form.get("parca_maliyeti"), 0),
+                _sayi_veya(request.form.get("tamir_ucreti"), None),
+                _sayi_veya(request.form.get("parca_maliyeti"), None),
                 request.form.get("odeyen", "").strip(),
                 abone_karti,
                 koli_id,
@@ -4906,13 +4906,13 @@ _SESLI_SORGU_NITELIKLER_EK = [
     (['fatura numarası', 'fatura numarasi'], [('abone', 'fatura_no', 'Fatura No', None)]),
     (['kalan bakiyesi', 'bakiyesi kalan', 'kalan bakiye', 'kalan borcu', 'borcu kalan',
       'bakiyesi', 'borcu', 'bakiye', 'kalan borç'],
-        [('abone', '(sayac_tutari - alinan_tutar)', 'Sayaç Kalan', 'tl'),
-         ('ariza', '(ariza_ucret - alinan_ucret)', 'Kalan Ücret', 'tl')]),
+        [('abone', '(COALESCE(sayac_tutari, 0) - COALESCE(alinan_tutar, 0))', 'Sayaç Kalan', 'tl'),
+         ('ariza', '(COALESCE(ariza_ucret, 0) - COALESCE(alinan_ucret, 0))', 'Kalan Ücret', 'tl')]),
     (['sayaç ücreti', 'sayac ucreti'], [('abone', 'sayac_tutari', 'Sayaç Tutarı', 'tl')]),
     (['alınan ücret', 'alinan ucret'],
         [('abone', 'alinan_tutar', 'Alınan', 'tl'), ('ariza', 'alinan_ucret', 'Alınan Ücret', 'tl')]),
     (['malzeme alacağı', 'malzeme alacagi', 'malzeme alacak'],
-        [('abone', '(malzeme_tutari - malzeme_alinan)', 'Malzeme Kalan', 'tl')]),
+        [('abone', '(COALESCE(malzeme_tutari, 0) - COALESCE(malzeme_alinan, 0))', 'Malzeme Kalan', 'tl')]),
     # "Toplam Kalan" sütununun (sayaç + malzeme kalanı) günlük konuşmadaki
     # karşılıkları. "toplam kalan bakiye" gibi uzun öbekler, "kalan bakiye"
     # (sadece Sayaç Kalan) ile karışmasın diye burada açıkça tanımlı — en
@@ -4922,7 +4922,7 @@ _SESLI_SORGU_NITELIKLER_EK = [
       'toplam bakiye', 'toplam bakiyesi', 'toplam borç', 'toplam borcu', 'toplam alacak',
       'toplam alacağı', 'alacak bakiyesi', 'alacak bakiye', 'alacağı', 'alacak'],
         [('abone', KOLON_BILGI['toplam_kalan'][0], 'Toplam Kalan', 'tl'),
-         ('ariza', '(ariza_ucret - alinan_ucret)', 'Kalan Ücret', 'tl')]),
+         ('ariza', '(COALESCE(ariza_ucret, 0) - COALESCE(alinan_ucret, 0))', 'Kalan Ücret', 'tl')]),
     (['arızası', 'arizasi'], [('ariza', 'tespit_edilen_ariza', 'Tespit Edilen Arıza', None)]),
 ]
 
@@ -5012,9 +5012,9 @@ _SES_MENULER = {
             _ses_kolon_nitelikleri(DISPLAY_KOLONLARI, KOLON_BILGI, haric=("adi", "soyadi"))
             + _ses_ek_esanlamlilar("abone")
         ),
-        "ozet": [("telefon", "Tel", "tel"), ("(sayac_tutari - alinan_tutar)", "Kalan", "tl")],
+        "ozet": [("telefon", "Tel", "tel"), ("(COALESCE(sayac_tutari, 0) - COALESCE(alinan_tutar, 0))", "Kalan", "tl")],
         "ozet_toplam": None,
-        "koy_varsayilan": ("(sayac_tutari - alinan_tutar)", "Kalan Bakiye", "tl"),
+        "koy_varsayilan": ("(COALESCE(sayac_tutari, 0) - COALESCE(alinan_tutar, 0))", "Kalan Bakiye", "tl"),
         "url": lambda s: url_for("abone_duzenle", abone_id=s["id"]),
         "url_kolonlari": [],
         "siralama": "ORDER BY adi, soyadi",
@@ -5032,9 +5032,9 @@ _SES_MENULER = {
             + _ses_ek_esanlamlilar("ariza")
         ),
         "ozet": [("seri_no", "Seri No", None), ("telefon", "Tel", "tel"),
-                 ("(ariza_ucret - alinan_ucret)", "Kalan", "tl")],
+                 ("(COALESCE(ariza_ucret, 0) - COALESCE(alinan_ucret, 0))", "Kalan", "tl")],
         "ozet_toplam": None,
-        "koy_varsayilan": ("(ariza_ucret - alinan_ucret)", "Kalan Ücret", "tl"),
+        "koy_varsayilan": ("(COALESCE(ariza_ucret, 0) - COALESCE(alinan_ucret, 0))", "Kalan Ücret", "tl"),
         "url": lambda s: url_for("ariza_duzenle", ariza_id=s["id"]),
         "url_kolonlari": [],
         "siralama": "ORDER BY adi, soyadi",
@@ -6565,6 +6565,19 @@ def _sayilastir(deger):
         return 0.0
 
 
+def _sayilastir_bos(deger):
+    """Para/sayı alanları için: kullanıcı alanı BOŞ bıraktıysa 0 değil None
+    (veritabanında boş) döner — böylece kayıt düzenlemeye girildiğinde o alan
+    "0.0" değil, girildiği gibi BOŞ görünür. Boş değerler hesaplarda
+    (kalan bakiye, toplamlar) COALESCE ile zaten 0 sayılır."""
+    if deger is None or str(deger).strip() == "":
+        return None
+    try:
+        return float(str(deger).replace(",", ".").strip())
+    except ValueError:
+        return None
+
+
 def _konum_sayilastir(deger):
     """Konum alanları için: boşsa/hatalıysa None döner."""
     try:
@@ -6834,8 +6847,12 @@ def abone_fotograf_sil(foto_id):
 
 def _abone_kaydet(abone_id):
     f = request.form
-    sayac_tutari = _sayilastir(f.get("sayac_tutari"))
-    malzeme_tutari = _sayilastir(f.get("malzeme_tutari"))
+    # Boş bırakılan tutarlar 0 değil BOŞ kaydedilir (bkz. _sayilastir_bos);
+    # hesaplarda ise 0 gibi davranırlar.
+    sayac_tutari_ham = _sayilastir_bos(f.get("sayac_tutari"))
+    malzeme_tutari_ham = _sayilastir_bos(f.get("malzeme_tutari"))
+    sayac_tutari = sayac_tutari_ham or 0.0
+    malzeme_tutari = malzeme_tutari_ham or 0.0
 
     db = get_db()
     cur = db.cursor()
@@ -6844,9 +6861,14 @@ def _abone_kaydet(abone_id):
     onceki_abone_karti_teslim = None
 
     if yeni_kayit_mi:
-        girilen_alinan_toplam = _sayilastir(f.get("alinan_tutar"))
+        alinan_ham = _sayilastir_bos(f.get("alinan_tutar"))
+        girilen_alinan_toplam = alinan_ham or 0.0
         malzeme_alinan = min(girilen_alinan_toplam, malzeme_tutari) if malzeme_tutari > 0 else 0.0
         alinan_tutar = girilen_alinan_toplam - malzeme_alinan
+        if alinan_ham is None:
+            # Hiç tutar girilmediyse alanlar boş kalsın.
+            alinan_tutar = None
+            malzeme_alinan = None
     else:
         cur.execute("SELECT alinan_tutar, malzeme_alinan, abone_karti_teslim FROM abone WHERE id = %s", (abone_id,))
         mevcut = cur.fetchone()
@@ -6854,9 +6876,13 @@ def _abone_kaydet(abone_id):
         malzeme_alinan = (mevcut["malzeme_alinan"] or 0) if mevcut else 0.0
         onceki_abone_karti_teslim = mevcut["abone_karti_teslim"] if mevcut else None
 
-    senet_tutari_hesap = sayac_tutari + malzeme_tutari - alinan_tutar - malzeme_alinan
+    senet_tutari_hesap = sayac_tutari + malzeme_tutari - (alinan_tutar or 0) - (malzeme_alinan or 0)
+    if (sayac_tutari_ham is None and malzeme_tutari_ham is None
+            and alinan_tutar is None and malzeme_alinan is None):
+        # Hiçbir tutar girilmemiş — senet tutarı da boş kalsın.
+        senet_tutari_hesap = None
 
-    if senet_tutari_hesap == 0:
+    if not senet_tutari_hesap:
         senet_no_final = ""
     else:
         mevcut_senet_no = ""
@@ -6878,9 +6904,9 @@ def _abone_kaydet(abone_id):
         sayac_no=f.get("sayac_no", "").strip(),
         abone_karti_teslim=abone_karti_teslim_ham,
         senet_tutari=senet_tutari_hesap,
-        sayac_tutari=sayac_tutari,
+        sayac_tutari=sayac_tutari_ham,
         alinan_tutar=alinan_tutar,
-        malzeme_tutari=malzeme_tutari,
+        malzeme_tutari=malzeme_tutari_ham,
         malzeme_alinan=malzeme_alinan,
         senet_no=senet_no_final,
         senet_sahibi_adi=f.get("senet_sahibi_adi", "").strip(),
@@ -6895,8 +6921,8 @@ def _abone_kaydet(abone_id):
         odeme_gun_sozu=f.get("odeme_gun_sozu", "").strip(),
         odemeyi_gonderen=f.get("odemeyi_gonderen", "").strip(),
         aciklama=f.get("aciklama", "").strip(),
-        muhtara_odenecek=_sayilastir(f.get("muhtara_odenecek")),
-        muhtara_odenen=_sayilastir(f.get("muhtara_odenen")),
+        muhtara_odenecek=_sayilastir_bos(f.get("muhtara_odenecek")),
+        muhtara_odenen=_sayilastir_bos(f.get("muhtara_odenen")),
         fatura_no=f.get("fatura_no", "").strip(),
         konum_enlem=_konum_sayilastir(f.get("konum_enlem")),
         konum_boylam=_konum_sayilastir(f.get("konum_boylam")),
@@ -6908,7 +6934,7 @@ def _abone_kaydet(abone_id):
 
     for oa in _ozel_alanlari_getir(db, "abone"):
         if oa["tur"] == "sayi":
-            alanlar[oa["kolon_adi"]] = _sayilastir(f.get(oa["kolon_adi"]))
+            alanlar[oa["kolon_adi"]] = _sayilastir_bos(f.get(oa["kolon_adi"]))
         else:
             alanlar[oa["kolon_adi"]] = f.get(oa["kolon_adi"], "").strip()
 
@@ -7270,7 +7296,7 @@ def tahsilat():
     db = get_db()
     cur = db.cursor()
     cur.execute(
-        "SELECT koy_adi, SUM(sayac_tutari) AS sayac_tutari_toplami, SUM(malzeme_tutari) AS malzeme_tutari_toplami, SUM(sayac_tutari + malzeme_tutari) AS genel_satis_tutari, SUM(alinan_tutar + malzeme_alinan) AS tahsil_edilen_tutar, SUM(sayac_tutari + malzeme_tutari - alinan_tutar - malzeme_alinan) AS kalan_tutar, SUM(muhtara_odenecek) AS muhtara_odenecek, SUM(muhtara_odenen) AS muhtara_odenen, SUM(muhtara_odenecek - muhtara_odenen) AS muhtara_kalan FROM abone GROUP BY koy_adi ORDER BY koy_adi"
+        "SELECT koy_adi, SUM(COALESCE(sayac_tutari, 0)) AS sayac_tutari_toplami, SUM(COALESCE(malzeme_tutari, 0)) AS malzeme_tutari_toplami, SUM(COALESCE(sayac_tutari, 0) + COALESCE(malzeme_tutari, 0)) AS genel_satis_tutari, SUM(COALESCE(alinan_tutar, 0) + COALESCE(malzeme_alinan, 0)) AS tahsil_edilen_tutar, SUM(COALESCE(sayac_tutari, 0) + COALESCE(malzeme_tutari, 0) - COALESCE(alinan_tutar, 0) - COALESCE(malzeme_alinan, 0)) AS kalan_tutar, SUM(COALESCE(muhtara_odenecek, 0)) AS muhtara_odenecek, SUM(COALESCE(muhtara_odenen, 0)) AS muhtara_odenen, SUM(COALESCE(muhtara_odenecek, 0) - COALESCE(muhtara_odenen, 0)) AS muhtara_kalan FROM abone GROUP BY koy_adi ORDER BY koy_adi"
     )
     satirlar_tum = cur.fetchall()
     cur.close()
@@ -7472,8 +7498,8 @@ def _ariza_sira_numaralarini_yenile(db):
 
 def _ariza_kaydet(ariza_id):
     f = request.form
-    ariza_ucret = _sayilastir(f.get("ariza_ucret"))
-    alinan_ucret = _sayilastir(f.get("alinan_ucret"))
+    ariza_ucret = _sayilastir_bos(f.get("ariza_ucret"))
+    alinan_ucret = _sayilastir_bos(f.get("alinan_ucret"))
     tespit_metni = ", ".join(f.getlist("tespit_edilen_ariza"))
     islem_metni = ", ".join(f.getlist("yapilan_islemler"))
 
@@ -7507,7 +7533,7 @@ def _ariza_kaydet(ariza_id):
     db = get_db()
     for oa in _ozel_alanlari_getir(db, "ariza"):
         if oa["tur"] == "sayi":
-            alanlar[oa["kolon_adi"]] = _sayilastir(f.get(oa["kolon_adi"]))
+            alanlar[oa["kolon_adi"]] = _sayilastir_bos(f.get(oa["kolon_adi"]))
         else:
             alanlar[oa["kolon_adi"]] = f.get(oa["kolon_adi"], "").strip()
 
