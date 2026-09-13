@@ -1,6 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Giriş - ALGI BİLİŞİM{% endblock %}
 {% block content %}
+<style>
+.login-box .beni-hatirla {
+    display: flex; align-items: center; gap: 8px; margin: 4px 0 14px;
+    font-weight: 400; font-size: 13.5px; color: #555; cursor: pointer;
+}
+.login-box .beni-hatirla input { width: auto; margin: 0; }
+</style>
 <div class="login-box">
     <h1>ALGI BİLİŞİM</h1>
     <p class="alt-baslik">Malzeme Alacak Takip Sistemi</p>
@@ -11,6 +18,15 @@
 
         <label>Şifre</label>
         <input type="password" name="sifre" autocomplete="current-password" required>
+
+{% if masaustu_mu %}
+        {# "Beni hatırla" sadece masaüstü sürümünde: program kullanıcının
+           kendi bilgisayarında çalıştığı için oturum açık bırakılabilir. #}
+        <label class="beni-hatirla">
+            <input type="checkbox" name="beni_hatirla" value="1" checked>
+            Beni hatırla (bir daha sorma)
+        </label>
+{% endif %}
 
         <button type="submit">Giriş Yap</button>
     </form>
