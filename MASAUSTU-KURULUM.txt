@@ -1,0 +1,63 @@
+ALGI BİLİŞİM — Windows Masaüstü Sürümü
+=======================================
+
+KURULUM
+-------
+1. ALGI-BILISIM-Windows.zip dosyasını bilgisayarınızda bir klasöre çıkarın.
+   Önerilen yer: C:\ALGI BILISIM
+   (Zip'in İÇİNDEN çalıştırmayın, önce mutlaka çıkarın.)
+
+2. Klasörün içindeki "ALGI BILISIM" dosyasına çift tıklayın. Program kendi
+   penceresinde açılır.
+
+3. Kolaylık olsun diye: "ALGI BILISIM" dosyasına sağ tıklayın >
+   "Diğer seçenekleri göster" > "Kısayol oluştur" deyip kısayolu masaüstüne
+   taşıyın. Bundan sonra masaüstünden açabilirsiniz.
+
+
+İLK GİRİŞ
+---------
+   Kullanıcı adı : admin
+   Şifre         : admin
+
+Girdikten sonra sağ üstteki kullanıcı adınıza tıklayıp şifrenizi
+değiştirmeniz önerilir.
+
+
+TELEFONDAKİ KAYITLARI AKTARMA
+------------------------------
+1. Telefondan programı açın, üstteki "Yedek Al"a dokunun.
+2. İnen "algi_bilisim_yedek_...sql" dosyasını bu bilgisayara kopyalayın.
+3. Masaüstü programında üstteki "Veri Aktar"a tıklayın, dosyayı seçin,
+   "Aktar"a basın.
+
+DİKKAT: Aktarma, bilgisayardaki mevcut kayıtların yerine geçer. Sadece ilk
+kurulumda kullanın. Fotoğraflar, imzalar ve fatura PDF'leri yedeğe dahil
+değildir (dosya boyutunu çok büyüttükleri için).
+
+
+VERİLERİNİZ NEREDE?
+-------------------
+   Belgeler\ALGI BILISIM\algi_bilisim.db
+
+Bu tek dosya bütün kayıtlarınızı tutar. Yedeklemek için bu dosyayı
+kopyalamanız yeterlidir. Program güncellense bile bu dosya silinmez.
+
+Aynı klasördeki "calisma_kaydi.txt" dosyası, program açılırken ne olduğunu
+kaydeder. Bir sorun çıkarsa bu dosyanın içeriği yardımcı olur.
+
+
+ÖNEMLİ NOTLAR
+-------------
+* Masaüstü sürümü İNTERNETSİZ çalışır ve KENDİ verisini kullanır.
+  Telefondaki kayıtlarla otomatik eşleşmez; iki taraf ayrı yürür.
+
+* Windows ilk açılışta "Bilinmeyen yayımcı" ya da "Windows bilgisayarınızı
+  korudu" uyarısı verebilir. Program imzalı olmadığı için normaldir.
+  "Ek bilgi" > "Yine de çalıştır" ile geçebilirsiniz.
+
+* Antivirüs programı ilk açılışta programı taramak için birkaç saniye
+  bekletebilir.
+
+* Program penceresi açılmazsa varsayılan tarayıcınızda açılır; bu da
+  çalışır, sadece adres çubuğu görünür.

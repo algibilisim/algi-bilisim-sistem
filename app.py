@@ -18,9 +18,17 @@ from datetime import datetime, timedelta
 from functools import wraps
 from urllib.parse import quote as _url_quote, urlencode as _urlencode
 
-import psycopg2
-import psycopg2.extras
-import psycopg2.pool
+# Veritabanı katmanı: sunucu (DigitalOcean) sürümünde PostgreSQL, masaüstü
+# (Windows) sürümünde ise internetsiz çalışabilmek için bilgisayardaki tek bir
+# dosyada duran yerel veritabanı kullanılır. yerel_veritabani modülü psycopg2
+# ile aynı arayüzü sunduğu için, aşağıdaki kodun tamamı iki durumda da
+# DEĞİŞMEDEN çalışır (bkz. yerel_veritabani.py).
+if os.environ.get("ALGI_MASAUSTU") == "1":
+    import yerel_veritabani as psycopg2
+else:
+    import psycopg2
+    import psycopg2.extras
+    import psycopg2.pool
 from jinja2.sandbox import SandboxedEnvironment
 from flask import (
     Flask, render_template, request, redirect,
@@ -59,6 +67,9 @@ except Exception:
     Paragraph = Spacer = PageBreak = RLImage = ParagraphStyle = pdfmetrics = TTFont = None
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
+if os.environ.get("ALGI_MASAUSTU") == "1" and not DATABASE_URL:
+    # Masaüstü sürümü: veriler kullanıcının bilgisayarında tek bir dosyada.
+    DATABASE_URL = os.environ.get("ALGI_VERI_DOSYASI") or "algi_bilisim.db"
 SECRET_KEY = os.environ.get("SECRET_KEY")
 if not SECRET_KEY:
     # ESKİDEN burada GitHub'da herkese açık, sabit bir "yedek" anahtar vardı
@@ -98,9 +109,15 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
 #     Geliştirme (FLASK_DEBUG=1, yerel http://localhost) sırasında kapalı
 #     kalır, aksi halde yerel testte oturum hiç açılmaz; DigitalOcean'daki
 #     canlı ortam zaten HTTPS olduğu için üretimde bu her zaman True olur.
+#     MASAÜSTÜ sürümünde de kapalıdır: orada sunucu yalnızca kullanıcının kendi
+#     bilgisayarında (127.0.0.1, düz http) dinler, veri hiçbir zaman ağa
+#     çıkmaz; açık bırakılsaydı oturum hiç açılamaz, programa girilemezdi.
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_SECURE"] = os.environ.get("FLASK_DEBUG", "0") != "1"
+app.config["SESSION_COOKIE_SECURE"] = (
+    os.environ.get("FLASK_DEBUG", "0") != "1"
+    and os.environ.get("ALGI_MASAUSTU") != "1"
+)
 
 # --- CSRF (siteler arası istek sahteciliği) koruması ------------------------
 # Üçüncü parti bir pakete bağımlı olmadan, oturuma (session) bağlı bir "eşleşen
@@ -125,6 +142,8 @@ def generate_csrf():
 
 
 app.jinja_env.globals["csrf_token"] = generate_csrf
+# Şablonlar "Veri Aktar" menü bağlantısını yalnızca masaüstü sürümünde gösterir.
+app.jinja_env.globals["masaustu_mu"] = os.environ.get("ALGI_MASAUSTU") == "1"
 
 
 @app.before_request
@@ -1107,6 +1126,14 @@ GRUP_RENK_PALETI = [
 YEDEKLENECEK_TABLOLAR = [
     "abone", "tahsilat", "ariza", "ariza_tahsilat", "kullanici",
     "fabrika_gonderim", "fabrika_koli", "fabrika_tamir",
+    # Aşağıdakiler yedeğe sonradan eklendi: masaüstü sürümüne veri aktarımının
+    # eksiksiz olması için. Fotoğraf/imza/PDF tabloları (abone_fotograf,
+    # ariza_fotograf, abone_imza, fabrika_fotograf, stok_fotograf ve
+    # fatura.pdf_icerik) yedek dosyasını çok büyüteceği için DIŞARIDA bırakıldı.
+    "koy_abone", "stok_urun", "stok_hareket",
+    "form_secenegi", "ozel_alan", "ayar",
+    "montaj_formu_sablon", "sabit_alan_sira", "sabit_alan_etiket",
+    "mesaj",
 ]
 
 
@@ -1768,7 +1795,12 @@ def ensure_db():
     conn = psycopg2.connect(DATABASE_URL)
     cur = conn.cursor()
     with open(schema_yolu, "r", encoding="utf-8") as f:
-        cur.execute(f.read())
+        sema_betigi = f.read()
+    if hasattr(conn, "betik_calistir"):
+        # Masaüstü (yerel veritabanı): şema ifadeleri tek tek çalıştırılır.
+        conn.betik_calistir(sema_betigi)
+    else:
+        cur.execute(sema_betigi)
     conn.commit()
 
     admin_kullanici = os.environ.get("ADMIN_KULLANICI")
@@ -4614,6 +4646,133 @@ def fabrika_gonderim_sil(gonderim_id):
     _fabrika_gonderim_sira_numaralarini_yenile(db)
     flash("Gönderim kaydı silindi.")
     return redirect(url_for("fabrika_gonderim_listesi"))
+
+
+# --------------------------------------------------------------------------
+# MASAÜSTÜ SÜRÜMÜ — Veri aktarma (yedekten geri yükleme)
+# --------------------------------------------------------------------------
+# Masaüstü sürümü internetsiz çalıştığı ve kendi veri dosyasını kullandığı
+# için, sunucudaki (telefondaki) kayıtların bir kereliğine buraya aktarılması
+# gerekir. Bunun yolu: sunucu sürümünde "Yedek Al" ile indirilen .sql
+# dosyasını burada seçmek. Dosya INSERT satırlarından oluşur.
+MASAUSTU_MU = os.environ.get("ALGI_MASAUSTU") == "1"
+
+
+# Aktarımda ATLANACAK tablolar: masaüstündeki kullanıcı adı/şifre kendi
+# bilgisayarında ayarlanır; yedekten gelen kullanıcılar buraya yazılırsa
+# programa giriş yapılamaz hale gelebilir.
+VERI_AKTARMA_HARIC_TABLOLAR = {"kullanici"}
+
+
+def _yedek_ifadelerine_ayir(icerik):
+    """Yedek dosyasını, TIRNAK İÇİNDEKİ noktalı virgül ve satır sonlarını
+    atlayarak, INSERT ifadelerine böler. (Montaj formu şablonu gibi bazı
+    kayıtlar çok satırlı HTML içerdiği için satır satır okumak yetmez.)"""
+    tampon = []
+    tirnak = False
+    i = 0
+    while i < len(icerik):
+        ch = icerik[i]
+        if ch == "'":
+            if tirnak and i + 1 < len(icerik) and icerik[i + 1] == "'":
+                tampon.append("''")
+                i += 2
+                continue
+            tirnak = not tirnak
+            tampon.append(ch)
+        elif ch == ";" and not tirnak:
+            yield "".join(tampon).strip()
+            tampon = []
+        else:
+            tampon.append(ch)
+        i += 1
+    kalan = "".join(tampon).strip()
+    if kalan:
+        yield kalan
+
+
+def _yedek_satirlarini_ayikla(icerik):
+    """Yedek dosyasındaki "INSERT INTO tablo VALUES (...);" ifadelerini
+    (tablo adı, ifade SQL'i) olarak ayıklar."""
+    for ifade in _yedek_ifadelerine_ayir(icerik):
+        if not ifade.upper().startswith("INSERT INTO "):
+            continue
+        parcalar = ifade.split(None, 3)
+        if len(parcalar) < 4:
+            continue
+        tablo = parcalar[2]
+        if tablo in VERI_AKTARMA_HARIC_TABLOLAR:
+            continue
+        yield tablo, ifade + ";"
+
+
+@app.route("/veri-aktar", methods=["GET", "POST"])
+@login_required
+def veri_aktar():
+    """Sunucu sürümünden alınan yedek dosyasını masaüstü sürümüne yükler."""
+    if not MASAUSTU_MU:
+        flash("Veri aktarma yalnızca masaüstü sürümünde kullanılır.")
+        return redirect(url_for("abone_listesi"))
+
+    if request.method == "POST":
+        dosya = request.files.get("yedek_dosyasi")
+        if not dosya or not dosya.filename:
+            flash("Lütfen bir yedek dosyası seçin.")
+            return redirect(url_for("veri_aktar"))
+        try:
+            icerik = dosya.read().decode("utf-8", errors="replace")
+        except Exception:
+            flash("Dosya okunamadı. Yedek dosyasının bozuk olmadığından emin olun.")
+            return redirect(url_for("veri_aktar"))
+
+        db = get_db()
+        cur = db.cursor()
+        # Aktarım öncesi mevcut kayıtlar temizlenir: yedek dosyası kayıtları
+        # kendi id'leriyle getirdiği için, üzerine eklemek çakışma yaratırdı.
+        mevcut_tablolar = []
+        for t in [x for x in YEDEKLENECEK_TABLOLAR if x not in VERI_AKTARMA_HARIC_TABLOLAR]:
+            try:
+                cur.execute(f"SELECT 1 FROM {t} LIMIT 1")
+                cur.fetchone()
+                mevcut_tablolar.append(t)
+            except Exception:
+                db.rollback()
+
+        yuklenen = {}
+        hatali = 0
+        try:
+            for t in reversed(mevcut_tablolar):
+                cur.execute(f"DELETE FROM {t}")
+            for tablo, satir in _yedek_satirlarini_ayikla(icerik):
+                if tablo not in mevcut_tablolar:
+                    continue
+                try:
+                    cur.execute(satir)
+                    yuklenen[tablo] = yuklenen.get(tablo, 0) + 1
+                except Exception:
+                    hatali += 1
+            db.commit()
+        except Exception as hata:
+            db.rollback()
+            flash(f"Aktarma sırasında hata oluştu, hiçbir şey değiştirilmedi: {hata}")
+            cur.close()
+            return redirect(url_for("veri_aktar"))
+        cur.close()
+
+        toplam = sum(yuklenen.values())
+        if not toplam:
+            flash("Dosyada aktarılabilecek kayıt bulunamadı. Doğru yedek dosyasını "
+                  "seçtiğinizden emin olun.")
+            return redirect(url_for("veri_aktar"))
+
+        ozet = ", ".join(f"{t}: {a}" for t, a in sorted(yuklenen.items()))
+        mesaj = f"Aktarma tamamlandı — toplam {toplam} kayıt yüklendi ({ozet})."
+        if hatali:
+            mesaj += f" {hatali} satır aktarılamadı."
+        flash(mesaj)
+        return redirect(url_for("abone_listesi"))
+
+    return render_template("veri_aktar.html")
 
 
 @app.route("/yedek-al")

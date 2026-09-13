@@ -1,0 +1,14 @@
+# ALGI BİLİŞİM — Masaüstü (Windows) sürümü için gerekli paketler.
+# Sunucu sürümünden farkları: psycopg2 (PostgreSQL) ve gunicorn yoktur;
+# yerine yerel veritabanı (Python'un kendi sqlite3'ü), waitress (yerel
+# sunucu) ve pywebview (program penceresi) kullanılır.
+Flask==3.0.3
+Werkzeug==3.0.4
+waitress==3.0.2
+pywebview==5.3.2
+openpyxl==3.1.5
+xlrd==2.0.1
+mammoth==1.12.1
+beautifulsoup4==4.12.3
+Pillow==12.2.0
+reportlab==4.4.10
