@@ -1,0 +1,53 @@
+# ALGI BİLİŞİM — Windows masaüstü sürümünü otomatik derler.
+#
+# Çalıştırmak için: GitHub'da depoya girip üstteki "Eylemler" (Actions)
+# sekmesini açın, soldan "Windows masaüstü sürümü"nü seçin, sağdaki
+# "Bu iş akışını çalıştır" düğmesine basın. Derleme 5-10 dakika sürer.
+# Bitince sayfanın altındaki "Artifacts" bölümünden
+# ALGI-BILISIM-Windows.zip dosyasını indirin.
+
+name: Windows masaüstü sürümü
+
+on:
+  workflow_dispatch:        # elle başlatma (Eylemler sekmesindeki düğme)
+  push:
+    tags:
+      - "v*"                # v1.0 gibi bir etiket atılırsa da derler
+
+jobs:
+  derle:
+    runs-on: windows-latest
+
+    steps:
+      - name: Kodu al
+        uses: actions/checkout@v4
+
+      - name: Python kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Gerekli paketleri kur
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-masaustu.txt
+          pip install pyinstaller==6.22.2
+
+      - name: Programı derle
+        run: pyinstaller --noconfirm --clean algi_bilisim.spec
+
+      - name: Kullanım notunu ekle
+        shell: pwsh
+        run: |
+          Copy-Item "MASAUSTU-KURULUM.txt" "dist\ALGI BILISIM\OKU-BENI.txt" -ErrorAction SilentlyContinue
+
+      - name: Paketi hazırla
+        shell: pwsh
+        run: Compress-Archive -Path "dist\ALGI BILISIM\*" -DestinationPath "ALGI-BILISIM-Windows.zip"
+
+      - name: İndirilebilir dosyayı yükle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ALGI-BILISIM-Windows
+          path: ALGI-BILISIM-Windows.zip
+          retention-days: 30
