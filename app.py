@@ -4664,6 +4664,31 @@ MASAUSTU_MU = os.environ.get("ALGI_MASAUSTU") == "1"
 VERI_AKTARMA_HARIC_TABLOLAR = {"kullanici"}
 
 
+def _ozel_alan_kolonlarini_esitle(db):
+    """ozel_alan tablosundaki tanımlara bakıp, abone/ariza tablolarında
+    eksik olan özel alan sütunlarını oluşturur.
+
+    Özel alanlar programa sonradan eklendiği için gerçek sütun olarak
+    tabloya yazılır. Masaüstüne veri aktarırken bu sütunlar henüz
+    bulunmadığından, önce burada oluşturulur."""
+    cur = db.cursor()
+    cur.execute("SELECT tablo, kolon_adi, tur FROM ozel_alan")
+    tanimlar = cur.fetchall()
+    for tablo in ("abone", "ariza"):
+        cur.execute(f"SELECT * FROM {tablo} LIMIT 0")
+        mevcut = {s[0].lower() for s in cur.description}
+        for t in tanimlar:
+            if t["tablo"] != tablo or t["kolon_adi"].lower() in mevcut:
+                continue
+            tur = _OZEL_ALAN_TUR_PG.get(t["tur"], "TEXT")
+            try:
+                cur.execute(f"ALTER TABLE {tablo} ADD COLUMN {t['kolon_adi']} {tur}")
+            except Exception:
+                db.rollback()
+    db.commit()
+    cur.close()
+
+
 def _yedek_ifadelerine_ayir(icerik):
     """Yedek dosyasını, TIRNAK İÇİNDEKİ noktalı virgül ve satır sonlarını
     atlayarak, INSERT ifadelerine böler. (Montaj formu şablonu gibi bazı
@@ -4738,19 +4763,43 @@ def veri_aktar():
             except Exception:
                 db.rollback()
 
+        # Aktarılacak satırları tablolara göre ayır.
+        satirlar = {}
+        for tablo, satir in _yedek_satirlarini_ayikla(icerik):
+            satirlar.setdefault(tablo, []).append(satir)
+
         yuklenen = {}
         hatali = 0
+        basarisiz_tablolar = {}
         try:
             for t in reversed(mevcut_tablolar):
                 cur.execute(f"DELETE FROM {t}")
-            for tablo, satir in _yedek_satirlarini_ayikla(icerik):
-                if tablo not in mevcut_tablolar:
+
+            def _tablo_aktar(t):
+                nonlocal hatali
+                for satir in satirlar.get(t, []):
+                    try:
+                        cur.execute(satir)
+                        yuklenen[t] = yuklenen.get(t, 0) + 1
+                    except Exception as hata:
+                        hatali += 1
+                        basarisiz_tablolar.setdefault(t, str(hata))
+
+            # 1) Önce özel alan TANIMLARI yüklenir ve bu tanımlara karşılık
+            #    gelen sütunlar abone/ariza tablolarına eklenir. Aksi hâlde
+            #    sunucuda eklenmiş özel alanlar burada bulunmadığı için o
+            #    tabloların satırları (sütun sayısı tutmadığından) hiç
+            #    aktarılamaz.
+            if "ozel_alan" in mevcut_tablolar:
+                _tablo_aktar("ozel_alan")
+                db.commit()
+                _ozel_alan_kolonlarini_esitle(db)
+
+            # 2) Geri kalan tablolar.
+            for t in mevcut_tablolar:
+                if t == "ozel_alan":
                     continue
-                try:
-                    cur.execute(satir)
-                    yuklenen[tablo] = yuklenen.get(tablo, 0) + 1
-                except Exception:
-                    hatali += 1
+                _tablo_aktar(t)
             db.commit()
         except Exception as hata:
             db.rollback()
@@ -4769,6 +4818,9 @@ def veri_aktar():
         mesaj = f"Aktarma tamamlandı — toplam {toplam} kayıt yüklendi ({ozet})."
         if hatali:
             mesaj += f" {hatali} satır aktarılamadı."
+            # Hangi tabloda ne hata olduğu yazılır — sorunu bulmak için.
+            for t, h in sorted(basarisiz_tablolar.items()):
+                mesaj += f" [{t}: {h}]"
         flash(mesaj)
         return redirect(url_for("abone_listesi"))
 
