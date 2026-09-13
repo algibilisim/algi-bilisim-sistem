@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Veri Aktar - ALGI BİLİŞİM{% endblock %}
+{% block content %}
+<h1>Veri Aktar</h1>
+
+<div class="kart" style="max-width:720px;">
+    <p>
+        Telefondaki (internet üzerindeki) programda bulunan kayıtları bu bilgisayara
+        aktarmak için:
+    </p>
+    <ol style="line-height:1.9;">
+        <li>Telefondan programı açın ve üstteki <strong>Yedek Al</strong>'a dokunun.</li>
+        <li>İnen <strong>algi_bilisim_yedek_...sql</strong> dosyasını bu bilgisayara kopyalayın.</li>
+        <li>Aşağıdan o dosyayı seçip <strong>Aktar</strong>'a basın.</li>
+    </ol>
+
+    <p style="background:#fdecdc; color:#8a3b00; padding:10px 12px; border-radius:8px;">
+        <strong>Dikkat:</strong> Aktarma, bu bilgisayardaki mevcut kayıtların yerine
+        geçer. Buradaki kayıtlar silinip yedekteki kayıtlar yüklenir. Bu işlem geri
+        alınamaz, bu yüzden yalnızca ilk kurulumda kullanın.
+    </p>
+
+    <form method="post" enctype="multipart/form-data" style="margin-top:14px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Yedek dosyası (.sql)</label>
+        <input type="file" name="yedek_dosyasi" accept=".sql,text/plain" required
+               style="display:block; margin:6px 0 14px;">
+        <button type="submit" class="btn btn-primary"
+                onclick="return confirm('Bu bilgisayardaki mevcut kayıtlar silinip yedekteki kayıtlar yüklenecek. Devam edilsin mi?');">
+            Aktar
+        </button>
+        <a href="{{ url_for('abone_listesi') }}" class="btn" style="margin-left:8px;">Vazgeç</a>
+    </form>
+
+    <p style="margin-top:16px; font-size:12.5px; color:#777;">
+        Fotoğraflar, imzalar ve fatura PDF'leri yedek dosyasına dahil değildir
+        (dosya boyutunu çok büyüttükleri için). Abone, arıza, köy abone, stok,
+        tamir, mesaj kayıtları ve ayarlar aktarılır.
+    </p>
+</div>
+{% endblock %}

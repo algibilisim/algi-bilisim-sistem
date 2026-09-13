@@ -82,6 +82,7 @@
         <a href="{{ url_for('stok_listesi') }}">Stok</a>
         <a href="{{ url_for('fabrika_listesi') }}">Fabrika / Tamir</a>
         <a href="{{ url_for('yedek_al') }}">Yedek Al</a>
+        {% if masaustu_mu %}<a href="{{ url_for('veri_aktar') }}">Veri Aktar</a>{% endif %}
     </nav>
     <div class="user-area">
         <a href="{{ url_for('hesap_ayarlari') }}" title="Kullanıcı adını veya şifreni değiştir">{{ session.get('kullanici_adi') }}</a>
