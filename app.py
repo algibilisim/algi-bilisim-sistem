@@ -112,6 +112,9 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
 #     MASAÜSTÜ sürümünde de kapalıdır: orada sunucu yalnızca kullanıcının kendi
 #     bilgisayarında (127.0.0.1, düz http) dinler, veri hiçbir zaman ağa
 #     çıkmaz; açık bırakılsaydı oturum hiç açılamaz, programa girilemezdi.
+# "Beni hatırla" işaretlendiğinde oturumun ne kadar açık kalacağı
+# (yalnızca masaüstü sürümünde kullanılır). 10 yıl = pratikte "hep açık".
+app.permanent_session_lifetime = timedelta(days=3650)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = (
@@ -2011,6 +2014,12 @@ def login():
             session.clear()
             session["user_id"] = user["id"]
             session["kullanici_adi"] = user["kullanici_adi"]
+            # "Beni hatırla" yalnızca MASAÜSTÜ sürümünde sunulur: orada
+            # program kullanıcının kendi bilgisayarında, dışarıya kapalı
+            # çalışır. İnternet üzerinden erişilen sunucu sürümünde oturum
+            # her zamanki gibi tarayıcı kapanınca düşer.
+            if MASAUSTU_MU and request.form.get("beni_hatirla"):
+                session.permanent = True
             return redirect(url_for("abone_listesi"))
 
         _giris_basarisiz_kaydet(istemci_ip)

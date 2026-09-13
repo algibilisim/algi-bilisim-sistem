@@ -37,7 +37,27 @@ gizli_ice_aktarmalar = [
     "sqlite3",
 ]
 
-_simge = os.path.join("static", "icons", "algi.ico")
+def _simge_bul():
+    """Masaüstü sürümünün simgesi. Dosya yanlış klasöre yüklenmiş olabilir
+    diye birkaç olası yer sırayla denenir; hiçbiri yoksa PyInstaller'ın
+    varsayılan simgesi kullanılır (program yine de çalışır)."""
+    adaylar = [
+        os.path.join("static", "icons", "algi-masaustu.ico"),
+        os.path.join("static", "algi-masaustu.ico"),
+        "algi-masaustu.ico",
+        os.path.join("static", "icons", "algi.ico"),
+        os.path.join("static", "algi.ico"),
+        "algi.ico",
+    ]
+    for yol in adaylar:
+        if os.path.exists(yol):
+            print(f"[ALGI] Program simgesi: {yol}")
+            return yol
+    print("[ALGI] UYARI: simge dosyası bulunamadı, varsayılan simge kullanılacak.")
+    return None
+
+
+_simge = _simge_bul()
 
 a = Analysis(
     ["masaustu.py"],
@@ -72,7 +92,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=_simge if os.path.exists(_simge) else None,
+    icon=_simge,
 )
 
 coll = COLLECT(

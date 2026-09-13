@@ -173,8 +173,19 @@ def main():
             height=860,
             min_size=(900, 600),
             confirm_close=False,
+            # Program ekranı kaplayarak açılır. (Gerçek tam ekran yerine
+            # "büyütülmüş" pencere kullanılıyor; böylece üstteki kapat /
+            # küçült düğmeleri görünür kalır.)
+            maximized=True,
         )
-        webview.start()
+        # private_mode=False + storage_path: pencere kapansa da çerezler
+        # saklanır. "Beni hatırla" işaretlendiğinde oturumun açık kalmasını
+        # sağlayan ayar budur; varsayılan (gizli mod) her kapanışta her şeyi
+        # silerdi.
+        webview.start(
+            private_mode=False,
+            storage_path=os.path.join(veri_klasoru, "pencere_verisi"),
+        )
         # Pencere kapatıldığında program da kapanır.
         del pencere
     except Exception as hata:
