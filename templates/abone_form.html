@@ -183,9 +183,13 @@
         {{ ozel_alanlari_bas('odeme_tarihi') }}
         <div>
             <label>{{ sabit_etiket.get('odeme_sekli', 'Ödeme Şekli') }}</label>
-            <input type="text" name="odeme_sekli" value="{{ kayit['odeme_sekli'] if kayit and kayit['odeme_sekli'] is not none else '' }}">
+            <input type="text" name="odeme_sekli" id="odeme-sekli-abone-form" value="{{ kayit['odeme_sekli'] if kayit and kayit['odeme_sekli'] is not none else '' }}" placeholder="BANKA, ELDEN, POS...">
         </div>
         {{ ozel_alanlari_bas('odeme_sekli') }}
+        <div>
+            <label>Banka Adı</label>
+            <input type="text" name="banka_adi" id="banka-adi-abone-form" value="{{ kayit['banka_adi'] if kayit and kayit['banka_adi'] is not none else '' }}" placeholder="Banka adı...">
+        </div>
         <div>
             <label>{{ sabit_etiket.get('odemeyi_gonderen', 'Ödemeyi Gönderen') }}</label>
             <input type="text" name="odemeyi_gonderen" value="{{ kayit['odemeyi_gonderen'] if kayit and kayit['odemeyi_gonderen'] is not none else '' }}">
@@ -654,6 +658,9 @@ function imzaYenidenAl(tur) {
         });
     });
 })();
+
+_algiComboKur(document.getElementById('odeme-sekli-abone-form'), ALGI_ODEME_SEKLI_SECENEKLERI);
+_algiComboKur(document.getElementById('banka-adi-abone-form'), ALGI_BANKA_ADI_SECENEKLERI);
 </script>
 
 {% if not kayit %}

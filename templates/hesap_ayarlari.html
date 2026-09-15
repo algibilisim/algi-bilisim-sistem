@@ -43,6 +43,96 @@
     </form>
 </div>
 
+{% if kullanici_rol == 'admin' %}
+<div class="seri-uyari-kutu no-print" style="max-width:720px;">
+    <h4 style="margin:0 0 6px;">Kullanıcı Yönetimi</h4>
+    <p style="margin:0 0 10px; font-size:12.5px;">
+        Kendi haricinizde istediğiniz kadar kullanıcı oluşturabilirsiniz. Her
+        yeni kullanıcı ya <strong>İZLEME</strong> (tüm menüleri görür, hiçbir
+        şey ekleyip değiştiremez/silemez) ya da <strong>MONTAJ</strong>
+        (sadece Abone Listesi ve Arıza Takip'i görür; yeni abone/arıza
+        ekleyebilir; genel toplamları göremez; sadece kendi eklediği kaydı,
+        yalnızca eklediği gün 23:59'a kadar düzenleyip silebilir) tipinde
+        olur. Bu kullanıcıların şifresini değiştirirken sizin şifreniz
+        sorulmaz.
+    </p>
+
+    {% if diger_kullanicilar %}
+    {% for k in diger_kullanicilar %}
+    <form id="kul-duzenle-{{ k['id'] }}" method="post" action="{{ url_for('hesap_ayarlari_kullanici_duzenle', kullanici_id=k['id']) }}"></form>
+    <form id="kul-sil-{{ k['id'] }}" method="post" action="{{ url_for('hesap_ayarlari_kullanici_sil', kullanici_id=k['id']) }}"></form>
+    {% endfor %}
+    <div class="tablo-kaydirici" style="margin-bottom:16px;">
+    <table>
+        <thead>
+            <tr>
+                <th>Kullanıcı Adı</th>
+                <th>Tip</th>
+                <th>Yeni Şifre</th>
+                <th>Yeni Şifre (Tekrar)</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for k in diger_kullanicilar %}
+            <tr>
+                <td>
+                    <input type="hidden" name="csrf_token" form="kul-duzenle-{{ k['id'] }}" value="{{ csrf_token() }}">
+                    <input type="text" name="kullanici_adi" form="kul-duzenle-{{ k['id'] }}" value="{{ k['kullanici_adi'] }}" required style="width:100%; padding:5px 7px; border:1px solid #ccc; border-radius:6px;">
+                </td>
+                <td>
+                    <select name="rol" form="kul-duzenle-{{ k['id'] }}" style="padding:5px 7px; border:1px solid #ccc; border-radius:6px;">
+                        <option value="izleme" {% if k['rol']=='izleme' %}selected{% endif %}>İZLEME</option>
+                        <option value="montaj" {% if k['rol']=='montaj' %}selected{% endif %}>MONTAJ</option>
+                    </select>
+                </td>
+                <td><input type="password" name="sifre" form="kul-duzenle-{{ k['id'] }}" autocomplete="new-password" placeholder="(değiştirmemek için boş bırak)" style="width:100%; padding:5px 7px; border:1px solid #ccc; border-radius:6px;"></td>
+                <td><input type="password" name="sifre_tekrar" form="kul-duzenle-{{ k['id'] }}" autocomplete="new-password" style="width:100%; padding:5px 7px; border:1px solid #ccc; border-radius:6px;"></td>
+                <td class="islem-hucre" style="white-space:nowrap;">
+                    <button type="submit" form="kul-duzenle-{{ k['id'] }}" class="btn btn-yesil">Kaydet</button>
+                    <input type="hidden" name="csrf_token" form="kul-sil-{{ k['id'] }}" value="{{ csrf_token() }}">
+                    <button type="submit" form="kul-sil-{{ k['id'] }}" class="btn" style="color:#a13a2e;"
+                            onclick="return confirm('{{ k['kullanici_adi'] }} adlı kullanıcıyı silmek istediğinize emin misiniz?');">Sil</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% endif %}
+
+    <h4 style="margin:16px 0 6px;">Yeni Kullanıcı Ekle</h4>
+    <form method="post" action="{{ url_for('hesap_ayarlari_kullanici_ekle') }}" style="display:flex; flex-direction:column; gap:10px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>
+            Kullanıcı Adı
+            <input type="text" name="yeni_kullanici_adi_ekle" required
+                   style="width:100%; padding:6px 8px; border:1px solid #ccc; border-radius:6px; margin-top:3px;">
+        </label>
+        <label>
+            Şifre
+            <input type="password" name="yeni_sifre_ekle" autocomplete="new-password" required
+                   style="width:100%; padding:6px 8px; border:1px solid #ccc; border-radius:6px; margin-top:3px;">
+        </label>
+        <label>
+            Şifre (Tekrar)
+            <input type="password" name="yeni_sifre_tekrar_ekle" autocomplete="new-password" required
+                   style="width:100%; padding:6px 8px; border:1px solid #ccc; border-radius:6px; margin-top:3px;">
+        </label>
+        <label>
+            Kullanıcı Tipi
+            <select name="rol" required style="width:100%; padding:6px 8px; border:1px solid #ccc; border-radius:6px; margin-top:3px;">
+                <option value="izleme">İZLEME</option>
+                <option value="montaj">MONTAJ</option>
+            </select>
+        </label>
+        <div class="form-butonlar">
+            <button type="submit" class="btn btn-yesil">Kullanıcı Ekle</button>
+        </div>
+    </form>
+</div>
+{% endif %}
+
 <div class="seri-uyari-kutu no-print" style="max-width:520px;">
     <h4 style="margin:0 0 6px;">Ofis Konumu</h4>
     <p style="margin:0 0 10px; font-size:12.5px;">

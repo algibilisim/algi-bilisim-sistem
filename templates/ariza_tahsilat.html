@@ -37,11 +37,15 @@
         </div>
         <div>
             <label>Ödeme Şekli</label>
-            <input type="text" name="odeme_sekli">
+            <input type="text" name="odeme_sekli" id="odeme-sekli-ariza-tahsilat" placeholder="BANKA, ELDEN, POS...">
+        </div>
+        <div>
+            <label>Banka Adı</label>
+            <input type="text" name="banka_adi" id="banka-adi-ariza-tahsilat" placeholder="Banka adı...">
         </div>
         <div>
             <label>Ödemeyi Yapan</label>
-            <input type="text" name="odemeyi_yapan">
+            <input type="text" name="odemeyi_yapan" placeholder="Boş bırakılırsa abonenin adı soyadı kullanılır">
         </div>
         <div class="tam-genislik">
             <label>Açıklama</label>
@@ -61,6 +65,7 @@
             <th>Tarih</th>
             <th>Tutar</th>
             <th>Ödeme Şekli</th>
+            <th>Banka Adı</th>
             <th>Ödemeyi Yapan</th>
             <th>Açıklama</th>
             <th></th>
@@ -74,6 +79,7 @@
             <td>{{ tt_g }}</td>
             <td class="sayi">{{ t['tutar']|tl }}</td>
             <td>{{ t['odeme_sekli'] }}</td>
+            <td>{{ t['banka_adi'] }}</td>
             <td>{{ t['odemeyi_yapan'] }}</td>
             <td>{{ t['aciklama'] }}</td>
             <td class="islem-hucre">
@@ -86,9 +92,16 @@
             </td>
         </tr>
         {% else %}
-        <tr><td colspan="6">Henüz tahsilat kaydı yok.</td></tr>
+        <tr><td colspan="7">Henüz tahsilat kaydı yok.</td></tr>
         {% endfor %}
     </tbody>
 </table>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    _algiComboKur(document.getElementById('odeme-sekli-ariza-tahsilat'), ALGI_ODEME_SEKLI_SECENEKLERI);
+    _algiComboKur(document.getElementById('banka-adi-ariza-tahsilat'), ALGI_BANKA_ADI_SECENEKLERI);
+});
+</script>
 {% endblock %}

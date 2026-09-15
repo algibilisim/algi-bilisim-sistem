@@ -5,6 +5,7 @@
 
 <div class="sayfa-basligi">
     <h2>Arıza Takip</h2>
+    {% if kullanici_rol != 'montaj' %}
     <div class="ucret-ozet-satiri">
         <div class="ucret-blok">
             <span class="ucret-etiket">Toplam Arıza Ücreti</span>
@@ -23,11 +24,14 @@
         <span>FİLTRELİ KAYIT : {{ filtreli_kayit }}</span>
         <span>TOPLAM KAYIT : {{ toplam_kayit }}</span>
     </div>
+    {% endif %}
     <a class="btn no-print" href="?{{ sira_toggle_qs }}" title="Sıralama yönünü değiştir">
         S.No: {{ 'Küçükten Büyüğe ▲' if sira == 'asc' else 'Büyükten Küçüğe ▼' }}
     </a>
+    {% if kullanici_rol == 'admin' %}
     <a class="btn" href="{{ url_for('secenek_yonetimi') }}">Onay Kutusu Ayarları</a>
     <a class="btn" href="{{ url_for('ozel_alan_ayarlari') }}">Özel Alan Ayarları</a>
+    {% endif %}
     <a class="btn btn-yesil" href="{{ url_for('ariza_yeni') }}">+ Yeni Arıza</a>
 </div>
 

@@ -54,7 +54,7 @@
     <div style="margin-bottom:24px;">Yalnız {{ tutar_yazi }} Tahsil edilmiştir.</div>
 
     <div style="border:1px solid #333; padding:10px 12px;">
-        <strong>AÇIKLAMA :</strong> {{ aciklama_basligi }}{% if seri_no %} — Seri No: {{ seri_no }}{% endif %}{% if odeme_sekli_metin %} — Ödeme Şekli: {{ odeme_sekli_metin }}{% endif %}
+        <strong>AÇIKLAMA :</strong> {{ aciklama_basligi }}{% if seri_no %} — Seri No: {{ seri_no }}{% endif %}{% if odeme_sekli_metin %} — Ödeme Şekli: {{ odeme_sekli_metin }}{% endif %}{% if banka_adi %} — Banka Adı: {{ banka_adi }}{% endif %}
     </div>
 
     {% if not_goster %}

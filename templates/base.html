@@ -38,19 +38,31 @@
     border: 1px solid #d8dcd9; background: #fff; font-size: 13.5px;
 }
 .ses-sorgu-sonuc .ses-sorgu-baslik { font-weight: 700; margin-bottom: 6px; }
+/* Her sonuç kartı: isim/özet üstte, altında o menüye ait ikon satırı,
+   EN ALTTA telefon numarası — ikonlara parmakla rahat dokunulabilsin diye
+   kartlar arasında bolca boşluk bırakılıyor (bkz. padding/margin altta). */
 .ses-sorgu-sonuc .ses-sorgu-satir {
-    display: flex; align-items: center; gap: 8px; border-top: 1px solid #eee;
+    display: flex; flex-direction: column; align-items: stretch; gap: 6px;
+    border-top: 1px solid #eee; padding: 14px 2px 16px; margin-top: 2px;
 }
-.ses-sorgu-sonuc .ses-sorgu-satir:first-of-type { border-top: none; }
+.ses-sorgu-sonuc .ses-sorgu-satir:first-of-type { border-top: none; padding-top: 4px; }
 /* İsim: kayıt bilgileri ekranını açar. */
 .ses-sorgu-sonuc a.ses-sorgu-kayit {
-    display: block; flex: 1 1 auto; min-width: 0; padding: 7px 8px;
+    display: block; padding: 7px 8px;
     border-radius: 6px; text-decoration: none; color: inherit;
 }
 .ses-sorgu-sonuc a.ses-sorgu-kayit:active { background: #f1f4f2; }
+/* İkon satırı: bu menünün kendi liste sayfasındaki (Düzenle, Tahsilat vb.)
+   ikonlarıyla birebir aynı, telefon numarasının ÜSTÜNDE. .ikon-rozet stili
+   style.css'ten geliyor (30px yuvarlak rozet, dokununca/üzerine gelince
+   isim balonu gösterir). */
+.ses-sorgu-sonuc .ses-sorgu-ikon-satir {
+    display: flex; gap: 12px; flex-wrap: wrap; padding: 2px 0 2px 8px;
+}
 /* Telefon: SADECE buna basınca arama başlar. */
 .ses-sorgu-sonuc a.ses-sorgu-tel {
-    flex: 0 0 auto; padding: 6px 10px; border-radius: 16px; white-space: nowrap;
+    align-self: flex-start; margin-left: 8px;
+    padding: 6px 10px; border-radius: 16px; white-space: nowrap;
     border: 1px solid #cfe0d4; background: #f2f8f4; color: #1c6b38;
     text-decoration: none; font-size: 12.5px; font-weight: 600;
 }
@@ -64,6 +76,21 @@
     margin: 12px 0 4px; padding: 7px 8px; border-radius: 6px;
     background: #fdecdc; color: #8a3b00; font-weight: 700; font-size: 13px;
 }
+
+/* Yazılabilir + açılır listeli "combo" alanlar (Ödeme Şekli, Banka Adı vb.) —
+   bkz. body sonundaki _algiComboKur(). Normal bir metin kutusu gibi görünür,
+   odaklanınca/yazınca altında eşleşen seçeneklerin listesi açılır. */
+.algi-combo-liste {
+    position: absolute; z-index: 500; left: 0; right: 0; top: 100%;
+    margin-top: 2px; max-height: 220px; overflow-y: auto;
+    background: #fff; border: 1px solid #cfd4d1; border-radius: 8px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+}
+.algi-combo-madde {
+    padding: 9px 12px; font-size: 13.5px; cursor: pointer; border-bottom: 1px solid #f1f2f0;
+}
+.algi-combo-madde:last-child { border-bottom: none; }
+.algi-combo-madde:hover, .algi-combo-madde.algi-combo-vurgulu { background: #eef6f0; }
 </style>
 </head>
 <body>
@@ -72,9 +99,10 @@
     <div class="brand"><img src="{{ url_for('static', filename='icons/icon-512.png') }}" alt="ALGI BİLİŞİM"></div>
     <nav>
         <a href="{{ url_for('abone_listesi') }}">Abone Listesi</a>
+        <a href="{{ url_for('ariza_listesi') }}">Arıza Takip</a>
+        {% if kullanici_rol != 'montaj' %}
         <a href="{{ url_for('tahsilat') }}">Köy Satış / Tahsilat Raporu</a>
         <a href="{{ url_for('tahsilat_ciktisi') }}">Tahsilat Çıktısı</a>
-        <a href="{{ url_for('ariza_listesi') }}">Arıza Takip</a>
         <a href="{{ url_for('ariza_ciktisi') }}">Arıza Takip Çıktısı</a>
         <a href="{{ url_for('koy_abone_listesi') }}">Köy Abone Listeleri</a>
         <a href="{{ url_for('fatura_listesi') }}">Faturalarım</a>
@@ -83,6 +111,7 @@
         <a href="{{ url_for('fabrika_listesi') }}">Fabrika / Tamir</a>
         <a href="{{ url_for('yedek_al') }}">Yedek Al</a>
         {% if masaustu_mu %}<a href="{{ url_for('veri_aktar') }}">Veri Aktar</a>{% endif %}
+        {% endif %}
     </nav>
     <div class="user-area">
         <a href="{{ url_for('hesap_ayarlari') }}" title="Kullanıcı adını veya şifreni değiştir">{{ session.get('kullanici_adi') }}</a>
@@ -953,6 +982,48 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
                 a.innerHTML = '<strong>' + _sesHtmlKacis(s.baslik) + '</strong>'
                     + (s.alt ? '<div class="ses-sorgu-alt">' + _sesHtmlKacis(s.alt) + '</div>' : '');
                 satir.appendChild(a);
+                // İKON SATIRI: bu menünün kendi liste sayfasındaki ikonlarıyla
+                // aynı (Düzenle, Tahsilat, Sil vb.) — telefon numarasının
+                // ÜSTÜNDE gösterilir (bkz. CSS: flex-direction:column).
+                if (s.ikonlar && s.ikonlar.length) {
+                    var ikonSatir = document.createElement('div');
+                    ikonSatir.className = 'ses-sorgu-ikon-satir';
+                    s.ikonlar.forEach(function (ik) {
+                        if (ik.yontem === 'post') {
+                            var btn = document.createElement('button');
+                            btn.type = 'button';
+                            btn.className = 'ikon-rozet';
+                            btn.setAttribute('data-ipucu', ik.etiket);
+                            btn.setAttribute('aria-label', ik.etiket);
+                            btn.textContent = ik.emoji;
+                            btn.addEventListener('click', function () {
+                                if (ik.onay && !window.confirm(ik.onay)) { return; }
+                                var csrfGirdisi = document.querySelector('input[name="csrf_token"]');
+                                var f = document.createElement('form');
+                                f.method = 'post';
+                                f.action = ik.url;
+                                f.style.display = 'none';
+                                var girdi = document.createElement('input');
+                                girdi.type = 'hidden';
+                                girdi.name = 'csrf_token';
+                                girdi.value = csrfGirdisi ? csrfGirdisi.value : '';
+                                f.appendChild(girdi);
+                                document.body.appendChild(f);
+                                f.submit();
+                            });
+                            ikonSatir.appendChild(btn);
+                        } else {
+                            var ikonA = document.createElement('a');
+                            ikonA.className = 'ikon-rozet';
+                            ikonA.href = ik.url;
+                            ikonA.setAttribute('data-ipucu', ik.etiket);
+                            ikonA.setAttribute('aria-label', ik.etiket);
+                            ikonA.textContent = ik.emoji;
+                            ikonSatir.appendChild(ikonA);
+                        }
+                    });
+                    satir.appendChild(ikonSatir);
+                }
                 // TELEFON: ayrı, dokunulabilir — sadece buna basınca arar.
                 if (s.tel) {
                     var tel = document.createElement('a');
@@ -1426,6 +1497,147 @@ window.addEventListener('resize', kaydirmaAlanlariniBoyutlandir);
             if (dinleniyor) { _genelDurdur(); } else { _genelBaslat(); }
         });
     });
+})();
+</script>
+
+<script>
+// ============================================================================
+// YAZILABİLİR + AÇILIR LİSTELİ "COMBO" ALANLAR (Ödeme Şekli, Banka Adı vb.)
+// ============================================================================
+// Bu alanlar sıradan bir metin kutusudur (serbest yazı kabul eder) AMA
+// odaklanınca/yazınca altında eşleşen seçeneklerin filtrelenmiş, sıralanmış
+// listesi açılır; tek eşleşme kaldığında kutunun içine otomatik tamamlanır.
+// Her sayfa kendi <input> öğesini _algiComboKur(eleman, secenekListesi) ile
+// bu davranışa bağlar (bkz. abone_tahsilat.html, ariza_tahsilat.html,
+// abone_form.html).
+
+var ALGI_ODEME_SEKLI_SECENEKLERI = ["BANKA", "ELDEN", "POS"];
+
+var ALGI_BANKA_ADI_SECENEKLERI = [
+    "Ziraat Bankası", "Türkiye İş Bankası", "Halkbank", "VakıfBank", "Garanti BBVA",
+    "Akbank", "Yapı Kredi", "QNB Finansbank", "DenizBank", "TEB (Türk Ekonomi Bankası)",
+    "ING Bank", "HSBC", "Şekerbank", "Fibabanka", "Odeabank", "Anadolubank",
+    "Alternatif Bank", "Burgan Bank", "ICBC Turkey Bank", "Turkish Bank", "Aktif Bank",
+    "Vakıf Katılım", "Ziraat Katılım", "Kuveyt Türk Katılım Bankası",
+    "Türkiye Finans Katılım Bankası", "Albaraka Türk Katılım Bankası", "Emlak Katılım",
+    "Hayat Finans Katılım Bankası", "PTT Bank", "Türkiye Kalkınma ve Yatırım Bankası",
+    "İller Bankası"
+];
+
+function _algiTrKucult(s) {
+    return (s || "").toString()
+        .replace(/İ/g, "i").replace(/I/g, "ı").replace(/Ğ/g, "ğ").replace(/Ü/g, "ü")
+        .replace(/Ş/g, "ş").replace(/Ö/g, "ö").replace(/Ç/g, "ç")
+        .toLocaleLowerCase("tr-TR");
+}
+
+function _algiComboKur(input, secenekler) {
+    if (!input || input._algiComboKuruldu) { return; }
+    input._algiComboKuruldu = true;
+    input.setAttribute("autocomplete", "off");
+
+    var govde = input.parentNode;
+    var bilgisayarlanmisStil = window.getComputedStyle(govde);
+    if (bilgisayarlanmisStil.position === "static") {
+        govde.style.position = "relative";
+    }
+
+    var kutu = document.createElement("div");
+    kutu.className = "algi-combo-liste";
+    kutu.style.display = "none";
+    govde.appendChild(kutu);
+
+    function esleyenleriBul(filtre) {
+        var f = _algiTrKucult(filtre || "");
+        var eslesen = secenekler.filter(function (s) { return _algiTrKucult(s).indexOf(f) === 0; });
+        eslesen.sort(function (a, b) { return _algiTrKucult(a).localeCompare(_algiTrKucult(b), "tr"); });
+        return eslesen;
+    }
+
+    function listeyiCiz(eslesen, secimSecici) {
+        kutu.innerHTML = "";
+        if (eslesen.length === 0) { kutu.style.display = "none"; return; }
+        eslesen.forEach(function (s) {
+            var madde = document.createElement("div");
+            madde.className = "algi-combo-madde";
+            madde.textContent = s;
+            madde.onmousedown = function (e) {
+                e.preventDefault();
+                input.value = s;
+                kutu.style.display = "none";
+                input.dispatchEvent(new Event("change"));
+            };
+            kutu.appendChild(madde);
+        });
+        kutu.style.display = "block";
+    }
+
+    input.addEventListener("input", function () {
+        var eslesen = esleyenleriBul(input.value);
+        listeyiCiz(eslesen);
+        // Tek eşleşme kaldıysa (ve yazdığından daha uzunsa) otomatik olarak
+        // kutunun içine tamamlanır; eklenen kısım seçili bırakılır ki kullanıcı
+        // yazmaya devam ederse üzerine yazabilsin.
+        if (input.value && eslesen.length === 1 && eslesen[0].length > input.value.length
+                && _algiTrKucult(eslesen[0]).indexOf(_algiTrKucult(input.value)) === 0) {
+            var oncekiUzunluk = input.value.length;
+            var tamamlanan = eslesen[0];
+            input.value = tamamlanan;
+            try { input.setSelectionRange(oncekiUzunluk, tamamlanan.length); } catch (e) { /* yoksay */ }
+        }
+    });
+    input.addEventListener("focus", function () {
+        listeyiCiz(esleyenleriBul(input.value));
+    });
+    input.addEventListener("blur", function () {
+        setTimeout(function () { kutu.style.display = "none"; }, 150);
+    });
+}
+
+// ============================================================================
+// UYGULAMADAKİ TÜM AÇILIR LİSTELERDE (<select>) HARF İLE FİLTRELEME
+// ============================================================================
+// Bir <select> odaktayken harf tuşlarına basıldıkça yazılanlar birikir; o
+// harflerle BAŞLAYAN seçenekler bulunur ve tek eşleşme kalırsa otomatik
+// olarak o seçenek seçilir (tarayıcının yerleşik "ilk harfe zıpla" davranışı
+// yalnızca TEK harfi hatırlar — burada birkaç harflik yazı da biriktirilir).
+(function () {
+    var arabellekler = new WeakMap();
+
+    function selectTuslamaYakala(e) {
+        var el = e.target;
+        if (!el || el.tagName !== "SELECT") { return; }
+        // Kontrol/işlev tuşlarını (Tab, Enter, ok tuşları vb.) yoksay — sadece
+        // yazdırılabilir tek karakterler birikime eklensin.
+        if (e.key === undefined || e.key.length !== 1) { return; }
+        if (e.ctrlKey || e.metaKey || e.altKey) { return; }
+
+        var kayit = arabellekler.get(el) || { metin: "", zaman: 0 };
+        var simdi = Date.now();
+        if (simdi - kayit.zaman > 900) { kayit.metin = ""; }
+        kayit.metin += e.key;
+        kayit.zaman = simdi;
+        arabellekler.set(el, kayit);
+
+        var f = _algiTrKucult(kayit.metin);
+        var secenekler = Array.prototype.slice.call(el.options).filter(function (o) { return o.value !== ""; });
+        var eslesen = secenekler.filter(function (o) { return _algiTrKucult(o.textContent).indexOf(f) === 0; });
+        if (eslesen.length === 1) {
+            // Tek eşleşme kaldı: otomatik olarak o seçeneği seç.
+            el.value = eslesen[0].value;
+            el.dispatchEvent(new Event("change"));
+            e.preventDefault();
+        } else if (eslesen.length > 1) {
+            // Birden fazla eşleşme varsa yazılanla başlayan İLK seçeneğe git —
+            // tarayıcının kendi açılır listesi de bu sırayla filtrelenmiş görünür.
+            eslesen.sort(function (a, b) { return _algiTrKucult(a.textContent).localeCompare(_algiTrKucult(b.textContent), "tr"); });
+            el.value = eslesen[0].value;
+            el.dispatchEvent(new Event("change"));
+            e.preventDefault();
+        }
+    }
+
+    document.addEventListener("keydown", selectTuslamaYakala, true);
 })();
 </script>
 </body>
