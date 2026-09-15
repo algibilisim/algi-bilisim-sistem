@@ -355,7 +355,7 @@ def _odeme_sekli_esle(metin):
         return "nakit"
     if any(k in m for k in ["HAVALE", "BANKA", "EFT"]):
         return "havale"
-    if "KART" in m:
+    if any(k in m for k in ["KART", "POS"]):
         return "kredi_karti"
     if any(k in m for k in ["ÇEK", "CEK"]):
         return "cek"
@@ -1956,6 +1956,109 @@ def login_required(view):
     return wrapped
 
 
+# ============================================================================
+# ÇOKLU KULLANICI SİSTEMİ — YETKİ KONTROLÜ
+# ============================================================================
+# Üç rol: admin (tam yetki — programın sahibi, davranışı hiç değişmiyor),
+# izleme (salt okunur — her menüyü görür ama hiçbir şey ekleyip/değiştiremez/
+# silemez) ve montaj (sadece Abone Listesi + Arıza Takip; yeni kayıt
+# ekleyebilir; genel toplamları göremez; sadece kendi eklediği kayıtları,
+# yalnızca eklendiği gün 23:59'a kadar düzenleyip silebilir).
+
+
+def _kullanici_rolu():
+    return session.get("rol") or "admin"
+
+
+@app.context_processor
+def _yetki_sablon_degiskenleri():
+    return {"kullanici_rol": _kullanici_rolu()}
+
+
+# MONTAJ rolünün erişebileceği TEK uç nokta kümesi (allowlist — burada
+# olmayan HER ŞEY otomatik olarak reddedilir). Sadece Abone/Arıza kayıtları
+# ve bunların doğrudan alt işlemleri (fotoğraf, imza, tahsilat, fatura kesme,
+# mesaj gönderme, montaj formu doldurma) + bu formların kullandığı ortak
+# API'ler ve kendi hesap ayarları.
+_MONTAJ_IZIN_VERILEN_UCLAR = {
+    "login", "logout", "static", "service_worker", "index", "hesap_ayarlari",
+    "abone_listesi", "abone_yeni", "abone_duzenle", "abone_sil",
+    "abone_fotograf_goster", "abone_fotograf_sil", "abone_imza_goster",
+    "abone_montaj_formu", "abone_montaj_formu_onizle", "abone_ara",
+    "abone_tahsilat", "tahsilat_sil", "tahsilat_makbuz",
+    "abone_fatura_kes", "abone_mesaj_gonder",
+    "ariza_listesi", "ariza_yeni", "ariza_duzenle", "ariza_sil",
+    "ariza_fotograf_goster", "ariza_fotograf_sil", "ariza_gecmisi",
+    "ariza_tahsilat", "ariza_tahsilat_sil", "ariza_tahsilat_makbuz",
+    "ariza_fatura_kes", "ariza_mesaj_gonder",
+    "sesli_ara_api", "sesli_sorgu_api", "kolon_secenekleri_api", "ofis_konumu_api",
+    "montaj_formu_sablonlar_json",
+}
+
+
+def _kayit_formu_ucu_mu(endpoint):
+    """'Yeni kayıt ekle' / 'kayıt düzenle' formu gösteren bir uç nokta mı?
+    (İZLEME rolü bu formların hiçbirini açamaz.)"""
+    return bool(endpoint) and (endpoint.endswith("_yeni") or endpoint.endswith("_duzenle"))
+
+
+@app.before_request
+def _yetki_gate():
+    if not session.get("user_id"):
+        return None  # Giriş yapılmamış — login_required zaten yönlendirecek.
+
+    rol = _kullanici_rolu()
+    if rol == "admin":
+        return None  # Tam yetki — mevcut davranış aynen devam eder.
+
+    endpoint = request.endpoint
+    if endpoint in ("login", "logout", "static", "service_worker", "index"):
+        return None
+
+    if rol == "izleme":
+        # Kendi hesap ayarları (şifre/kullanıcı adı değişikliği) her zaman
+        # serbest; kullanıcı yönetimi (yeni kullanıcı ekleme) ayrı bir uç
+        # noktada ve orada zaten sadece admin'e açık.
+        if endpoint == "hesap_ayarlari":
+            return None
+        if _kayit_formu_ucu_mu(endpoint):
+            flash("İzleme yetkisiyle bu işlem yapılamaz.")
+            return redirect(url_for("abone_listesi"))
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            flash("İzleme yetkisiyle veri eklenip değiştirilemez veya silinemez.")
+            return redirect(request.referrer or url_for("abone_listesi"))
+        return None
+
+    if rol == "montaj":
+        if endpoint not in _MONTAJ_IZIN_VERILEN_UCLAR:
+            flash("Bu bölüme erişim yetkiniz yok.")
+            return redirect(url_for("abone_listesi"))
+        return None
+
+    return None
+
+
+def _montaj_kayit_duzenlenebilir_mi(kayit):
+    """MONTAJ rolündeki bir kullanıcı, verilen abone/ariza kaydını (SADECE
+    kendi eklediği VE hâlâ eklendiği günün içindeyse, yani bugün 23:59'a
+    kadar) düzenleyebilir/silebilir mi? admin/izleme için bu fonksiyon hiç
+    çağrılmaz (çağıran kod önce rolü kontrol eder)."""
+    if not kayit:
+        return False
+    sahibi = (kayit["olusturan_kullanici"] or "").strip()
+    if not sahibi or sahibi != session.get("kullanici_adi", ""):
+        return False
+    olusturma = kayit["created_at"]
+    if not olusturma:
+        return False
+    # created_at, DB/sunucu saatiyle (UTC) NOW() ile oluşuyor (bkz. trsaat
+    # filtresindeki aynı açıklama) — "bugün 23:59" Türkiye saatine (UTC+3)
+    # göre olduğundan, karşılaştırmadan önce ikisi de +3 saat kaydırılıyor.
+    simdi_tr = datetime.now() + timedelta(hours=3)
+    olusturma_tr = olusturma + timedelta(hours=3) if hasattr(olusturma, "date") else None
+    return olusturma_tr is not None and olusturma_tr.date() == simdi_tr.date()
+
+
 _GIRIS_DENEME_KILIDI = threading.Lock()
 _GIRIS_BASARISIZ_DENEMELER = {}
 _GIRIS_MAKS_DENEME = 5
@@ -2014,6 +2117,7 @@ def login():
             session.clear()
             session["user_id"] = user["id"]
             session["kullanici_adi"] = user["kullanici_adi"]
+            session["rol"] = user.get("rol") or "admin"
             # "Beni hatırla" yalnızca MASAÜSTÜ sürümünde sunulur: orada
             # program kullanıcının kendi bilgisayarında, dışarıya kapalı
             # çalışır. İnternet üzerinden erişilen sunucu sürümünde oturum
@@ -2081,9 +2185,15 @@ def hesap_ayarlari():
                 flash("Hesap bilgileriniz güncellendi.")
                 return redirect(url_for("hesap_ayarlari"))
 
+    diger_kullanicilar = []
+    if _kullanici_rolu() == "admin":
+        cur.execute("SELECT * FROM kullanici WHERE id != %s ORDER BY kullanici_adi", (session["user_id"],))
+        diger_kullanicilar = cur.fetchall()
+
     cur.close()
     return render_template(
         "hesap_ayarlari.html", kullanici=kullanici,
+        diger_kullanicilar=diger_kullanicilar,
         ofis_enlem=_ayar_getir(db, "ofis_enlem"),
         ofis_boylam=_ayar_getir(db, "ofis_boylam"),
         yedek_alici_eposta=_ayar_getir(db, "yedek_alici_eposta"),
@@ -2091,6 +2201,128 @@ def hesap_ayarlari():
         hizli_ayarli_mi=_hizli_ayarli_mi(),
         hizli_ortam=_hizli_ortam(),
     )
+
+
+_KULLANICI_IZIN_VERILEN_ROLLER = ("izleme", "montaj")
+
+
+@app.route("/hesap-ayarlari/kullanici-ekle", methods=["POST"])
+@login_required
+def hesap_ayarlari_kullanici_ekle():
+    """Hesap Ayarları'ndan yeni kullanıcı (İZLEME ya da MONTAJ) oluşturur —
+    SADECE admin rolündeki kullanıcı (programın sahibi) bu işlemi yapabilir."""
+    if _kullanici_rolu() != "admin":
+        flash("Bu işlem için yetkiniz yok.")
+        return redirect(url_for("hesap_ayarlari"))
+
+    db = get_db()
+    cur = db.cursor()
+
+    yeni_kullanici_adi = request.form.get("yeni_kullanici_adi_ekle", "").strip()
+    yeni_sifre = request.form.get("yeni_sifre_ekle", "")
+    yeni_sifre_tekrar = request.form.get("yeni_sifre_tekrar_ekle", "")
+    rol = request.form.get("rol", "").strip().lower()
+
+    if not yeni_kullanici_adi:
+        flash("Yeni kullanıcının kullanıcı adı boş olamaz.")
+    elif rol not in _KULLANICI_IZIN_VERILEN_ROLLER:
+        flash("Geçersiz kullanıcı tipi. İZLEME ya da MONTAJ seçin.")
+    elif not yeni_sifre or len(yeni_sifre) < 8:
+        flash("Şifre en az 8 karakter olmalı.")
+    elif yeni_sifre != yeni_sifre_tekrar:
+        flash("Şifre ile tekrarı birbirini tutmuyor.")
+    else:
+        cur.execute("SELECT id FROM kullanici WHERE kullanici_adi = %s", (yeni_kullanici_adi,))
+        if cur.fetchone():
+            flash("Bu kullanıcı adı zaten kullanılıyor.")
+        else:
+            cur.execute(
+                "INSERT INTO kullanici (kullanici_adi, sifre_hash, rol) VALUES (%s, %s, %s)",
+                (yeni_kullanici_adi, generate_password_hash(yeni_sifre), rol),
+            )
+            db.commit()
+            flash(f'"{yeni_kullanici_adi}" adlı {"İZLEME" if rol == "izleme" else "MONTAJ"} tipinde yeni kullanıcı oluşturuldu.')
+
+    cur.close()
+    return redirect(url_for("hesap_ayarlari"))
+
+
+@app.route("/hesap-ayarlari/kullanici/<int:kullanici_id>/duzenle", methods=["POST"])
+@login_required
+def hesap_ayarlari_kullanici_duzenle(kullanici_id):
+    """Admin, İZLEME/MONTAJ tipindeki bir kullanıcının adını/tipini/şifresini
+    değiştirir. BAŞKA bir kullanıcının şifresini değiştirdiği için, kendi
+    şifresini değiştirirken istenen 'mevcut şifre' burada İSTENMEZ."""
+    if _kullanici_rolu() != "admin":
+        flash("Bu işlem için yetkiniz yok.")
+        return redirect(url_for("hesap_ayarlari"))
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM kullanici WHERE id = %s", (kullanici_id,))
+    hedef = cur.fetchone()
+    if not hedef or (hedef.get("rol") or "admin") == "admin":
+        flash("Bu kullanıcı düzenlenemez.")
+        cur.close()
+        return redirect(url_for("hesap_ayarlari"))
+
+    yeni_kullanici_adi = request.form.get("kullanici_adi", "").strip()
+    yeni_sifre = request.form.get("sifre", "")
+    yeni_sifre_tekrar = request.form.get("sifre_tekrar", "")
+    rol = request.form.get("rol", "").strip().lower()
+
+    if not yeni_kullanici_adi:
+        flash("Kullanıcı adı boş olamaz.")
+    elif rol not in _KULLANICI_IZIN_VERILEN_ROLLER:
+        flash("Geçersiz kullanıcı tipi.")
+    elif yeni_sifre and len(yeni_sifre) < 8:
+        flash("Yeni şifre en az 8 karakter olmalı.")
+    elif yeni_sifre and yeni_sifre != yeni_sifre_tekrar:
+        flash("Yeni şifre ile tekrarı birbirini tutmuyor.")
+    else:
+        cur.execute(
+            "SELECT id FROM kullanici WHERE kullanici_adi = %s AND id != %s",
+            (yeni_kullanici_adi, kullanici_id),
+        )
+        if cur.fetchone():
+            flash("Bu kullanıcı adı zaten başka bir hesapta kullanılıyor.")
+        else:
+            if yeni_sifre:
+                cur.execute(
+                    "UPDATE kullanici SET kullanici_adi = %s, sifre_hash = %s, rol = %s WHERE id = %s",
+                    (yeni_kullanici_adi, generate_password_hash(yeni_sifre), rol, kullanici_id),
+                )
+            else:
+                cur.execute(
+                    "UPDATE kullanici SET kullanici_adi = %s, rol = %s WHERE id = %s",
+                    (yeni_kullanici_adi, rol, kullanici_id),
+                )
+            db.commit()
+            flash("Kullanıcı güncellendi.")
+
+    cur.close()
+    return redirect(url_for("hesap_ayarlari"))
+
+
+@app.route("/hesap-ayarlari/kullanici/<int:kullanici_id>/sil", methods=["POST"])
+@login_required
+def hesap_ayarlari_kullanici_sil(kullanici_id):
+    if _kullanici_rolu() != "admin":
+        flash("Bu işlem için yetkiniz yok.")
+        return redirect(url_for("hesap_ayarlari"))
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM kullanici WHERE id = %s", (kullanici_id,))
+    hedef = cur.fetchone()
+    if not hedef or (hedef.get("rol") or "admin") == "admin":
+        flash("Bu kullanıcı silinemez.")
+    else:
+        cur.execute("DELETE FROM kullanici WHERE id = %s", (kullanici_id,))
+        db.commit()
+        flash(f'"{hedef["kullanici_adi"]}" adlı kullanıcı silindi.')
+    cur.close()
+    return redirect(url_for("hesap_ayarlari"))
 
 
 @app.route("/hesap-ayarlari/fatura-ayarlari", methods=["POST"])
@@ -3682,7 +3914,7 @@ def stok_hareket_ekle(urun_id):
             ),
         )
         degisim = miktar if hareket_turu == "giris" else -miktar
-        cur.execute("UPDATE stok_urun SET stok_miktari = stok_miktari + %s WHERE id = %s", (degisim, urun_id))
+        cur.execute("UPDATE stok_urun SET stok_miktari = COALESCE(stok_miktari, 0) + %s WHERE id = %s", (degisim, urun_id))
         db.commit()
         cur.close()
         flash("Stok hareketi kaydedildi.")
@@ -3728,7 +3960,7 @@ def stok_hareket_sil(hareket_id):
         flash("Hareket kaydı bulunamadı.")
         return redirect(url_for("stok_listesi"))
     geri_alma = -hareket["miktar"] if hareket["hareket_turu"] == "giris" else hareket["miktar"]
-    cur.execute("UPDATE stok_urun SET stok_miktari = stok_miktari + %s WHERE id = %s", (geri_alma, hareket["urun_id"]))
+    cur.execute("UPDATE stok_urun SET stok_miktari = COALESCE(stok_miktari, 0) + %s WHERE id = %s", (geri_alma, hareket["urun_id"]))
     cur.execute("DELETE FROM stok_hareket WHERE id = %s", (hareket_id,))
     db.commit()
     urun_id = hareket["urun_id"]
@@ -5238,6 +5470,20 @@ _SES_MENULER = {
         "url": lambda s: url_for("abone_duzenle", abone_id=s["id"]),
         "url_kolonlari": [],
         "siralama": "ORDER BY adi, soyadi",
+        "ikonlar": [
+            {"emoji": "✏️", "etiket": "Düzenle", "yontem": "get",
+             "url": lambda s: url_for("abone_duzenle", abone_id=s["id"])},
+            {"emoji": "💸", "etiket": "Tahsilat", "yontem": "get",
+             "url": lambda s: url_for("abone_tahsilat", abone_id=s["id"])},
+            {"emoji": "🧾", "etiket": "Fatura Kes", "yontem": "get",
+             "url": lambda s: url_for("abone_fatura_kes", abone_id=s["id"])},
+            {"emoji": "💬", "etiket": "Mesaj Gönder", "yontem": "get",
+             "url": lambda s: url_for("abone_mesaj_gonder", abone_id=s["id"])},
+            {"emoji": "🛠️", "etiket": "Montaj Formu", "yontem": "get",
+             "url": lambda s: url_for("abone_montaj_formu", abone_id=s["id"])},
+            {"emoji": "🗑️", "etiket": "Sil", "yontem": "post", "onay": "Bu kaydı silmek istediğinize emin misiniz?",
+             "url": lambda s: url_for("abone_sil", abone_id=s["id"])},
+        ],
     },
     "ariza": {
         "ad": "Arıza Takip",
@@ -5258,6 +5504,18 @@ _SES_MENULER = {
         "url": lambda s: url_for("ariza_duzenle", ariza_id=s["id"]),
         "url_kolonlari": [],
         "siralama": "ORDER BY adi, soyadi",
+        "ikonlar": [
+            {"emoji": "✏️", "etiket": "Düzenle", "yontem": "get",
+             "url": lambda s: url_for("ariza_duzenle", ariza_id=s["id"])},
+            {"emoji": "💸", "etiket": "Tahsilat", "yontem": "get",
+             "url": lambda s: url_for("ariza_tahsilat", ariza_id=s["id"])},
+            {"emoji": "🧾", "etiket": "Fatura Kes", "yontem": "get",
+             "url": lambda s: url_for("ariza_fatura_kes", ariza_id=s["id"])},
+            {"emoji": "💬", "etiket": "Mesaj Gönder", "yontem": "get",
+             "url": lambda s: url_for("ariza_mesaj_gonder", ariza_id=s["id"])},
+            {"emoji": "🗑️", "etiket": "Sil", "yontem": "post", "onay": "Bu kaydı silmek istediğinize emin misiniz?",
+             "url": lambda s: url_for("ariza_sil", ariza_id=s["id"])},
+        ],
     },
     "koy_abone": {
         "ad": "Köy Abone Listeleri",
@@ -5283,6 +5541,12 @@ _SES_MENULER = {
         "url": lambda s: url_for("koy_abone_duzenle", kayit_id=s["id"]),
         "url_kolonlari": [],
         "siralama": "ORDER BY adi, soyadi",
+        "ikonlar": [
+            {"emoji": "✏️", "etiket": "Düzenle", "yontem": "get",
+             "url": lambda s: url_for("koy_abone_duzenle", kayit_id=s["id"])},
+            {"emoji": "🗑️", "etiket": "Sil", "yontem": "post", "onay": "Bu kaydı silmek istediğinize emin misiniz?",
+             "url": lambda s: url_for("koy_abone_sil", kayit_id=s["id"])},
+        ],
     },
     "fatura": {
         "ad": "Faturalarım",
@@ -5313,6 +5577,10 @@ _SES_MENULER = {
         "url": lambda s: url_for("fatura_goruntule", fatura_id=s["id"]),
         "url_kolonlari": [],
         "siralama": "ORDER BY fatura_tarihi DESC NULLS LAST, id DESC",
+        "ikonlar": [
+            {"emoji": "👁️", "etiket": "Görüntüle", "yontem": "get",
+             "url": lambda s: url_for("fatura_goruntule", fatura_id=s["id"])},
+        ],
     },
     "mesaj": {
         "ad": "Mesajlarım",
@@ -5343,6 +5611,7 @@ _SES_MENULER = {
         "url": _ses_mesaj_url,
         "url_kolonlari": ["kaynak_tur", "kaynak_id"],
         "siralama": "ORDER BY created_at DESC",
+        "ikonlar": [],
     },
     "stok": {
         "ad": "Stok",
@@ -5371,6 +5640,16 @@ _SES_MENULER = {
         "url": lambda s: url_for("stok_duzenle", urun_id=s["id"]),
         "url_kolonlari": [],
         "siralama": "ORDER BY urun_adi",
+        "ikonlar": [
+            {"emoji": "✏️", "etiket": "Düzenle", "yontem": "get",
+             "url": lambda s: url_for("stok_duzenle", urun_id=s["id"])},
+            {"emoji": "➕", "etiket": "Hareket Ekle", "yontem": "get",
+             "url": lambda s: url_for("stok_hareket_ekle", urun_id=s["id"])},
+            {"emoji": "🔄", "etiket": "Hareketler", "yontem": "get",
+             "url": lambda s: url_for("stok_hareketleri", urun_id=s["id"])},
+            {"emoji": "🗑️", "etiket": "Sil", "yontem": "post", "onay": "Bu ürünü ve tüm hareket geçmişini silmek istediğinize emin misiniz?",
+             "url": lambda s: url_for("stok_sil", urun_id=s["id"])},
+        ],
     },
     "fabrika": {
         "ad": "Fabrika / Tamir",
@@ -5405,6 +5684,12 @@ _SES_MENULER = {
         "url": lambda s: url_for("fabrika_duzenle", kayit_id=s["id"]),
         "url_kolonlari": [],
         "siralama": "ORDER BY sira_no NULLS LAST, id",
+        "ikonlar": [
+            {"emoji": "✏️", "etiket": "Düzenle", "yontem": "get",
+             "url": lambda s: url_for("fabrika_duzenle", kayit_id=s["id"])},
+            {"emoji": "🗑️", "etiket": "Sil", "yontem": "post", "onay": "Bu tamir kaydını silmek istediğinize emin misiniz? (Silinenler sayfasından geri yükleyebilirsiniz)",
+             "url": lambda s: url_for("fabrika_sil", kayit_id=s["id"])},
+        ],
     },
 }
 
@@ -5421,12 +5706,37 @@ _SES_SAYFA_MENULERI = [
 ]
 
 
-def _ses_menu_bul(sayfa):
+def _ses_menu_montaj_uyarla(cur, anahtar):
+    """MONTAJ rolündeki bir kullanıcı için Sesli Doldur/Sesli Sorgu SADECE
+    Abone Listesi ve Arıza Takip'i kapsayabilir — ve o menülerde de SADECE
+    kendi eklediği VE hâlâ eklendiği günün içindeki (bugün 23:59'a kadar)
+    kayıtları döner; tıpkı düzenleme/silme yetkisiyle (bkz.
+    _montaj_kayit_duzenlenebilir_mi) aynı kural. Başka bir menü istenirse
+    (Stok, Fabrika, Fatura, Mesaj, Köy Abone) Abone Listesi'ne düşülür.
+    Paylaşılan _SES_MENULER sözlüğü ASLA doğrudan değiştirilmez — üzerinde
+    çalışılan her zaman bir KOPYASIdır. Kullanıcı adı Türkçe karakter
+    içerebileceği için tırnaklama, veritabanı bağlantısının kendi
+    (UTF-8) kodlamasına göre çalışan cur.mogrify() ile yapılır."""
+    if _kullanici_rolu() != "montaj":
+        return _SES_MENULER[anahtar]
+    if anahtar not in ("abone", "ariza"):
+        anahtar = "abone"
+    menu = dict(_SES_MENULER[anahtar])
+    kullanici_lit = cur.mogrify("%s", (session.get("kullanici_adi", ""),)).decode()
+    bugun_tr_lit = cur.mogrify("%s", ((datetime.now() + timedelta(hours=3)).strftime("%Y-%m-%d"),)).decode()
+    menu["taban"] = (
+        f"({menu['taban']}) AND olusturan_kullanici = {kullanici_lit} "
+        f"AND (created_at + INTERVAL '3 hours')::date = DATE {bugun_tr_lit}"
+    )
+    return menu
+
+
+def _ses_menu_bul(cur, sayfa):
     yol = (sayfa or "").split("?")[0].strip()
     for onek, anahtar in _SES_SAYFA_MENULERI:
         if yol.startswith(onek):
-            return _SES_MENULER[anahtar]
-    return _SES_MENULER["abone"]
+            return _ses_menu_montaj_uyarla(cur, anahtar)
+    return _ses_menu_montaj_uyarla(cur, "abone")
 
 
 def _ses_nitelik_bul(menu, metin_norm):
@@ -5516,6 +5826,19 @@ def _ses_sonuc(menu, satir, hedef=None):
             parcalar.append(f"{etiket}: {_ses_deger_metni(deger, bicim)}")
         alt = " — ".join(parcalar)
     sonuc = {"baslik": baslik, "alt": alt, "url": menu["url"](satir)}
+    # Arama sonucu kartındaki ikon satırı: bu menünün KENDİ liste sayfasında
+    # (abone_list.html, ariza_listesi.html vb.) o kaydın satırında görünen
+    # ikonlarla birebir aynı — hangi menüde arandıysa o menünün ikonları gelir.
+    sonuc["ikonlar"] = [
+        {
+            "emoji": ikon["emoji"],
+            "etiket": ikon["etiket"],
+            "yontem": ikon["yontem"],
+            "onay": ikon.get("onay"),
+            "url": ikon["url"](satir),
+        }
+        for ikon in menu.get("ikonlar", [])
+    ]
     if koy:
         sonuc["koy"] = koy
     ham_tel = satir["_deger"] if (hedef and hedef[2] == "tel") else satir["_tel"]
@@ -5783,6 +6106,11 @@ def _ses_genel_alacak_raporu(cur):
             "baslik": f"{s['adi'] or ''} {s['soyadi'] or ''}".strip() or "(isimsiz kayıt)",
             "alt": alt,
             "url": url_for("abone_duzenle", abone_id=s["id"]),
+            "ikonlar": [
+                {"emoji": ik["emoji"], "etiket": ik["etiket"], "yontem": ik["yontem"],
+                 "onay": ik.get("onay"), "url": ik["url"](s)}
+                for ik in _SES_MENULER["abone"]["ikonlar"]
+            ],
         })
     genel_toplam += abone_toplam
 
@@ -5811,6 +6139,11 @@ def _ses_genel_alacak_raporu(cur):
             "baslik": f"{s['adi'] or ''} {s['soyadi'] or ''}".strip() or "(isimsiz kayıt)",
             "alt": alt,
             "url": url_for("ariza_duzenle", ariza_id=s["id"]),
+            "ikonlar": [
+                {"emoji": ik["emoji"], "etiket": ik["etiket"], "yontem": ik["yontem"],
+                 "onay": ik.get("onay"), "url": ik["url"](s)}
+                for ik in _SES_MENULER["ariza"]["ikonlar"]
+            ],
         })
     genel_toplam += ariza_toplam
 
@@ -5842,6 +6175,11 @@ def _ses_genel_alacak_raporu(cur):
             "baslik": (s["abone_adi"] or "").strip() or (s["seri_no"] or "(isimsiz kayıt)"),
             "alt": alt,
             "url": url_for("fabrika_duzenle", kayit_id=s["id"]),
+            "ikonlar": [
+                {"emoji": ik["emoji"], "etiket": ik["etiket"], "yontem": ik["yontem"],
+                 "onay": ik.get("onay"), "url": ik["url"](s)}
+                for ik in _SES_MENULER["fabrika"]["ikonlar"]
+            ],
         })
     genel_toplam += fabrika_toplam
 
@@ -5920,7 +6258,7 @@ def sesli_ara_api():
         return jsonify({"tur": "bulunamadi", "mesaj": "Kimi arayacağım anlaşılamadı"})
     cur = get_db().cursor()
     try:
-        menu = _ses_menu_bul(veri.get("sayfa"))
+        menu = _ses_menu_bul(cur, veri.get("sayfa"))
         return jsonify(_ses_arama_hedefi(cur, menu, isim_ham))
     finally:
         cur.close()
@@ -5944,8 +6282,10 @@ def sesli_sorgu_api():
     cur = get_db().cursor()
     try:
         if sabit_norm in _SES_SABIT_GENEL_ALACAK:
+            if _kullanici_rolu() == "montaj":
+                return jsonify({"tur": "bulunamadi", "mesaj": "Bu genel toplam raporunu görüntüleme yetkiniz yok."})
             return _ses_genel_alacak_raporu(cur)
-        menu = _ses_menu_bul(veri.get("sayfa"))
+        menu = _ses_menu_bul(cur, veri.get("sayfa"))
         return _ses_menu_sorgusu(cur, menu, sorgu_ham, sorgu_norm)
     finally:
         cur.close()
@@ -6078,6 +6418,13 @@ def abone_listesi():
         sql += " AND koy_adi = %s"
         params.append(koy)
 
+    # MONTAJ rolündeki bir kullanıcı SADECE kendi eklediği kayıtları görebilir
+    # (bkz. kullanici.rol) — genel toplamlar da aşağıda gizlenir.
+    montaj_filtreli = _kullanici_rolu() == "montaj"
+    if montaj_filtreli:
+        sql += " AND olusturan_kullanici = %s"
+        params.append(session.get("kullanici_adi", ""))
+
     kolon_listesi, kolon_bilgi, sayisal_kolonlar, ozel_alanlar = _abone_kolon_takimi(db)
     deger_secili = {}
     haric_secili = {}
@@ -6096,12 +6443,17 @@ def abone_listesi():
     kayitlar_ham = cur.fetchall()
     cur.execute("SELECT DISTINCT koy_adi FROM abone ORDER BY koy_adi")
     koyler = cur.fetchall()
-    cur.execute("SELECT COUNT(*) AS c FROM abone")
+    if montaj_filtreli:
+        cur.execute("SELECT COUNT(*) AS c FROM abone WHERE olusturan_kullanici = %s", (session.get("kullanici_adi", ""),))
+    else:
+        cur.execute("SELECT COUNT(*) AS c FROM abone")
     toplam_kayit = cur.fetchone()["c"]
 
-    toplam_ucret = sum(float(k["sayac_tutari"] or 0) + float(k["malzeme_tutari"] or 0) for k in kayitlar_ham)
-    tahsil_edilen_ucret = sum(float(k["alinan_tutar"] or 0) + float(k["malzeme_alinan"] or 0) for k in kayitlar_ham)
-    kalan_bakiye = toplam_ucret - tahsil_edilen_ucret
+    # MONTAJ rolü genel (toplam ücret / tahsil edilen / kalan bakiye) tutarları
+    # göremez — bkz. kullanici.rol açıklaması.
+    toplam_ucret = None if montaj_filtreli else sum(float(k["sayac_tutari"] or 0) + float(k["malzeme_tutari"] or 0) for k in kayitlar_ham)
+    tahsil_edilen_ucret = None if montaj_filtreli else sum(float(k["alinan_tutar"] or 0) + float(k["malzeme_alinan"] or 0) for k in kayitlar_ham)
+    kalan_bakiye = None if montaj_filtreli else toplam_ucret - tahsil_edilen_ucret
 
     bugun_iso = datetime.now().strftime("%Y-%m-%d")
     cur.execute(
@@ -6919,7 +7271,7 @@ def _stok_urun_hareket_uygula(db, urun_adi, miktar, aciklama, hareket_turu="ciki
         (urun_id, hareket_turu, miktar, datetime.now().strftime("%Y-%m-%d"), aciklama, session.get("kullanici_adi", "")),
     )
     degisim = miktar if hareket_turu == "giris" else -miktar
-    cur.execute("UPDATE stok_urun SET stok_miktari = stok_miktari + %s WHERE id = %s", (degisim, urun_id))
+    cur.execute("UPDATE stok_urun SET stok_miktari = COALESCE(stok_miktari, 0) + %s WHERE id = %s", (degisim, urun_id))
     db.commit()
     cur.close()
 
@@ -6978,6 +7330,16 @@ def abone_duzenle(abone_id):
     db = get_db()
     geri = request.args.get("geri", "") or request.form.get("geri", "")
     sonraki_hedef = request.args.get("hedef", "") or request.form.get("hedef", "")
+
+    if _kullanici_rolu() == "montaj":
+        _cur = db.cursor()
+        _cur.execute("SELECT olusturan_kullanici, created_at FROM abone WHERE id = %s", (abone_id,))
+        _kayit_kontrol = _cur.fetchone()
+        _cur.close()
+        if not _montaj_kayit_duzenlenebilir_mi(_kayit_kontrol):
+            flash("Bu kaydı düzenleme yetkiniz yok (sadece bugün eklediğiniz kendi kayıtlarınızı düzenleyebilirsiniz).")
+            return redirect(url_for("abone_listesi"))
+
     if request.method == "POST":
         _abone_kaydet(abone_id)
         _abone_fotograflarini_kaydet(db, abone_id, request.files.getlist("fotograflar"))
@@ -7016,8 +7378,15 @@ def abone_sil(abone_id):
     geri = request.args.get("geri", "")
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT abone_karti_teslim FROM abone WHERE id = %s", (abone_id,))
+    cur.execute("SELECT abone_karti_teslim, olusturan_kullanici, created_at FROM abone WHERE id = %s", (abone_id,))
     silinen = cur.fetchone()
+    if _kullanici_rolu() == "montaj" and not _montaj_kayit_duzenlenebilir_mi(silinen):
+        cur.close()
+        flash("Bu kaydı silme yetkiniz yok (sadece bugün eklediğiniz kendi kayıtlarınızı silebilirsiniz).")
+        hedef = url_for("abone_listesi")
+        if geri:
+            hedef += "?" + geri
+        return redirect(hedef)
     cur.execute("DELETE FROM abone WHERE id = %s", (abone_id,))
     db.commit()
     cur.close()
@@ -7138,6 +7507,7 @@ def _abone_kaydet(abone_id):
         montaj_personeli=f.get("montaj_personeli", "").strip(),
         odeme_tarihi=f.get("odeme_tarihi", "").strip(),
         odeme_sekli=f.get("odeme_sekli", "").strip(),
+        banka_adi=f.get("banka_adi", "").strip(),
         odeme_gun_sozu=f.get("odeme_gun_sozu", "").strip(),
         odemeyi_gonderen=f.get("odemeyi_gonderen", "").strip(),
         aciklama=f.get("aciklama", "").strip(),
@@ -7174,6 +7544,13 @@ def _abone_kaydet(abone_id):
             list(alanlar.values()),
         )
         abone_id = cur.fetchone()["id"]
+        # ÇOKLU KULLANICI SİSTEMİ: kaydı kimin oluşturduğu — MONTAJ rolündeki
+        # bir kullanıcının sadece kendi eklediği kayıtları görüp, yalnızca
+        # eklendiği gün 23:59'a kadar düzenleyip silebilmesi için gerekli.
+        cur.execute(
+            "UPDATE abone SET olusturan_kullanici = %s WHERE id = %s",
+            (session.get("kullanici_adi", ""), abone_id),
+        )
 
         tahsilat_tarihi = (
             f.get("odeme_tarihi", "").strip()
@@ -7181,16 +7558,21 @@ def _abone_kaydet(abone_id):
             or datetime.now().strftime("%Y-%m-%d")
         )
         odeme_sekli = f.get("odeme_sekli", "").strip()
+        banka_adi = f.get("banka_adi", "").strip()
         odemeyi_yapan = f.get("odemeyi_gonderen", "").strip()
+        if not odemeyi_yapan:
+            # Ödemeyi Yapan boş bırakılırsa abonenin kendi adı soyadı
+            # otomatik olarak Tahsilat Geçmişi'ne yazılır.
+            odemeyi_yapan = f"{alanlar.get('adi') or ''} {alanlar.get('soyadi') or ''}".strip()
         for tur, tutar, aciklama in (
             ("sayac", alinan_tutar, "Abone kaydı sırasında alınan (sayaç)"),
             ("malzeme", malzeme_alinan, "Abone kaydı sırasında alınan (malzeme)"),
         ):
             if tutar:
                 cur.execute(
-                    "INSERT INTO tahsilat (abone_id, tarih, tur, tutar, odeme_sekli, odemeyi_yapan, aciklama) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                    (abone_id, tahsilat_tarihi, tur, tutar, odeme_sekli, odemeyi_yapan, aciklama),
+                    "INSERT INTO tahsilat (abone_id, tarih, tur, tutar, odeme_sekli, banka_adi, odemeyi_yapan, aciklama) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                    (abone_id, tahsilat_tarihi, tur, tutar, odeme_sekli, banka_adi, odemeyi_yapan, aciklama),
                 )
     else:
         set_ifadesi = ", ".join([f"{k} = %s" for k in alanlar.keys()])
@@ -7321,16 +7703,22 @@ def abone_tahsilat(abone_id):
         tutar = _sayilastir(request.form.get("tutar"))
         tarih = request.form.get("tarih", "").strip()
         odeme_sekli = request.form.get("odeme_sekli", "").strip()
+        banka_adi = request.form.get("banka_adi", "").strip()
         odemeyi_yapan = request.form.get("odemeyi_yapan", "").strip()
         aciklama = request.form.get("aciklama", "").strip()
 
         if tutar:
             cur.execute(
-                "SELECT sayac_tutari, alinan_tutar, malzeme_tutari, malzeme_alinan FROM abone WHERE id = %s",
+                "SELECT adi, soyadi, sayac_tutari, alinan_tutar, malzeme_tutari, malzeme_alinan FROM abone WHERE id = %s",
                 (abone_id,),
             )
             mevcut = cur.fetchone()
             malzeme_kalan = (mevcut["malzeme_tutari"] or 0) - (mevcut["malzeme_alinan"] or 0) if mevcut else 0
+
+            if not odemeyi_yapan and mevcut:
+                # Ödemeyi Yapan boş bırakılırsa abonenin kendi adı soyadı
+                # otomatik olarak Tahsilat Geçmişi'ne yazılır.
+                odemeyi_yapan = f"{mevcut['adi'] or ''} {mevcut['soyadi'] or ''}".strip()
 
             malzeme_payi = min(tutar, malzeme_kalan) if malzeme_kalan > 0 else 0
             sayac_payi = tutar - malzeme_payi
@@ -7338,11 +7726,15 @@ def abone_tahsilat(abone_id):
             for tur, pay in (("malzeme", malzeme_payi), ("sayac", sayac_payi)):
                 if pay:
                     cur.execute(
-                        "INSERT INTO tahsilat (abone_id, tarih, tur, tutar, odeme_sekli, odemeyi_yapan, aciklama) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                        (abone_id, tarih, tur, pay, odeme_sekli, odemeyi_yapan, aciklama),
+                        "INSERT INTO tahsilat (abone_id, tarih, tur, tutar, odeme_sekli, banka_adi, odemeyi_yapan, aciklama) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                        (abone_id, tarih, tur, pay, odeme_sekli, banka_adi, odemeyi_yapan, aciklama),
                     )
                     kolon = "alinan_tutar" if tur == "sayac" else "malzeme_alinan"
-                    cur.execute(f"UPDATE abone SET {kolon} = {kolon} + %s WHERE id = %s", (pay, abone_id))
+                    # COALESCE(...,0) şart: kolon NULL ise (örn. eski/aktarılmış
+                    # kayıtlarda) "NULL + tutar" yine NULL kalır ve tahsilat
+                    # geçmişe eklenmesine rağmen kalan ücret hiç düşmemiş gibi
+                    # görünürdü — bu yüzden her zaman 0 üzerinden toplanıyor.
+                    cur.execute(f"UPDATE abone SET {kolon} = COALESCE({kolon}, 0) + %s WHERE id = %s", (pay, abone_id))
             db.commit()
 
         cur.close()
@@ -7445,7 +7837,7 @@ def tahsilat_sil(tahsilat_id):
     if kayit:
         abone_id = kayit["abone_id"]
         kolon = "alinan_tutar" if kayit["tur"] == "sayac" else "malzeme_alinan"
-        cur.execute(f"UPDATE abone SET {kolon} = {kolon} - %s WHERE id = %s", (kayit["tutar"], abone_id))
+        cur.execute(f"UPDATE abone SET {kolon} = COALESCE({kolon}, 0) - %s WHERE id = %s", (kayit["tutar"], abone_id))
         cur.execute("DELETE FROM tahsilat WHERE id = %s", (tahsilat_id,))
         db.commit()
     cur.close()
@@ -7484,6 +7876,7 @@ def tahsilat_makbuz(tahsilat_id):
         tutar_yazi=_tutar_yaziya_cevir(kayit["tutar"]),
         odeme_esles=_odeme_sekli_esle(kayit["odeme_sekli"]),
         odeme_sekli_metin=kayit["odeme_sekli"],
+        banka_adi=kayit["banka_adi"],
         aciklama_basligi=aciklama_basligi,
         seri_no=kayit["abone_sayac_no"],
         odemeyi_yapan=odemeyi_yapan,
@@ -7766,6 +8159,11 @@ def _ariza_kaydet(ariza_id):
             list(alanlar.values()),
         )
         ariza_id = cur.fetchone()["id"]
+        # ÇOKLU KULLANICI SİSTEMİ: bkz. _abone_kaydet içindeki aynı açıklama.
+        cur.execute(
+            "UPDATE ariza SET olusturan_kullanici = %s WHERE id = %s",
+            (session.get("kullanici_adi", ""), ariza_id),
+        )
 
         if alinan_ucret:
             tahsilat_tarihi = (
@@ -7773,10 +8171,13 @@ def _ariza_kaydet(ariza_id):
                 or f.get("gelis_tarihi", "").strip()
                 or datetime.now().strftime("%Y-%m-%d")
             )
+            # Ödemeyi Yapan bu formda ayrıca sorulmuyor; abonenin kendi adı
+            # soyadı otomatik olarak Tahsilat Geçmişi'ne yazılır.
+            _ariza_sahibi_adi = f"{alanlar.get('adi') or ''} {alanlar.get('soyadi') or ''}".strip()
             cur.execute(
                 "INSERT INTO ariza_tahsilat (ariza_id, tarih, tutar, odeme_sekli, odemeyi_yapan, aciklama) "
                 "VALUES (%s, %s, %s, %s, %s, %s)",
-                (ariza_id, tahsilat_tarihi, alinan_ucret, "", "", "Arıza kaydı sırasında alınan"),
+                (ariza_id, tahsilat_tarihi, alinan_ucret, "", _ariza_sahibi_adi, "Arıza kaydı sırasında alınan"),
             )
     else:
         set_ifadesi = ", ".join([f"{k} = %s" for k in alanlar.keys()])
@@ -8247,6 +8648,16 @@ def ariza_yeni():
 def ariza_duzenle(ariza_id):
     db = get_db()
     sonraki_hedef = request.args.get("hedef", "") or request.form.get("hedef", "")
+
+    if _kullanici_rolu() == "montaj":
+        _cur = db.cursor()
+        _cur.execute("SELECT olusturan_kullanici, created_at FROM ariza WHERE id = %s", (ariza_id,))
+        _kayit_kontrol = _cur.fetchone()
+        _cur.close()
+        if not _montaj_kayit_duzenlenebilir_mi(_kayit_kontrol):
+            flash("Bu kaydı düzenleme yetkiniz yok (sadece bugün eklediğiniz kendi kayıtlarınızı düzenleyebilirsiniz).")
+            return redirect(url_for("ariza_listesi"))
+
     if request.method == "POST":
         _ariza_kaydet(ariza_id)
         _ariza_fotograflarini_kaydet(db, ariza_id, request.files.getlist("fotograflar"))
@@ -8313,6 +8724,13 @@ def ariza_duzenle(ariza_id):
 def ariza_sil(ariza_id):
     db = get_db()
     cur = db.cursor()
+    if _kullanici_rolu() == "montaj":
+        cur.execute("SELECT olusturan_kullanici, created_at FROM ariza WHERE id = %s", (ariza_id,))
+        _kayit_kontrol = cur.fetchone()
+        if not _montaj_kayit_duzenlenebilir_mi(_kayit_kontrol):
+            cur.close()
+            flash("Bu kaydı silme yetkiniz yok (sadece bugün eklediğiniz kendi kayıtlarınızı silebilirsiniz).")
+            return redirect(url_for("ariza_listesi"))
     cur.execute("DELETE FROM ariza WHERE id = %s", (ariza_id,))
     db.commit()
     cur.close()
@@ -8372,6 +8790,12 @@ def ariza_listesi():
         sql += " AND koy_adi = %s"
         params.append(koy)
 
+    # MONTAJ rolündeki bir kullanıcı SADECE kendi eklediği kayıtları görebilir.
+    montaj_filtreli = _kullanici_rolu() == "montaj"
+    if montaj_filtreli:
+        sql += " AND olusturan_kullanici = %s"
+        params.append(session.get("kullanici_adi", ""))
+
     if q:
         secili = alanlar_secili if alanlar_secili else [k for k, *_ in ARIZA_ALAN_TANIMLARI]
 
@@ -8417,15 +8841,19 @@ def ariza_listesi():
     kayitlar_ham = cur.fetchall()
     cur.execute("SELECT DISTINCT koy_adi FROM ariza ORDER BY koy_adi")
     koyler = cur.fetchall()
-    cur.execute("SELECT COUNT(*) AS c FROM ariza")
+    if montaj_filtreli:
+        cur.execute("SELECT COUNT(*) AS c FROM ariza WHERE olusturan_kullanici = %s", (session.get("kullanici_adi", ""),))
+    else:
+        cur.execute("SELECT COUNT(*) AS c FROM ariza")
     toplam_kayit = cur.fetchone()["c"]
     cur.close()
 
     satirlar = [_ariza_satir_sozlugu(k, ozel_alanlar) for k in kayitlar_ham]
 
-    toplam_ariza_ucreti = sum(float(k["ariza_ucret"] or 0) for k in kayitlar_ham)
-    tahsil_edilen_ucret = sum(float(k["alinan_ucret"] or 0) for k in kayitlar_ham)
-    kalan_bakiye = toplam_ariza_ucreti - tahsil_edilen_ucret
+    # MONTAJ rolü genel tutarları göremez.
+    toplam_ariza_ucreti = None if montaj_filtreli else sum(float(k["ariza_ucret"] or 0) for k in kayitlar_ham)
+    tahsil_edilen_ucret = None if montaj_filtreli else sum(float(k["alinan_ucret"] or 0) for k in kayitlar_ham)
+    kalan_bakiye = None if montaj_filtreli else toplam_ariza_ucreti - tahsil_edilen_ucret
 
     satirlar, filtreli_kayit, sayfa, toplam_sayfa = _sayfala(satirlar)
 
@@ -8549,15 +8977,27 @@ def ariza_tahsilat(ariza_id):
         tutar = _sayilastir(request.form.get("tutar"))
         tarih = request.form.get("tarih", "").strip()
         odeme_sekli = request.form.get("odeme_sekli", "").strip()
+        banka_adi = request.form.get("banka_adi", "").strip()
         odemeyi_yapan = request.form.get("odemeyi_yapan", "").strip()
         aciklama = request.form.get("aciklama", "").strip()
 
         if tutar:
+            if not odemeyi_yapan:
+                # Ödemeyi Yapan boş bırakılırsa abonenin (arıza sahibinin) kendi
+                # adı soyadı otomatik olarak Tahsilat Geçmişi'ne yazılır.
+                cur.execute("SELECT adi, soyadi FROM ariza WHERE id = %s", (ariza_id,))
+                _sahip = cur.fetchone()
+                if _sahip:
+                    odemeyi_yapan = f"{_sahip['adi'] or ''} {_sahip['soyadi'] or ''}".strip()
             cur.execute(
-                "INSERT INTO ariza_tahsilat (ariza_id, tarih, tutar, odeme_sekli, odemeyi_yapan, aciklama) VALUES (%s, %s, %s, %s, %s, %s)",
-                (ariza_id, tarih, tutar, odeme_sekli, odemeyi_yapan, aciklama),
+                "INSERT INTO ariza_tahsilat (ariza_id, tarih, tutar, odeme_sekli, banka_adi, odemeyi_yapan, aciklama) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (ariza_id, tarih, tutar, odeme_sekli, banka_adi, odemeyi_yapan, aciklama),
             )
-            cur.execute("UPDATE ariza SET alinan_ucret = alinan_ucret + %s WHERE id = %s", (tutar, ariza_id))
+            # COALESCE(...,0) şart: alinan_ucret NULL ise (örn. eski/aktarılmış
+            # kayıtlarda) "NULL + tutar" yine NULL kalır ve tahsilat geçmişe
+            # eklenmesine rağmen Kalan Ücret/Alınan Ücret hiç güncellenmemiş
+            # gibi görünürdü — bu yüzden her zaman 0 üzerinden toplanıyor.
+            cur.execute("UPDATE ariza SET alinan_ucret = COALESCE(alinan_ucret, 0) + %s WHERE id = %s", (tutar, ariza_id))
             db.commit()
 
         cur.close()
@@ -8708,7 +9148,7 @@ def ariza_tahsilat_sil(tahsilat_id):
     ariza_id = None
     if kayit:
         ariza_id = kayit["ariza_id"]
-        cur.execute("UPDATE ariza SET alinan_ucret = alinan_ucret - %s WHERE id = %s", (kayit["tutar"], ariza_id))
+        cur.execute("UPDATE ariza SET alinan_ucret = COALESCE(alinan_ucret, 0) - %s WHERE id = %s", (kayit["tutar"], ariza_id))
         cur.execute("DELETE FROM ariza_tahsilat WHERE id = %s", (tahsilat_id,))
         db.commit()
     cur.close()
@@ -8746,6 +9186,7 @@ def ariza_tahsilat_makbuz(tahsilat_id):
         tutar_yazi=_tutar_yaziya_cevir(kayit["tutar"]),
         odeme_esles=_odeme_sekli_esle(kayit["odeme_sekli"]),
         odeme_sekli_metin=kayit["odeme_sekli"],
+        banka_adi=kayit["banka_adi"],
         aciklama_basligi="Arıza Ücreti Ödemesi",
         seri_no=kayit["ariza_seri_no"],
         odemeyi_yapan=odemeyi_yapan,

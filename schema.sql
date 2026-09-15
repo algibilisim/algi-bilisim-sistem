@@ -34,6 +34,13 @@ ALTER TABLE abone ADD COLUMN IF NOT EXISTS odeme_gun_sozu TEXT;
 ALTER TABLE abone ADD COLUMN IF NOT EXISTS telefon2 TEXT;
 ALTER TABLE abone ADD COLUMN IF NOT EXISTS montaj_personeli TEXT;
 
+-- ÇOKLU KULLANICI SİSTEMİ: bu kaydı hangi kullanıcının oluşturduğu — MONTAJ
+-- rolündeki bir kullanıcının SADECE KENDİ eklediği kayıtları görüp
+-- düzenleyebilmesi için gerekli (bkz. kullanici.rol). Var olan (bu sütun
+-- eklenmeden önceki) kayıtlarda NULL kalır; bunlar sadece admin/izleme
+-- tarafından görülür, hiçbir montaj kullanıcısına ait sayılmaz.
+ALTER TABLE abone ADD COLUMN IF NOT EXISTS olusturan_kullanici TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_abone_koy ON abone(koy_adi);
 CREATE INDEX IF NOT EXISTS idx_abone_sayac_no ON abone(sayac_no);
 -- Abone Listesi sayfası her açılışta s_no'ya göre sıralıyor; kayıt sayısı
@@ -45,6 +52,24 @@ CREATE TABLE IF NOT EXISTS kullanici (
     kullanici_adi TEXT UNIQUE NOT NULL,
     sifre_hash TEXT NOT NULL
 );
+
+-- ÇOKLU KULLANICI SİSTEMİ: "rol" sütunu her kullanıcının yetki seviyesini
+-- belirler. DEFAULT 'admin' OLMASI BİLEREK ÖYLE: bu sütun eklendiğinde daha
+-- önce var olan TEK kullanıcı (programın sahibinin kendi girişi) otomatik
+-- olarak 'admin' (tam yetki) olur — hiçbir şey değişmez, elle bir işlem
+-- gerekmez. Hesap Ayarları sayfasından SONRADAN oluşturulan yeni kullanıcılara
+-- 'izleme' ya da 'montaj' rolü açıkça atanır (bkz. app.py'deki
+-- hesap_ayarlari_kullanici_ekle).
+--   admin   : tam yetki, tüm menüler, her işlem (mevcut/eski davranış).
+--   izleme  : tüm menüleri görebilir ama hiçbir ekleme/düzenleme/silme
+--             yapamaz (salt okunur).
+--   montaj  : yalnızca Abone Listesi ve Arıza Takip menülerini görebilir;
+--             yeni abone/arıza ekleyebilir; genel toplamları (toplam ücret,
+--             tahsil edilen, kayıt sayısı) göremez; sadece KENDİ eklediği
+--             kayıtları görür ve bunları yalnızca eklendiği GÜN 23:59'a kadar
+--             düzenleyip silebilir (bkz. abone/ariza tablolarındaki
+--             "olusturan_kullanici" sütunu).
+ALTER TABLE kullanici ADD COLUMN IF NOT EXISTS rol TEXT NOT NULL DEFAULT 'admin';
 
 CREATE TABLE IF NOT EXISTS tahsilat (
     id SERIAL PRIMARY KEY,
@@ -90,6 +115,8 @@ ALTER TABLE ariza ADD COLUMN IF NOT EXISTS konum_enlem DOUBLE PRECISION;
 ALTER TABLE ariza ADD COLUMN IF NOT EXISTS konum_boylam DOUBLE PRECISION;
 -- Arızanın giderilip sayacın/malzemenin aboneye ne zaman teslim edildiği.
 ALTER TABLE ariza ADD COLUMN IF NOT EXISTS teslim_tarihi TEXT;
+-- ÇOKLU KULLANICI SİSTEMİ: bkz. abone.olusturan_kullanici üzerindeki açıklama.
+ALTER TABLE ariza ADD COLUMN IF NOT EXISTS olusturan_kullanici TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_ariza_koy ON ariza(koy_adi);
 CREATE INDEX IF NOT EXISTS idx_ariza_seri_no ON ariza(seri_no);
@@ -489,6 +516,14 @@ CREATE INDEX IF NOT EXISTS idx_stok_fotograf_urun ON stok_fotograf(urun_id);
 -- kaydedilince Stok'taki "ABONE KARTI" ürününden 1 adet düşülür
 -- (bkz. app.py'deki _abone_kaydet / _stok_urun_hareket_uygula).
 ALTER TABLE abone ADD COLUMN IF NOT EXISTS abone_karti_teslim TEXT;
+
+-- "Banka Adı" alanı — Ödeme Şekli ne seçilirse seçilsin HER ZAMAN görünen,
+-- hem klavye ile yazılabilen hem açılır listeden (Türkiye'deki banka isimleri)
+-- seçilebilen ayrı bir alan. Tahsilat alınan HER menüde (Abone kaydı,
+-- Abone Tahsilatı, Arıza Tahsilatı) kullanılır.
+ALTER TABLE abone ADD COLUMN IF NOT EXISTS banka_adi TEXT;
+ALTER TABLE tahsilat ADD COLUMN IF NOT EXISTS banka_adi TEXT;
+ALTER TABLE ariza_tahsilat ADD COLUMN IF NOT EXISTS banka_adi TEXT;
 
 -- Özel Alan Ayarları sayfasında artık SABİT (koddan gelen, kilitli) alanlar
 -- da sürükleyip sıralanabiliyor. Varsayılan (Python listesindeki) sıra
